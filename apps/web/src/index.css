@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+:root {
+	color-scheme: light;
+	--bg: #f6f4ef;
+	--panel: #fffdf9;
+	--line: #e0dbd1;
+	--ink: #1d1b18;
+	--dim: #6f695f;
+	--accent: #a85f00;
+	--accent-ink: #ffffff;
+	--danger: #b3261e;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		color-scheme: dark;
+		--bg: #100f0e;
+		--panel: #1a1917;
+		--line: #2e2b27;
+		--ink: #ebe6dd;
+		--dim: #948e84;
+		--accent: #f0a63a;
+		--accent-ink: #1a1204;
+		--danger: #ff8a80;
+	}
+}
+
+@theme inline {
+	--color-bg: var(--bg);
+	--color-panel: var(--panel);
+	--color-line: var(--line);
+	--color-ink: var(--ink);
+	--color-dim: var(--dim);
+	--color-accent: var(--accent);
+	--color-accent-ink: var(--accent-ink);
+	--color-danger: var(--danger);
+}
+
+html,
+body,
+#root {
+	height: 100%;
+}
+
+body {
+	background: var(--bg);
+	color: var(--ink);
+	font-family: ui-sans-serif, system-ui, sans-serif;
+	-webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+dialog::backdrop {
+	background: rgb(0 0 0 / 0.8);
+}
+
+@keyframes shimmer {
+	from {
+		background-position: 200% 0;
+	}
+	to {
+		background-position: -200% 0;
+	}
+}
+
+.developing {
+	background: linear-gradient(
+		100deg,
+		var(--panel) 30%,
+		var(--line) 50%,
+		var(--panel) 70%
+	);
+	background-size: 200% 100%;
+	animation: shimmer 2.2s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.developing {
+		animation: none;
+	}
+}
