@@ -112,10 +112,11 @@ test("uploads are stored and usable as references", async () => {
 	const upload = await call("/api/assets", {
 		method: "POST",
 		headers: { "content-type": "image/png" },
-		body: new Uint8Array([1, 2, 3]),
+		body: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]),
 	});
 	expect(upload.status).toBe(201);
-	const asset = (await upload.json()) as { id: string };
+	const asset = (await upload.json()) as { id: string; mime: string };
+	expect(asset.mime).toBe("image/png");
 
 	const turn = await post("/api/turns", {
 		prompt: "restyle",
@@ -127,7 +128,8 @@ test("uploads are stored and usable as references", async () => {
 
 	const rejected = await call("/api/assets", {
 		method: "POST",
-		headers: { "content-type": "text/html" },
+		// The claimed type is ignored; the bytes decide.
+		headers: { "content-type": "image/png" },
 		body: "<script>",
 	});
 	expect(rejected.status).toBe(400);

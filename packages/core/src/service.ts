@@ -28,7 +28,18 @@ export interface ReelServiceDeps {
 	engine: JobEngine;
 }
 
-const UPLOAD_MIMES = ["image/png", "image/jpeg", "image/webp"];
+/** The image type the bytes really are, whatever the uploader claimed. */
+function sniffImageMime(data: Uint8Array): string | null {
+	const starts = (bytes: number[], at = 0) =>
+		bytes.every((byte, i) => data[at + i] === byte);
+	if (starts([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+		return "image/png";
+	if (starts([0xff, 0xd8, 0xff])) return "image/jpeg";
+	// "RIFF" <size> "WEBP"
+	if (starts([0x52, 0x49, 0x46, 0x46]) && starts([0x57, 0x45, 0x42, 0x50], 8))
+		return "image/webp";
+	return null;
+}
 
 /** Fits the requested parameters to what one model supports. */
 export function adaptParams(
@@ -198,12 +209,9 @@ export class ReelService {
 		await this.deps.engine.cancel(jobId);
 	}
 
-	async uploadAsset(
-		ctx: UserContext,
-		data: Uint8Array,
-		mime: string,
-	): Promise<Asset> {
-		if (!UPLOAD_MIMES.includes(mime)) {
+	async uploadAsset(ctx: UserContext, data: Uint8Array): Promise<Asset> {
+		const mime = sniffImageMime(data);
+		if (!mime) {
 			throw new ValidationError(
 				"Only PNG, JPEG and WebP images can be uploaded",
 			);

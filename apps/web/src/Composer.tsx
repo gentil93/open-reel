@@ -84,7 +84,16 @@ export function Composer(props: Props) {
 		setPrompt("");
 	};
 
-	const error = props.error ?? upload.error?.message ?? null;
+	// Chosen models that have a key but are ruled out by the reference images.
+	const overReferenceLimit =
+		selected.length === 0 &&
+		models.some((m) => chosen.includes(m.id) && ready.has(m.providerId));
+	const error =
+		props.error ??
+		upload.error?.message ??
+		(overReferenceLimit
+			? "No selected model accepts this many reference images. Remove some or pick another model."
+			: null);
 	const control = "rounded-md border border-line bg-bg px-2 py-1.5 text-sm";
 
 	return (

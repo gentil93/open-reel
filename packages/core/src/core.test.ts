@@ -15,6 +15,8 @@ import {
 } from "./index";
 
 const dirs: string[] = [];
+/** The PNG signature plus one byte: enough to pass as an uploaded image. */
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]);
 afterEach(async () => {
 	for (const dir of dirs.splice(0)) await rm(dir, { recursive: true });
 });
@@ -122,11 +124,7 @@ describe("turns", () => {
 
 	test("rejects references for a model that cannot take them", async () => {
 		const app = boot(await tempDir());
-		const upload = await app.service.uploadAsset(
-			LOCAL_USER,
-			new Uint8Array([1, 2, 3]),
-			"image/png",
-		);
+		const upload = await app.service.uploadAsset(LOCAL_USER, PNG);
 		expect(
 			app.service.createTurn(LOCAL_USER, {
 				prompt: "x",
@@ -356,7 +354,7 @@ describe("storage", () => {
 			prompt: "100% wool",
 			modelIds: ["fake/alpha"],
 		});
-		await app.service.uploadAsset(LOCAL_USER, new Uint8Array([9]), "image/png");
+		await app.service.uploadAsset(LOCAL_USER, PNG);
 		await app.engine.idle();
 
 		const all = await app.service.listGallery(LOCAL_USER, { limit: 10 });

@@ -125,10 +125,9 @@ export function createApp(options: AppOptions): Hono {
 			onError: (c) => c.json({ error: "The image is larger than 20 MB" }, 413),
 		}),
 		async (c) => {
-			const mime = (c.req.header("content-type") ?? "").split(";")[0] ?? "";
 			const data = new Uint8Array(await c.req.arrayBuffer());
 			if (data.byteLength === 0) throw new ValidationError("Empty upload");
-			return c.json(await service.uploadAsset(user(c), data, mime), 201);
+			return c.json(await service.uploadAsset(user(c), data), 201);
 		},
 	);
 	app.get("/api/assets/:id", async (c) => {
