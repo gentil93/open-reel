@@ -1,4 +1,4 @@
-import type { ModelSpec, ProviderStatus } from "@open-reel/core/types";
+import type { Media, ModelSpec, ProviderStatus } from "@open-reel/core/types";
 import { useMutation } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { api, assetUrl } from "./api";
@@ -9,6 +9,7 @@ export interface Draft {
 	modelIds: string[];
 	aspectRatio?: string;
 	count: number;
+	durationSeconds?: number;
 }
 
 interface Props {
@@ -38,6 +39,8 @@ export function Composer(props: Props) {
 	const [chosen, setChosen] = useState<string[]>(savedModels);
 	const [aspectRatio, setAspectRatio] = useState("");
 	const [count, setCount] = useState(1);
+	const [media, setMedia] = useState<Media>("image");
+	const [seconds, setSeconds] = useState<number | null>(null);
 	const fileInput = useRef<HTMLInputElement>(null);
 
 	const ready = new Set(
@@ -53,11 +56,17 @@ export function Composer(props: Props) {
 		}
 		return null;
 	};
-	const selected = models.filter((m) => chosen.includes(m.id) && !blocked(m));
+	// Images and videos are chosen separately: they differ in cost by orders of
+	// magnitude, and nobody compares one against the other.
+	const offered = models.filter((m) => m.media === media);
+	const selected = offered.filter((m) => chosen.includes(m.id) && !blocked(m));
 	const ratios = [
 		...new Set(selected.flatMap((m) => m.capabilities.aspectRatios)),
 	];
 	const maxCount = Math.max(1, ...selected.map((m) => m.capabilities.maxCount));
+	const durations = [
+		...new Set(selected.flatMap((m) => m.capabilities.durations ?? [])),
+	].sort((a, b) => a - b);
 
 	useEffect(() => {
 		try {
@@ -80,6 +89,9 @@ export function Composer(props: Props) {
 			modelIds: selected.map((m) => m.id),
 			aspectRatio: ratios.includes(aspectRatio) ? aspectRatio : undefined,
 			count: Math.min(count, maxCount),
+			// Unset, each model uses its shortest length.
+			durationSeconds:
+				seconds != null && durations.includes(seconds) ? seconds : undefined,
 		});
 		setPrompt("");
 	};
@@ -87,7 +99,7 @@ export function Composer(props: Props) {
 	// Chosen models that have a key but are ruled out by the reference images.
 	const overReferenceLimit =
 		selected.length === 0 &&
-		models.some((m) => chosen.includes(m.id) && ready.has(m.providerId));
+		offered.some((m) => chosen.includes(m.id) && ready.has(m.providerId));
 	const error =
 		props.error ??
 		upload.error?.message ??
@@ -99,9 +111,29 @@ export function Composer(props: Props) {
 	return (
 		<div className="border-t border-line bg-panel">
 			<div className="mx-auto flex max-w-5xl flex-col gap-3 px-6 py-4">
+				{models.some((m) => m.media === "video") && (
+					<div className="flex gap-1" role="tablist" aria-label="Output">
+						{(["image", "video"] as const).map((kind) => (
+							<button
+								key={kind}
+								type="button"
+								role="tab"
+								aria-selected={media === kind}
+								onClick={() => setMedia(kind)}
+								className={`rounded-md px-3 py-1 text-sm ${
+									media === kind
+										? "bg-line text-ink"
+										: "text-dim hover:text-ink"
+								}`}
+							>
+								{kind === "image" ? "Images" : "Video"}
+							</button>
+						))}
+					</div>
+				)}
 				<fieldset className="flex flex-wrap items-center gap-1.5">
 					<legend className="sr-only">Models</legend>
-					{models.map((model) => {
+					{offered.map((model) => {
 						const reason = blocked(model);
 						const on = chosen.includes(model.id) && !reason;
 						return (
@@ -129,7 +161,7 @@ export function Composer(props: Props) {
 							</button>
 						);
 					})}
-					{models.some((m) => !ready.has(m.providerId)) && (
+					{offered.some((m) => !ready.has(m.providerId)) && (
 						<a
 							href={href.settings}
 							className="px-2 text-sm text-accent underline"
@@ -179,8 +211,10 @@ export function Composer(props: Props) {
 					rows={2}
 					placeholder={
 						references.length > 0
-							? "Describe the change you want…"
-							: "Describe the image you want…"
+							? media === "video"
+								? "Describe how the image should move…"
+								: "Describe the change you want…"
+							: `Describe the ${media} you want…`
 					}
 					aria-label="Prompt"
 					className="w-full resize-none rounded-md border border-line bg-bg px-3 py-2 leading-relaxed"
@@ -201,8 +235,34 @@ export function Composer(props: Props) {
 							))}
 						</select>
 					</label>
-					<label className="flex items-center gap-2 text-sm text-dim">
-						Images
+					{durations.length > 0 && (
+						<label className="flex items-center gap-2 text-sm text-dim">
+							Length
+							<select
+								value={
+									seconds != null && durations.includes(seconds) ? seconds : ""
+								}
+								onChange={(event) =>
+									setSeconds(
+										event.target.value ? Number(event.target.value) : null,
+									)
+								}
+								className={control}
+							>
+								<option value="">Shortest</option>
+								{durations.map((d) => (
+									<option key={d} value={d}>
+										{d}s
+									</option>
+								))}
+							</select>
+						</label>
+					)}
+					<label
+						className="flex items-center gap-2 text-sm text-dim"
+						hidden={maxCount === 1 && media === "video"}
+					>
+						{media === "video" ? "Videos" : "Images"}
 						<select
 							value={Math.min(count, maxCount)}
 							onChange={(event) => setCount(Number(event.target.value))}

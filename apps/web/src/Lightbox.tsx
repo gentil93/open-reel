@@ -5,6 +5,7 @@ import { usd } from "./format";
 
 export interface LightboxItem {
 	assetId: string;
+	mime: string;
 	prompt: string | null;
 	modelName: string | null;
 	params: GenerationParams | null;
@@ -23,9 +24,14 @@ export function Lightbox({ item, onClose, onUseAsReference }: Props) {
 		ref.current?.showModal();
 	}, []);
 
+	const video = item.mime.startsWith("video/");
 	const facts = [
 		["Model", item.modelName],
 		["Ratio", item.params?.aspectRatio],
+		[
+			"Length",
+			item.params?.durationSeconds && `${item.params.durationSeconds}s`,
+		],
 		["Seed", item.params?.seed],
 		["Cost", item.costUsd == null ? null : usd(item.costUsd)],
 	].filter(([, value]) => value != null);
@@ -39,11 +45,23 @@ export function Lightbox({ item, onClose, onUseAsReference }: Props) {
 			className="m-auto max-h-[92vh] w-[min(1100px,94vw)] rounded-lg border border-line bg-panel p-0 text-ink"
 		>
 			<div className="flex max-h-[92vh] flex-col md:flex-row">
-				<img
-					src={assetUrl(item.assetId)}
-					alt={item.prompt ?? "Generated image"}
-					className="min-h-0 flex-1 bg-black object-contain"
-				/>
+				{video ? (
+					// biome-ignore lint/a11y/useMediaCaption: generated clips have no transcript
+					<video
+						src={assetUrl(item.assetId)}
+						controls
+						autoPlay
+						loop
+						playsInline
+						className="min-h-0 min-w-0 flex-1 bg-black object-contain"
+					/>
+				) : (
+					<img
+						src={assetUrl(item.assetId)}
+						alt={item.prompt ?? "Generated image"}
+						className="min-h-0 min-w-0 flex-1 bg-black object-contain"
+					/>
+				)}
 				<div className="flex w-full shrink-0 flex-col gap-4 overflow-y-auto p-5 md:w-72">
 					{item.prompt && (
 						<p className="whitespace-pre-wrap text-sm leading-relaxed">
@@ -59,13 +77,15 @@ export function Lightbox({ item, onClose, onUseAsReference }: Props) {
 						))}
 					</dl>
 					<div className="mt-auto flex flex-col gap-2 text-sm">
-						<button
-							type="button"
-							onClick={() => onUseAsReference(item.assetId)}
-							className="rounded-md bg-accent px-3 py-2 font-medium text-accent-ink"
-						>
-							Use as reference
-						</button>
+						{!video && (
+							<button
+								type="button"
+								onClick={() => onUseAsReference(item.assetId)}
+								className="rounded-md bg-accent px-3 py-2 font-medium text-accent-ink"
+							>
+								Use as reference
+							</button>
+						)}
 						<a
 							href={assetUrl(item.assetId)}
 							download={`open-reel-${item.assetId}`}

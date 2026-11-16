@@ -18,6 +18,8 @@ export const generationParamsSchema = z.object({
 		.optional(),
 	seed: z.number().int().nonnegative().optional(),
 	count: z.number().int().min(1).max(8).default(1),
+	/** Length of a video. Ignored by image models. */
+	durationSeconds: z.number().int().min(1).max(120).optional(),
 	referenceAssetIds: z.array(z.string()).default([]),
 	/** Model-specific parameters, passed through to the provider untouched. */
 	extras: z.record(z.string(), z.unknown()).default({}),
@@ -33,6 +35,11 @@ export interface ModelCapabilities {
 	maxCount: number;
 	/** 0 means the model cannot take reference images. */
 	maxReferenceImages: number;
+	/**
+	 * Video lengths in seconds the model can produce, ascending. Absent or empty
+	 * means the length cannot be chosen.
+	 */
+	durations?: number[];
 }
 
 export interface ModelSpec {
@@ -44,7 +51,8 @@ export interface ModelSpec {
 	media: Media;
 	operations: Operation[];
 	capabilities: ModelCapabilities;
-	pricing?: { usdPerOutput: number };
+	/** Used to estimate a job's cost when the provider does not report one. */
+	pricing?: { usdPerOutput?: number; usdPerSecond?: number };
 }
 
 export type JobStatus =

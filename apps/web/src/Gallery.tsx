@@ -50,8 +50,8 @@ export function Gallery({
 				{pages.isSuccess && items.length === 0 && (
 					<p className="mt-16 text-center text-dim">
 						{query
-							? `No image has a prompt matching “${query}”.`
-							: "Images you generate will appear here."}
+							? `Nothing has a prompt matching “${query}”.`
+							: "Images and videos you generate will appear here."}
 					</p>
 				)}
 				<ul className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
@@ -63,20 +63,37 @@ export function Gallery({
 								onClick={() =>
 									setOpen({
 										assetId: item.id,
+										mime: item.mime,
 										prompt: item.prompt,
 										modelName: modelName(item.modelId),
 										params: item.params,
 										costUsd: null,
 									})
 								}
-								className="block w-full"
+								className="relative block w-full"
 							>
-								<img
-									src={assetUrl(item.id)}
-									alt={item.prompt ?? "Generated image"}
-									loading="lazy"
-									className="aspect-square w-full rounded-md border border-line object-cover"
-								/>
+								{item.mime.startsWith("video/") ? (
+									<>
+										<video
+											src={assetUrl(item.id)}
+											aria-label={item.prompt ?? "Generated video"}
+											muted
+											playsInline
+											preload="metadata"
+											className="aspect-square w-full rounded-md border border-line object-cover"
+										/>
+										<span className="absolute bottom-1.5 left-1.5 rounded bg-black/75 px-1.5 py-0.5 font-mono text-[10px] uppercase text-white">
+											video
+										</span>
+									</>
+								) : (
+									<img
+										src={assetUrl(item.id)}
+										alt={item.prompt ?? "Generated image"}
+										loading="lazy"
+										className="aspect-square w-full rounded-md border border-line object-cover"
+									/>
+								)}
 							</button>
 						</li>
 					))}

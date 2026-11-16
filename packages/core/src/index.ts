@@ -4,6 +4,7 @@ export * from "./engine";
 export * from "./errors";
 export * from "./ids";
 export * from "./keys";
+export * from "./mime";
 export * from "./paths";
 export * from "./provider";
 export * from "./service";

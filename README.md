@@ -1,18 +1,19 @@
 # open-reel
 
-One interface for many image generation models. Open source, runs on your
-machine, and uses your own API keys.
+One interface for many image and video generation models. Open source, runs on
+your machine, and uses your own API keys.
 
 - **Compare models side by side.** Send one prompt to several models and see
   each result with its time and cost.
-- **Iterate like a conversation.** Any result can become the reference image
-  for your next prompt.
-- **Keep everything.** Every image is saved locally with the prompt and
+- **Iterate like a conversation.** Any image can become the reference for your
+  next prompt, or the first frame of a video.
+- **Keep everything.** Every result is saved locally with the prompt and
   parameters that produced it, in a searchable gallery.
 
-Supported today: [fal](https://fal.ai) (FLUX, Nano Banana), OpenAI (GPT Image)
-and Google Gemini (Nano Banana). Video, more providers, a desktop app and
-locally run models are planned.
+Supported today: [fal](https://fal.ai), [Replicate](https://replicate.com) and
+[OpenRouter](https://openrouter.ai) for images and video, and OpenAI (GPT
+Image) and Google Gemini (Nano Banana) for images. A desktop app and locally
+run models are planned.
 
 ## Run it
 
@@ -32,7 +33,7 @@ Options: `bun run start --port 5000 --no-open --data-dir ./data` (see
 `bun run start --help`).
 
 Keys can also come from the environment: `FAL_KEY`, `OPENAI_API_KEY`,
-`GEMINI_API_KEY`.
+`GEMINI_API_KEY`, `REPLICATE_API_TOKEN`, `OPENROUTER_API_KEY`.
 
 ## Your data
 

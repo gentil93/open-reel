@@ -26,6 +26,28 @@ function hostname(host: string): string {
 	return host.replace(/:\d+$/, "");
 }
 
+/**
+ * Reads a single-range `Range` header. Anything else (no header, several
+ * ranges, another unit) is answered with the whole file, as HTTP allows.
+ */
+function parseRange(
+	header: string | undefined,
+	size: number,
+): { start: number; end: number } | "unsatisfiable" | null {
+	const match = header?.match(/^bytes=(\d*)-(\d*)$/);
+	if (!match || (match[1] === "" && match[2] === "")) return null;
+	if (match[1] === "") {
+		// "-N": the last N bytes.
+		const length = Math.min(Number(match[2]), size);
+		return length === 0
+			? "unsatisfiable"
+			: { start: size - length, end: size - 1 };
+	}
+	const start = Number(match[1]);
+	const end = match[2] === "" ? size - 1 : Math.min(Number(match[2]), size - 1);
+	return start >= size || start > end ? "unsatisfiable" : { start, end };
+}
+
 export function createApp(options: AppOptions): Hono {
 	const { service, engine } = options;
 	const user = options.resolveUser ?? (() => LOCAL_USER);
@@ -135,14 +157,33 @@ export function createApp(options: AppOptions): Hono {
 			user(c),
 			c.req.param("id"),
 		);
+		const headers = {
+			"content-type": asset.mime,
+			"accept-ranges": "bytes",
+			"cache-control": "private, max-age=31536000, immutable",
+			"x-content-type-options": "nosniff",
+			"content-security-policy": "sandbox",
+		};
+		// Browsers ask for videos in pieces and cannot seek without this.
+		const range = parseRange(c.req.header("range"), asset.size);
+		if (range === "unsatisfiable") {
+			return new Response(null, {
+				status: 416,
+				headers: { ...headers, "content-range": `bytes */${asset.size}` },
+			});
+		}
+		if (range) {
+			return new Response(blob.slice(range.start, range.end + 1), {
+				status: 206,
+				headers: {
+					...headers,
+					"content-length": String(range.end - range.start + 1),
+					"content-range": `bytes ${range.start}-${range.end}/${asset.size}`,
+				},
+			});
+		}
 		return new Response(blob, {
-			headers: {
-				"content-type": asset.mime,
-				"content-length": String(asset.size),
-				"cache-control": "private, max-age=31536000, immutable",
-				"x-content-type-options": "nosniff",
-				"content-security-policy": "sandbox",
-			},
+			headers: { ...headers, "content-length": String(asset.size) },
 		});
 	});
 

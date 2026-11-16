@@ -17,7 +17,8 @@ export interface ProviderContext {
 }
 
 export type ProviderOutput =
-	| { url: string; mime?: string }
+	/** `headers` are sent when downloading, for results that need the API key. */
+	| { url: string; mime?: string; headers?: Record<string, string> }
 	| { data: Uint8Array; mime: string };
 
 export type ProviderEvent =
@@ -41,6 +42,8 @@ export interface ProviderAdapter<Handle = unknown> {
 	requiresKey: boolean;
 	/** Whether `events` can re-attach to a handle after a process restart. */
 	resumable: boolean;
+	/** Overrides `resumable` for providers where it depends on the request. */
+	isResumable?(handle: Handle): boolean;
 	listModels(): ModelSpec[];
 	submit(request: ProviderRequest, ctx: ProviderContext): Promise<Handle>;
 	events(handle: Handle, ctx: ProviderContext): AsyncIterable<ProviderEvent>;

@@ -42,7 +42,9 @@ function JobCard(props: {
 	const cancel = useMutation({ mutationFn: () => api.cancelJob(job.id) });
 	const name = model?.name ?? job.modelId;
 	const pending = job.status === "queued" || job.status === "running";
-	const [width, height] = (job.params.aspectRatio ?? "1:1")
+	const [width, height] = (
+		job.params.aspectRatio ?? (model?.media === "video" ? "16:9" : "1:1")
+	)
 		.split(":")
 		.map(Number);
 
@@ -105,41 +107,64 @@ function JobCard(props: {
 						job.assets.length > 1 ? "grid grid-cols-2 gap-2" : "contents"
 					}
 				>
-					{job.assets.map((asset) => (
-						<div key={asset.id} className="group relative">
-							<button
-								type="button"
-								aria-label={`Open image from ${name}`}
-								onClick={() =>
-									props.onOpen({
-										assetId: asset.id,
-										prompt: props.prompt,
-										modelName: name,
-										params: job.params,
-										costUsd:
-											job.costUsd == null
-												? null
-												: job.costUsd / job.assets.length,
-									})
-								}
-								className="block w-full"
-							>
-								<img
+					{job.assets.map((asset) => {
+						const open = () =>
+							props.onOpen({
+								assetId: asset.id,
+								mime: asset.mime,
+								prompt: props.prompt,
+								modelName: name,
+								params: job.params,
+								costUsd:
+									job.costUsd == null ? null : job.costUsd / job.assets.length,
+							});
+						const overlay =
+							"absolute rounded-md bg-black/75 px-2 py-1 text-xs text-white opacity-0 focus-visible:opacity-100 group-hover:opacity-100";
+						return asset.mime.startsWith("video/") ? (
+							<div key={asset.id} className="group relative">
+								{/* biome-ignore lint/a11y/useMediaCaption: generated clips have no transcript */}
+								<video
 									src={assetUrl(asset.id)}
-									alt={`${name}: ${props.prompt}`}
-									loading="lazy"
-									className="w-full rounded-md"
+									aria-label={`${name}: ${props.prompt}`}
+									controls
+									loop
+									playsInline
+									preload="metadata"
+									className="w-full rounded-md bg-black"
 								/>
-							</button>
-							<button
-								type="button"
-								onClick={() => props.onUseAsReference(asset.id)}
-								className="absolute bottom-2 left-2 rounded-md bg-black/75 px-2 py-1 text-xs text-white opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
-							>
-								Use as reference
-							</button>
-						</div>
-					))}
+								<button
+									type="button"
+									onClick={open}
+									className={`${overlay} right-2 top-2`}
+								>
+									Details
+								</button>
+							</div>
+						) : (
+							<div key={asset.id} className="group relative">
+								<button
+									type="button"
+									aria-label={`Open image from ${name}`}
+									onClick={open}
+									className="block w-full"
+								>
+									<img
+										src={assetUrl(asset.id)}
+										alt={`${name}: ${props.prompt}`}
+										loading="lazy"
+										className="w-full rounded-md"
+									/>
+								</button>
+								<button
+									type="button"
+									onClick={() => props.onUseAsReference(asset.id)}
+									className={`${overlay} bottom-2 left-2`}
+								>
+									Use as reference
+								</button>
+							</div>
+						);
+					})}
 				</div>
 			</div>
 		</section>
@@ -261,8 +286,8 @@ export function Chat({
 							</h1>
 							<p className="mt-3 max-w-xl leading-relaxed text-dim">
 								Pick one model to iterate on an image, or several to see how
-								each answers the same prompt. Any result can become the
-								reference for your next prompt.
+								each answers the same prompt. Any image can become the reference
+								for your next prompt, or the first frame of a video.
 							</p>
 						</div>
 					)}

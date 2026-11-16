@@ -2,19 +2,40 @@ import type { AssetStore } from "./assets";
 import type { JobPatch, Repository } from "./db/repository";
 import { newId } from "./ids";
 import type { KeyStore } from "./keys";
+import { sniffMime } from "./mime";
 import type {
+	ProviderAdapter,
 	ProviderOutput,
 	ProviderRegistry,
 	ReferenceImage,
 } from "./provider";
 import {
 	type EngineEvent,
+	type GenerationParams,
 	type Job,
+	type ModelSpec,
 	TERMINAL_STATUSES,
 	type UserContext,
 } from "./types";
 
 const MAX_OUTPUT_BYTES = 200 * 1024 * 1024;
+
+function isResumable(adapter: ProviderAdapter, handle: unknown): boolean {
+	return adapter.isResumable?.(handle) ?? adapter.resumable;
+}
+
+/** What a job cost going by the model's list price, when it has one. */
+function estimateCost(
+	model: ModelSpec,
+	params: GenerationParams,
+	outputs: number,
+): number | null {
+	const { usdPerSecond, usdPerOutput } = model.pricing ?? {};
+	if (usdPerSecond != null && params.durationSeconds != null) {
+		return usdPerSecond * params.durationSeconds * outputs;
+	}
+	return usdPerOutput == null ? null : usdPerOutput * outputs;
+}
 
 export type EngineListener = (userId: string, event: EngineEvent) => void;
 
@@ -54,7 +75,9 @@ export class JobEngine {
 			const adapter = this.deps.registry.adapter(job.providerId);
 			const canContinue =
 				job.status === "queued" ||
-				(adapter?.resumable === true && job.handle != null);
+				(adapter != null &&
+					job.handle != null &&
+					isResumable(adapter, job.handle));
 			if (canContinue) {
 				this.enqueue(job);
 			} else {
@@ -154,7 +177,7 @@ export class JobEngine {
 					pctx,
 				);
 				// Only a resumable handle is worth storing; others can embed whole images.
-				if (adapter.resumable) await this.update(jobId, { handle });
+				if (isResumable(adapter, handle)) await this.update(jobId, { handle });
 			}
 
 			for await (const event of adapter.events(handle, pctx)) {
@@ -171,14 +194,13 @@ export class JobEngine {
 					for (const output of event.outputs) {
 						await this.storeOutput(ctx, job, output, controller.signal);
 					}
-					const perOutput = model.pricing?.usdPerOutput;
 					await this.update(jobId, {
 						status: "succeeded",
 						error: null,
 						finishedAt: Date.now(),
 						costUsd:
 							event.costUsd ??
-							(perOutput == null ? null : perOutput * event.outputs.length),
+							estimateCost(model, job.params, event.outputs.length),
 					});
 					return;
 				}
@@ -240,7 +262,10 @@ export class JobEngine {
 			if (!output.url.startsWith("https://")) {
 				throw new Error("The provider returned a result URL that is not HTTPS");
 			}
-			const response = await fetch(output.url, { signal });
+			const response = await fetch(output.url, {
+				headers: output.headers,
+				signal,
+			});
 			if (!response.ok) {
 				throw new Error(
 					`Could not download the result (HTTP ${response.status})`,
@@ -267,7 +292,8 @@ export class JobEngine {
 			modelId: job.modelId,
 			params: job.params,
 			hash: stored.hash,
-			mime: mime ?? "application/octet-stream",
+			// Providers and their CDNs mislabel files often enough to check.
+			mime: sniffMime(data) ?? mime ?? "application/octet-stream",
 			size: stored.size,
 			createdAt: Date.now(),
 		});

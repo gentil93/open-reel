@@ -43,7 +43,8 @@ interface FalModel {
 function spec(
 	endpoint: string,
 	name: string,
-	rest: Pick<ModelSpec, "operations" | "capabilities">,
+	rest: Pick<ModelSpec, "operations" | "capabilities"> &
+		Partial<Pick<ModelSpec, "media" | "pricing">>,
 ): ModelSpec {
 	return {
 		id: `fal/${endpoint}`,
@@ -52,6 +53,59 @@ function spec(
 		name,
 		media: "image",
 		...rest,
+	};
+}
+
+interface VideoOptions {
+	name: string;
+	/** The text-to-video endpoint, which is also the model's id. */
+	text: string;
+	/** The image-to-video endpoint and the name of its image field, if any. */
+	image?: { endpoint: string; field: string; takesRatio: boolean };
+	ratios: string[];
+	durations: number[];
+	/** How the endpoint wants a length of `seconds` written. */
+	duration(seconds: number): string | number;
+	seed: boolean;
+	/** List price at the endpoint's default resolution and audio setting. */
+	usdPerSecond: number;
+}
+
+/** A video model: one endpoint from text, optionally another from a first frame. */
+function video(options: VideoOptions): FalModel {
+	const { image } = options;
+	return {
+		spec: spec(options.text, options.name, {
+			media: "video",
+			operations: image ? ["generate", "edit"] : ["generate"],
+			capabilities: {
+				aspectRatios: options.ratios,
+				seed: options.seed,
+				maxCount: 1,
+				maxReferenceImages: image ? 1 : 0,
+				durations: options.durations,
+			},
+			pricing: { usdPerSecond: options.usdPerSecond },
+		}),
+		endpoint: (references) =>
+			image && references.length > 0 ? image.endpoint : options.text,
+		input: (params, references) => {
+			const [first] = references;
+			const fromImage = image && first;
+			return {
+				prompt: params.prompt,
+				...(params.durationSeconds != null && {
+					duration: options.duration(params.durationSeconds),
+				}),
+				...(params.aspectRatio &&
+					(!fromImage || image.takesRatio) && {
+						aspect_ratio: params.aspectRatio,
+					}),
+				...(params.seed != null && { seed: params.seed }),
+				...(fromImage && { [image.field]: toDataUri(first.data, first.mime) }),
+				...params.extras,
+			};
+		},
 	};
 }
 
@@ -105,6 +159,75 @@ const MODELS: FalModel[] = [
 			...params.extras,
 		}),
 	},
+	video({
+		name: "Veo 3.1 Fast",
+		text: "fal-ai/veo3.1/fast",
+		ratios: ["16:9", "9:16"],
+		durations: [4, 6, 8],
+		duration: (seconds) => `${seconds}s`,
+		seed: true,
+		usdPerSecond: 0.15,
+	}),
+	video({
+		name: "Veo 3",
+		text: "fal-ai/veo3",
+		image: {
+			endpoint: "fal-ai/veo3/image-to-video",
+			field: "image_url",
+			takesRatio: true,
+		},
+		ratios: ["16:9", "9:16"],
+		durations: [4, 6, 8],
+		duration: (seconds) => `${seconds}s`,
+		seed: true,
+		usdPerSecond: 0.4,
+	}),
+	video({
+		name: "Kling 2.5 Turbo Pro",
+		text: "fal-ai/kling-video/v2.5-turbo/pro/text-to-video",
+		image: {
+			endpoint: "fal-ai/kling-video/v2.5-turbo/pro/image-to-video",
+			field: "image_url",
+			takesRatio: false,
+		},
+		ratios: ["16:9", "9:16", "1:1"],
+		durations: [5, 10],
+		duration: String,
+		seed: false,
+		usdPerSecond: 0.07,
+	}),
+	video({
+		name: "Kling 4",
+		text: "kling/v4/text-to-video",
+		image: {
+			endpoint: "kling/v4/image-to-video",
+			field: "start_image_url",
+			takesRatio: false,
+		},
+		ratios: ["16:9", "9:16", "1:1", "21:9"],
+		durations: [5, 10, 15],
+		duration: Number,
+		seed: false,
+		usdPerSecond: 0.235,
+	}),
+	video({
+		name: "Hailuo H3",
+		text: "minimax/h3/text-to-video",
+		ratios: ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
+		durations: [5, 10, 15],
+		duration: Number,
+		seed: true,
+		usdPerSecond: 0.13,
+	}),
+	video({
+		name: "Wan 3.0",
+		text: "alibaba/wan-3.0/text-to-video",
+		ratios: [],
+		durations: [5, 10, 15],
+		duration: Number,
+		seed: true,
+		usdPerSecond: 0.2,
+	}),
 ];
 
 export interface FalHandle {
@@ -225,18 +348,25 @@ export class FalProvider implements ProviderAdapter<FalHandle> {
 			yield { type: "failed", error: await errorMessage(response) };
 			return;
 		}
+		type File = { url: string; content_type?: string };
 		const result = (await response.json()) as {
-			images?: { url: string; content_type?: string }[];
+			images?: File[];
+			video?: File;
 		};
-		if (!result.images?.length) {
-			yield { type: "failed", error: "fal returned no images" };
+		const files = result.video ? [result.video] : (result.images ?? []);
+		if (files.length === 0) {
+			yield { type: "failed", error: "fal returned no result" };
 			return;
 		}
 		yield {
 			type: "completed",
-			outputs: result.images.map((image) => ({
-				url: image.url,
-				mime: image.content_type,
+			outputs: files.map((file) => ({
+				url: file.url,
+				// Video endpoints do not all report a type, and these all produce MP4.
+				mime:
+					result.video && !file.content_type?.startsWith("video/")
+						? "video/mp4"
+						: file.content_type,
 			})),
 		};
 	}

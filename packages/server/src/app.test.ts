@@ -234,3 +234,52 @@ test("the event stream reports a job from start to finish", async () => {
 	expect(text).toContain("event: job.updated");
 	await reader.cancel();
 });
+
+test("a stored file can be read in ranges, as video players do", async () => {
+	const { call } = await setup();
+	const bytes = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1];
+	const upload = await call("/api/assets", {
+		method: "POST",
+		body: new Uint8Array(bytes),
+	});
+	const { id } = (await upload.json()) as { id: string };
+	const get = (range: string) =>
+		call(`/api/assets/${id}`, { headers: { range } });
+	const read = async (response: Response) =>
+		Array.from(new Uint8Array(await response.arrayBuffer()));
+
+	expect((await call(`/api/assets/${id}`)).headers.get("accept-ranges")).toBe(
+		"bytes",
+	);
+
+	const middle = await get("bytes=1-3");
+	expect(middle.status).toBe(206);
+	expect(middle.headers.get("content-range")).toBe("bytes 1-3/9");
+	expect(middle.headers.get("content-length")).toBe("3");
+	expect(middle.headers.get("content-type")).toBe("image/png");
+	expect(await read(middle)).toEqual(bytes.slice(1, 4));
+
+	const open = await get("bytes=7-");
+	expect(open.headers.get("content-range")).toBe("bytes 7-8/9");
+	expect(await read(open)).toEqual(bytes.slice(7));
+
+	const beyond = await get("bytes=4-999");
+	expect(beyond.headers.get("content-range")).toBe("bytes 4-8/9");
+
+	const suffix = await get("bytes=-2");
+	expect(suffix.headers.get("content-range")).toBe("bytes 7-8/9");
+	expect(await read(suffix)).toEqual(bytes.slice(7));
+
+	for (const range of ["bytes=9-", "bytes=5-2", "bytes=-0"]) {
+		const response = await get(range);
+		expect(response.status).toBe(416);
+		expect(response.headers.get("content-range")).toBe("bytes */9");
+	}
+
+	// Anything that is not one byte range is answered with the whole file.
+	for (const range of ["bytes=0-1,4-5", "items=0-1", "bytes=-"]) {
+		const response = await get(range);
+		expect(response.status).toBe(200);
+		expect(await read(response)).toEqual(bytes);
+	}
+});

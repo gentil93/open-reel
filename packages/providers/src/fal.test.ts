@@ -210,3 +210,90 @@ test("a transient polling error is retried instead of losing the job", async () 
 	).toEqual([{ type: "failed", error: "Unavailable" }]);
 	expect(down.calls).toHaveLength(6);
 });
+
+test("a video is asked for by length, in the form its endpoint expects", async () => {
+	const { fetch, calls } = scripted([
+		[200, SUBMITTED],
+		[200, SUBMITTED],
+	]);
+	const fal = new FalProvider(fetch, 0);
+	const request = {
+		params: params({ aspectRatio: "16:9", seed: 7, durationSeconds: 8 }),
+		references: [],
+	};
+	await fal.submit({ ...request, model: model(fal, "fal/fal-ai/veo3") }, ctx());
+	expect(calls[0]).toMatchObject({
+		url: "https://queue.fal.run/fal-ai/veo3",
+		body: {
+			prompt: "a red fox",
+			duration: "8s",
+			aspect_ratio: "16:9",
+			seed: 7,
+		},
+	});
+
+	await fal.submit(
+		{
+			params: params({ durationSeconds: 10 }),
+			references: [],
+			model: model(fal, "fal/kling/v4/text-to-video"),
+		},
+		ctx(),
+	);
+	expect(calls[1]?.body).toEqual({ prompt: "a red fox", duration: 10 });
+});
+
+test("a first frame switches a video model to its image endpoint", async () => {
+	const { fetch, calls } = scripted([[200, SUBMITTED]]);
+	const fal = new FalProvider(fetch, 0);
+	await fal.submit(
+		{
+			model: model(fal, "fal/fal-ai/kling-video/v2.5-turbo/pro/text-to-video"),
+			params: params({ aspectRatio: "9:16", durationSeconds: 5 }),
+			references: [{ data: new Uint8Array([1, 2, 3]), mime: "image/png" }],
+		},
+		ctx(),
+	);
+	expect(calls[0]?.url).toBe(
+		"https://queue.fal.run/fal-ai/kling-video/v2.5-turbo/pro/image-to-video",
+	);
+	// This endpoint takes its shape from the image, not from a ratio.
+	expect(calls[0]?.body).toEqual({
+		prompt: "a red fox",
+		duration: "5",
+		image_url: "data:image/png;base64,AQID",
+	});
+});
+
+test("a video result is one MP4, whatever type the endpoint reports", async () => {
+	const handle = {
+		statusUrl: `${BASE}/status`,
+		responseUrl: BASE,
+		cancelUrl: `${BASE}/cancel`,
+	};
+	const result = async (video: object) =>
+		(
+			await collect(
+				new FalProvider(
+					scripted([
+						[200, { status: "COMPLETED" }],
+						[200, { video }],
+					]).fetch,
+					0,
+				).events(handle, ctx()),
+			)
+		).at(-1);
+
+	const url = "https://v3.fal.media/clip.mp4";
+	expect(await result({ url })).toEqual({
+		type: "completed",
+		outputs: [{ url, mime: "video/mp4" }],
+	});
+	expect(
+		await result({ url, content_type: "application/octet-stream" }),
+	).toEqual({ type: "completed", outputs: [{ url, mime: "video/mp4" }] });
+	expect(await result({ url, content_type: "video/webm" })).toEqual({
+		type: "completed",
+		outputs: [{ url, mime: "video/webm" }],
+	});
+});

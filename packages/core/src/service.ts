@@ -4,6 +4,7 @@ import type { JobEngine } from "./engine";
 import { NotFoundError, ValidationError } from "./errors";
 import { newId } from "./ids";
 import type { KeyStore } from "./keys";
+import { sniffMime } from "./mime";
 import type { ProviderRegistry } from "./provider";
 import {
 	type Asset,
@@ -28,18 +29,7 @@ export interface ReelServiceDeps {
 	engine: JobEngine;
 }
 
-/** The image type the bytes really are, whatever the uploader claimed. */
-function sniffImageMime(data: Uint8Array): string | null {
-	const starts = (bytes: number[], at = 0) =>
-		bytes.every((byte, i) => data[at + i] === byte);
-	if (starts([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
-		return "image/png";
-	if (starts([0xff, 0xd8, 0xff])) return "image/jpeg";
-	// "RIFF" <size> "WEBP"
-	if (starts([0x52, 0x49, 0x46, 0x46]) && starts([0x57, 0x45, 0x42, 0x50], 8))
-		return "image/webp";
-	return null;
-}
+const UPLOAD_MIMES = ["image/png", "image/jpeg", "image/webp"];
 
 /** Fits the requested parameters to what one model supports. */
 export function adaptParams(
@@ -54,9 +44,19 @@ export function adaptParams(
 				: `${model.name} accepts at most ${caps.maxReferenceImages} reference images`,
 		);
 	}
+	const durations = caps.durations ?? [];
+	// Always explicit, so the stored parameters say what was actually asked for.
+	// Unasked, the shortest: providers bill video by the second.
+	const wanted = params.durationSeconds ?? durations[0];
 	return {
 		...params,
 		count: Math.min(params.count, caps.maxCount),
+		durationSeconds:
+			wanted == null || durations.length === 0
+				? undefined
+				: durations.reduce((best, d) =>
+						Math.abs(d - wanted) < Math.abs(best - wanted) ? d : best,
+					),
 		aspectRatio:
 			params.aspectRatio && caps.aspectRatios.includes(params.aspectRatio)
 				? params.aspectRatio
@@ -150,6 +150,9 @@ export class ReelService {
 		if (references.length !== new Set(params.referenceAssetIds).size) {
 			throw new ValidationError("A reference image was not found");
 		}
+		if (references.some((asset) => !asset.mime.startsWith("image/"))) {
+			throw new ValidationError("Only images can be used as references");
+		}
 		const jobParams = models.map((model) => adaptParams(model, params));
 
 		const now = Date.now();
@@ -210,8 +213,9 @@ export class ReelService {
 	}
 
 	async uploadAsset(ctx: UserContext, data: Uint8Array): Promise<Asset> {
-		const mime = sniffImageMime(data);
-		if (!mime) {
+		// The claimed type is ignored; the bytes decide.
+		const mime = sniffMime(data);
+		if (!mime || !UPLOAD_MIMES.includes(mime)) {
 			throw new ValidationError(
 				"Only PNG, JPEG and WebP images can be uploaded",
 			);
