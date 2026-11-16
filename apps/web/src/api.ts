@@ -2,6 +2,7 @@ import type {
 	Asset,
 	CreateTurnInput,
 	GalleryItem,
+	LocalModelsView,
 	ModelSpec,
 	ProviderStatus,
 	Session,
@@ -16,7 +17,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 		const body = await response.json().catch(() => null);
 		throw new Error(body?.error ?? `Request failed (HTTP ${response.status})`);
 	}
-	return response.status === 204 ? (undefined as T) : response.json();
+	// 202 and 204 carry no body.
+	return response.status === 200 || response.status === 201
+		? response.json()
+		: (undefined as T);
 }
 
 const send = (method: string, body: unknown): RequestInit => ({
@@ -49,6 +53,13 @@ export const api = {
 			headers: { "content-type": file.type },
 			body: file,
 		}),
+	localModels: () => request<LocalModelsView>("/api/local-models"),
+	installModel: (id: string) =>
+		request<void>(`/api/local-models/${id}/install`, { method: "POST" }),
+	cancelModel: (id: string) =>
+		request<void>(`/api/local-models/${id}/cancel`, { method: "POST" }),
+	deleteModel: (id: string) =>
+		request<void>(`/api/local-models/${id}`, { method: "DELETE" }),
 	gallery: (query: string, before?: GalleryItem) => {
 		const search = new URLSearchParams({ limit: String(GALLERY_PAGE) });
 		if (query) search.set("query", query);
@@ -62,3 +73,5 @@ export const api = {
 
 export const GALLERY_PAGE = 60;
 export const assetUrl = (id: string) => `/api/assets/${id}`;
+export const demoUrl = (modelId: string, index: number) =>
+	`/api/local-models/${modelId}/demos/${index}`;

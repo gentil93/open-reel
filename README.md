@@ -9,11 +9,14 @@ your machine, and uses your own API keys.
   next prompt, or the first frame of a video.
 - **Keep everything.** Every result is saved locally with the prompt and
   parameters that produced it, in a searchable gallery.
+- **Manage local models.** See what each open model can do and what it takes
+  on disk, then download, pause, resume or delete it. Generating with them is
+  not available yet.
 
 Supported today: [fal](https://fal.ai), [Replicate](https://replicate.com) and
 [OpenRouter](https://openrouter.ai) for images and video, and OpenAI (GPT
-Image) and Google Gemini (Nano Banana) for images. A desktop app and locally
-run models are planned.
+Image) and Google Gemini (Nano Banana) for images. A desktop app and running
+the downloaded models are planned.
 
 ## Run it
 
@@ -37,7 +40,7 @@ Keys can also come from the environment: `FAL_KEY`, `OPENAI_API_KEY`,
 
 ## Your data
 
-Sessions, images and keys live in `~/.local/share/open-reel` (or
+Sessions, images, keys and downloaded models live in `~/.local/share/open-reel` (or
 `$XDG_DATA_HOME/open-reel`, or `$OPEN_REEL_DATA_DIR`). The directory is
 readable only by you. Keys are sent only to the provider they belong to and are
 never returned by the API.
@@ -56,7 +59,7 @@ bun test && bun run typecheck && bun run lint
 | Package              | What it holds                                                |
 | -------------------- | ------------------------------------------------------------ |
 | `packages/core`      | Domain types, job engine, storage, and the provider contract |
-| `packages/providers` | One adapter per provider                                     |
+| `packages/providers` | One adapter per provider, and the catalog of local models    |
 | `packages/server`    | HTTP API and the live event stream                           |
 | `packages/cli`       | The `open-reel` command                                      |
 | `apps/web`           | The React interface                                          |

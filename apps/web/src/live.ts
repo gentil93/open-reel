@@ -1,4 +1,8 @@
-import type { EngineEvent, JobView } from "@open-reel/core/types";
+import type {
+	EngineEvent,
+	JobView,
+	LocalModelEvent,
+} from "@open-reel/core/types";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useSyncExternalStore } from "react";
 import type { SessionDetail } from "./api";
@@ -18,6 +22,20 @@ export function useProgress(jobId: string): string | undefined {
 			return () => watchers.delete(watcher);
 		},
 		() => progress.get(jobId),
+	);
+}
+
+type ModelProgress = Extract<LocalModelEvent, { type: "model.progress" }>;
+// Latest progress per model being installed, for the same reason.
+const modelProgress = new Map<string, ModelProgress>();
+
+export function useModelProgress(modelId: string): ModelProgress | undefined {
+	return useSyncExternalStore(
+		(watcher) => {
+			watchers.add(watcher);
+			return () => watchers.delete(watcher);
+		},
+		() => modelProgress.get(modelId),
 	);
 }
 
@@ -55,9 +73,23 @@ export function useLiveJobs(): void {
 		let connectedBefore = false;
 		source.addEventListener("ready", () => {
 			// After a reconnect, events may have been missed.
-			if (connectedBefore)
+			if (connectedBefore) {
 				void client.invalidateQueries({ queryKey: ["session"] });
+				void client.invalidateQueries({ queryKey: ["local-models"] });
+			}
 			connectedBefore = true;
+		});
+		source.addEventListener("models.changed", () => {
+			// An install started or ended; what was known about it is stale.
+			modelProgress.clear();
+			notify();
+			void client.invalidateQueries({ queryKey: ["local-models"] });
+		});
+		source.addEventListener("model.progress", (message) => {
+			const event = JSON.parse(message.data) as LocalModelEvent;
+			if (event.type !== "model.progress") return;
+			modelProgress.set(event.id, event);
+			notify();
 		});
 		source.addEventListener("job.updated", (message) => {
 			const event = JSON.parse(message.data) as EngineEvent;

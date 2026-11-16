@@ -155,3 +155,81 @@ export type EngineEvent =
 			fraction?: number;
 			message?: string;
 	  };
+
+/** One file of a model that runs on this machine. */
+export interface LocalModelFile {
+	/** The name the file is known by, unique within its model. */
+	name: string;
+	/** Where to download it from. Pinned to a revision, so it never changes. */
+	url: string;
+	size: number;
+	/** Checked after downloading. Files with the same hash are stored once. */
+	sha256: string;
+}
+
+/** A sample of what a model produces, published by its authors. */
+export interface LocalModelDemo {
+	url: string;
+	media: Media;
+	caption?: string;
+}
+
+/** A model that can be downloaded and kept on this machine. */
+export interface LocalModelSpec {
+	id: string;
+	name: string;
+	author: string;
+	media: Media;
+	summary: string;
+	license: string;
+	/** The model's page, for its full description and license terms. */
+	homepage: string;
+	files: LocalModelFile[];
+	demos: LocalModelDemo[];
+}
+
+export type LocalModelState =
+	| "available"
+	| "queued"
+	| "downloading"
+	| "verifying"
+	| "installed";
+
+export interface LocalModelStatus
+	extends Omit<LocalModelSpec, "files" | "demos"> {
+	state: LocalModelState;
+	files: { name: string; size: number; present: boolean }[];
+	/** Demos are fetched through the server, by their position in this list. */
+	demos: Omit<LocalModelDemo, "url">[];
+	/** What the model takes on disk once installed. */
+	size: number;
+	/** How much of `size` is on disk now, counting interrupted downloads. */
+	receivedBytes: number;
+	/** What deleting it frees: files other installed models use stay. */
+	reclaimableBytes: number;
+	/** Why the last install stopped, if it failed. */
+	error?: string;
+}
+
+export interface LocalModelsView {
+	models: LocalModelStatus[];
+	disk: {
+		/** Where models are stored. */
+		path: string;
+		freeBytes: number;
+		/** Taken by models, including interrupted downloads. */
+		usedBytes: number;
+	};
+}
+
+export type LocalModelEvent =
+	/** A model was installed, deleted, or its install started or stopped. */
+	| { type: "models.changed" }
+	| {
+			type: "model.progress";
+			id: string;
+			state: LocalModelState;
+			receivedBytes: number;
+			size: number;
+			bytesPerSecond: number;
+	  };

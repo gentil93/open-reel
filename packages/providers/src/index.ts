@@ -7,6 +7,7 @@ import { ReplicateProvider } from "./replicate";
 
 export { FalProvider } from "./fal";
 export { GoogleProvider } from "./google";
+export { builtinLocalModels } from "./local-models";
 export { OpenAIProvider } from "./openai";
 export { OpenRouterProvider } from "./openrouter";
 export { ReplicateProvider } from "./replicate";

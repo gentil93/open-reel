@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FakeProvider } from "@open-reel/core";
+import { FakeProvider, type LocalModelSpec } from "@open-reel/core";
 import {
 	createApp,
 	createRuntime,
@@ -15,6 +15,30 @@ afterEach(async () => {
 	for (const cleanup of cleanups.splice(0)) await cleanup();
 });
 
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]);
+const WEIGHTS = new TextEncoder().encode("the weights of a small model");
+const LOCAL_MODEL: LocalModelSpec = {
+	id: "tiny",
+	name: "Tiny",
+	author: "Example",
+	media: "image",
+	summary: "A model for tests.",
+	license: "MIT",
+	homepage: "https://models.example",
+	files: [
+		{
+			name: "tiny.safetensors",
+			url: "https://models.example/tiny.safetensors",
+			size: WEIGHTS.byteLength,
+			sha256: new Bun.CryptoHasher("sha256").update(WEIGHTS).digest("hex"),
+		},
+	],
+	demos: [{ url: "https://models.example/demo.png", media: "image" }],
+};
+/** Stands in for the hosts models and their demos are downloaded from. */
+const download = async (url: string) =>
+	new Response(url.endsWith(".png") ? PNG : WEIGHTS);
+
 async function setup() {
 	// A nested path that does not exist yet, as on a first run.
 	const root = await mkdtemp(join(tmpdir(), "open-reel-server-"));
@@ -23,6 +47,8 @@ async function setup() {
 	const runtime: Runtime = await createRuntime({
 		dataDir: dir,
 		providers: [provider],
+		localModels: [LOCAL_MODEL],
+		fetch: download,
 	});
 	cleanups.push(async () => {
 		await runtime.engine.idle();
@@ -282,4 +308,71 @@ test("a stored file can be read in ranges, as video players do", async () => {
 		expect(response.status).toBe(200);
 		expect(await read(response)).toEqual(bytes);
 	}
+});
+
+test("a local model is listed, installed, and deleted", async () => {
+	const { call, runtime } = await setup();
+	type View = {
+		models: { id: string; state: string; size: number; demos: object[] }[];
+		disk: { freeBytes: number; usedBytes: number };
+	};
+	const list = async () =>
+		(await (await call("/api/local-models")).json()) as View;
+
+	const before = await list();
+	expect(before.models).toHaveLength(1);
+	expect(before.models[0]).toMatchObject({
+		id: "tiny",
+		state: "available",
+		size: WEIGHTS.byteLength,
+		demos: [{ media: "image" }],
+	});
+	// Where files come from is the server's business.
+	expect(JSON.stringify(before)).not.toContain("models.example/");
+
+	const stream = await call("/api/events");
+	const reader = (stream.body as ReadableStream<Uint8Array>).getReader();
+	const install = await call("/api/local-models/tiny/install", {
+		method: "POST",
+	});
+	expect(install.status).toBe(202);
+	await runtime.models.idle();
+	const installed = await list();
+	expect(installed.models[0]?.state).toBe("installed");
+	expect(installed.disk.usedBytes).toBe(WEIGHTS.byteLength);
+	let text = "";
+	while (!text.includes("event: models.changed")) {
+		text += new TextDecoder().decode((await reader.read()).value);
+	}
+	await reader.cancel();
+
+	const remove = await call("/api/local-models/tiny", { method: "DELETE" });
+	expect(remove.status).toBe(204);
+	expect((await list()).disk.usedBytes).toBe(0);
+
+	for (const [path, method] of [
+		["/api/local-models/nope/install", "POST"],
+		["/api/local-models/nope/cancel", "POST"],
+		["/api/local-models/nope", "DELETE"],
+		["/api/local-models/nope/demos/0", "GET"],
+		["/api/local-models/tiny/demos/7", "GET"],
+		["/api/local-models/tiny/demos/x", "GET"],
+	] as const) {
+		expect((await call(path, { method })).status).toBe(404);
+	}
+});
+
+test("a model's demo is served from this origin, and never as a page", async () => {
+	const { call } = await setup();
+	const demo = await call("/api/local-models/tiny/demos/0");
+	expect(demo.status).toBe(200);
+	expect(demo.headers.get("content-type")).toBe("image/png");
+	expect(demo.headers.get("content-security-policy")).toBe("sandbox");
+	expect(new Uint8Array(await demo.arrayBuffer())).toEqual(PNG);
+
+	const part = await call("/api/local-models/tiny/demos/0", {
+		headers: { range: "bytes=0-3" },
+	});
+	expect(part.status).toBe(206);
+	expect(part.headers.get("content-range")).toBe("bytes 0-3/9");
 });

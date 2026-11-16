@@ -4,6 +4,7 @@ import { api } from "./api";
 import { Chat } from "./Chat";
 import { Gallery } from "./Gallery";
 import { useLiveJobs } from "./live";
+import { Models } from "./Models";
 import { href, navigate, useRoute } from "./route";
 import { Settings } from "./Settings";
 
@@ -96,10 +97,13 @@ export function App() {
 						<li className="px-3 py-2 text-sm text-dim">Nothing yet.</li>
 					)}
 				</ul>
-				<div className="border-t border-line p-2">
+				<div className="flex flex-col gap-1 border-t border-line p-2">
+					<a href={href.models} className={navLink(route.view === "models")}>
+						Local models
+					</a>
 					<a
 						href={href.settings}
-						className={`block ${navLink(route.view === "settings")}`}
+						className={navLink(route.view === "settings")}
 					>
 						Providers
 					</a>
@@ -113,6 +117,9 @@ export function App() {
 					</a>
 					<a href={href.gallery} className={navLink(route.view === "gallery")}>
 						Gallery
+					</a>
+					<a href={href.models} className={navLink(route.view === "models")}>
+						Models
 					</a>
 					<a
 						href={href.settings}
@@ -131,6 +138,7 @@ export function App() {
 					/>
 				)}
 				{route.view === "gallery" && <Gallery addReference={addReference} />}
+				{route.view === "models" && <Models />}
 				{route.view === "settings" && <Settings />}
 			</main>
 		</div>

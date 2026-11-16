@@ -6,16 +6,19 @@ import {
 	FileKeyStore,
 	FsAssetStore,
 	JobEngine,
+	type LocalModelSpec,
+	LocalModelStore,
 	type ProviderAdapter,
 	ProviderRegistry,
 	ReelService,
 	SqliteRepository,
 } from "@open-reel/core";
-import { builtinProviders } from "@open-reel/providers";
+import { builtinLocalModels, builtinProviders } from "@open-reel/providers";
 
 export interface Runtime {
 	service: ReelService;
 	engine: JobEngine;
+	models: LocalModelStore;
 	/** Resumes jobs left unfinished by a previous process. */
 	start(): Promise<void>;
 	close(): void;
@@ -62,6 +65,10 @@ export interface RuntimeOptions {
 	dataDir: string;
 	/** Defaults to the built-in providers. */
 	providers?: ProviderAdapter[];
+	/** Models that can be downloaded. Defaults to the built-in catalog. */
+	localModels?: LocalModelSpec[];
+	/** Used to download models and their demos. */
+	fetch?: (url: string, init?: RequestInit) => Promise<Response>;
 }
 
 /** Wires the core on a data directory. Call `start()` once ready to run jobs. */
@@ -83,11 +90,19 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 	const keys = new FileKeyStore(join(options.dataDir, "auth.json"));
 	const engine = new JobEngine({ repo, assets, registry, keys });
 	const service = new ReelService({ repo, assets, registry, keys, engine });
+	const models = new LocalModelStore({
+		root: join(options.dataDir, "models"),
+		catalog: options.localModels ?? builtinLocalModels(),
+		fetch: options.fetch,
+	});
 	return {
 		service,
 		engine,
+		models,
 		start: () => engine.start(),
 		close: () => {
+			// Downloads stop with the process; what they fetched is resumed later.
+			void models.close();
 			repo.close();
 			unlock();
 		},

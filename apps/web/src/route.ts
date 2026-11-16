@@ -3,11 +3,13 @@ import { useSyncExternalStore } from "react";
 export type Route =
 	| { view: "chat"; sessionId?: string }
 	| { view: "gallery" }
+	| { view: "models" }
 	| { view: "settings" };
 
 function parse(hash: string): Route {
 	const [, first, second] = hash.replace(/^#/, "").split("/");
 	if (first === "gallery") return { view: "gallery" };
+	if (first === "models") return { view: "models" };
 	if (first === "settings") return { view: "settings" };
 	if (first === "s" && second) return { view: "chat", sessionId: second };
 	return { view: "chat" };
@@ -27,6 +29,7 @@ export const href = {
 	newChat: "#/",
 	session: (id: string) => `#/s/${id}`,
 	gallery: "#/gallery",
+	models: "#/models",
 	settings: "#/settings",
 };
 

@@ -1,6 +1,7 @@
 import {
 	type JobEngine,
 	LOCAL_USER,
+	type LocalModelStore,
 	NotFoundError,
 	type ReelService,
 	type UserContext,
@@ -13,6 +14,7 @@ import { streamSSE } from "hono/streaming";
 export interface AppOptions {
 	service: ReelService;
 	engine: JobEngine;
+	models: LocalModelStore;
 	/** Extra origins allowed to call the API, e.g. the Vite dev server. */
 	allowedOrigins?: string[];
 	/** Maps a request to its user. Local installs have a single user. */
@@ -48,8 +50,41 @@ function parseRange(
 	return start >= size || start > end ? "unsatisfiable" : { start, end };
 }
 
+/** Answers with a stored file, whole or the range the request asks for. */
+function serveFile(c: Context, blob: Blob, mime: string): Response {
+	const headers = {
+		"content-type": mime,
+		"accept-ranges": "bytes",
+		"cache-control": "private, max-age=31536000, immutable",
+		// Stored files come from outside; they must never run as a page.
+		"x-content-type-options": "nosniff",
+		"content-security-policy": "sandbox",
+	};
+	// Browsers ask for videos in pieces and cannot seek without this.
+	const range = parseRange(c.req.header("range"), blob.size);
+	if (range === "unsatisfiable") {
+		return new Response(null, {
+			status: 416,
+			headers: { ...headers, "content-range": `bytes */${blob.size}` },
+		});
+	}
+	if (range) {
+		return new Response(blob.slice(range.start, range.end + 1), {
+			status: 206,
+			headers: {
+				...headers,
+				"content-length": String(range.end - range.start + 1),
+				"content-range": `bytes ${range.start}-${range.end}/${blob.size}`,
+			},
+		});
+	}
+	return new Response(blob, {
+		headers: { ...headers, "content-length": String(blob.size) },
+	});
+}
+
 export function createApp(options: AppOptions): Hono {
-	const { service, engine } = options;
+	const { service, engine, models } = options;
 	const user = options.resolveUser ?? (() => LOCAL_USER);
 	const app = new Hono();
 
@@ -157,34 +192,28 @@ export function createApp(options: AppOptions): Hono {
 			user(c),
 			c.req.param("id"),
 		);
-		const headers = {
-			"content-type": asset.mime,
-			"accept-ranges": "bytes",
-			"cache-control": "private, max-age=31536000, immutable",
-			"x-content-type-options": "nosniff",
-			"content-security-policy": "sandbox",
-		};
-		// Browsers ask for videos in pieces and cannot seek without this.
-		const range = parseRange(c.req.header("range"), asset.size);
-		if (range === "unsatisfiable") {
-			return new Response(null, {
-				status: 416,
-				headers: { ...headers, "content-range": `bytes */${asset.size}` },
-			});
-		}
-		if (range) {
-			return new Response(blob.slice(range.start, range.end + 1), {
-				status: 206,
-				headers: {
-					...headers,
-					"content-length": String(range.end - range.start + 1),
-					"content-range": `bytes ${range.start}-${range.end}/${asset.size}`,
-				},
-			});
-		}
-		return new Response(blob, {
-			headers: { ...headers, "content-length": String(asset.size) },
-		});
+		return serveFile(c, blob, asset.mime);
+	});
+
+	// Models are shared by everyone using this installation.
+	app.get("/api/local-models", async (c) => c.json(await models.list()));
+	app.post("/api/local-models/:id/install", async (c) => {
+		await models.install(c.req.param("id"));
+		return c.body(null, 202);
+	});
+	app.post("/api/local-models/:id/cancel", async (c) => {
+		await models.cancel(c.req.param("id"));
+		return c.body(null, 204);
+	});
+	app.delete("/api/local-models/:id", async (c) => {
+		await models.remove(c.req.param("id"));
+		return c.body(null, 204);
+	});
+	app.get("/api/local-models/:id/demos/:index", async (c) => {
+		const index = Number(c.req.param("index"));
+		if (!Number.isInteger(index)) throw new NotFoundError("Demo not found");
+		const demo = await models.demo(c.req.param("id"), index);
+		return serveFile(c, demo.blob, demo.mime);
 	});
 
 	app.get("/api/gallery", async (c) => {
@@ -215,13 +244,19 @@ export function createApp(options: AppOptions): Hono {
 	app.get("/api/events", (c) => {
 		const { userId } = user(c);
 		return streamSSE(c, async (stream) => {
-			const unsubscribe = engine.subscribe((target, event) => {
-				if (target !== userId) return;
+			const send = (event: { type: string }) =>
 				void stream.writeSSE({
 					event: event.type,
 					data: JSON.stringify(event),
 				});
+			const unsubscribeJobs = engine.subscribe((target, event) => {
+				if (target === userId) send(event);
 			});
+			const unsubscribeModels = models.subscribe(send);
+			const unsubscribe = () => {
+				unsubscribeJobs();
+				unsubscribeModels();
+			};
 			stream.onAbort(unsubscribe);
 			await stream.writeSSE({ event: "ready", data: "{}" });
 			// Keeps the connection alive through idle proxies and detects dead clients.
