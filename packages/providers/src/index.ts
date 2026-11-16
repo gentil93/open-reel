@@ -5,6 +5,7 @@ import { OpenAIProvider } from "./openai";
 import { OpenRouterProvider } from "./openrouter";
 import { ReplicateProvider } from "./replicate";
 
+export { builtinEngines } from "./engines";
 export { FalProvider } from "./fal";
 export { GoogleProvider } from "./google";
 export { builtinLocalModels } from "./local-models";

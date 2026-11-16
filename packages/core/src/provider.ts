@@ -42,6 +42,11 @@ export interface ProviderAdapter<Handle = unknown> {
 	requiresKey: boolean;
 	/** Whether `events` can re-attach to a handle after a process restart. */
 	resumable: boolean;
+	/**
+	 * How many of its jobs may run at once, when fewer than the engine's
+	 * default. Local models share one GPU, so they run one at a time.
+	 */
+	maxConcurrency?: number;
 	/** Overrides `resumable` for providers where it depends on the request. */
 	isResumable?(handle: Handle): boolean;
 	listModels(): ModelSpec[];
@@ -63,6 +68,16 @@ export class ProviderRegistry {
 			this.models.set(model.id, model);
 		}
 		return this;
+	}
+
+	/** Reads an adapter's models again, for providers whose list changes. */
+	refresh(providerId: string): void {
+		const adapter = this.adapters.get(providerId);
+		if (!adapter) return;
+		for (const [id, model] of this.models) {
+			if (model.providerId === providerId) this.models.delete(id);
+		}
+		for (const model of adapter.listModels()) this.models.set(model.id, model);
 	}
 
 	adapter(providerId: string): ProviderAdapter | undefined {

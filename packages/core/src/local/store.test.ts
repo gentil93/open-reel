@@ -1,0 +1,660 @@
+import { afterEach, expect, test } from "bun:test";
+import { mkdir, mkdtemp, readdir, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+	type Hardware,
+	type LocalEngineSpec,
+	type LocalModelEvent,
+	type LocalModelSpec,
+	LocalModelStore,
+	type LocalModelVariant,
+	NotFoundError,
+	ValidationError,
+} from "../index";
+import { zip } from "./testing";
+
+const dirs: string[] = [];
+afterEach(async () => {
+	for (const dir of dirs.splice(0)) await rm(dir, { recursive: true });
+});
+
+const GB = 1024 ** 3;
+const bytes = (text: string) => new TextEncoder().encode(text);
+const sha256 = (data: Uint8Array) =>
+	new Bun.CryptoHasher("sha256").update(data).digest("hex");
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]);
+
+const UNET_A = bytes("weights of model a");
+const UNET_A_SMALL = bytes("model a, quantized");
+const UNET_B = bytes("weights of model b, a little longer");
+const ENCODER = bytes("a text encoder both models use");
+const ENGINE = zip([
+	{ name: "bin/run", data: bytes("#!/bin/sh\necho run") },
+	{ name: "lib/backend.so", data: bytes("a backend library") },
+]);
+const url = (name: string) => `https://models.example/${name}`;
+
+const file = (name: string, data: Uint8Array, role?: string) => ({
+	name,
+	url: url(name),
+	size: data.byteLength,
+	sha256: sha256(data),
+	...(role && { role }),
+});
+const variant = (
+	id: string,
+	memory: number,
+	files: LocalModelVariant["files"],
+): LocalModelVariant => ({
+	id,
+	label: id,
+	engine: "run",
+	memoryBytes: memory * GB,
+	files,
+});
+const model = (
+	id: string,
+	variants: LocalModelVariant[],
+	demos: LocalModelSpec["demos"] = [],
+): LocalModelSpec => ({
+	id,
+	name: `Model ${id}`,
+	author: "Example",
+	media: "image",
+	summary: "A model for tests.",
+	license: "MIT",
+	homepage: "https://models.example",
+	variants,
+	demos,
+	defaults: { size: 512, aspectRatios: ["1:1"], steps: 1, cfgScale: 1 },
+});
+const ENCODER_FILE = file("encoder.safetensors", ENCODER, "encoder");
+const CATALOG = [
+	model(
+		"a",
+		[
+			variant("full", 16, [
+				file("a.safetensors", UNET_A, "model"),
+				ENCODER_FILE,
+			]),
+			variant("small", 4, [
+				file("a-small.gguf", UNET_A_SMALL, "model"),
+				ENCODER_FILE,
+			]),
+		],
+		[
+			{ url: url("demo.png"), media: "image", caption: "A sample" },
+			{ url: url("page.html"), media: "image" },
+		],
+	),
+	model("b", [
+		variant("full", 4, [file("b.safetensors", UNET_B, "model"), ENCODER_FILE]),
+	]),
+];
+const ENGINES: LocalEngineSpec[] = [
+	{
+		id: "run",
+		name: "Runner",
+		homepage: "https://engine.example",
+		license: "MIT",
+		builds: [
+			{
+				id: "run-linux-x64-cuda",
+				engine: "run",
+				version: "1",
+				backend: "cuda",
+				os: "linux",
+				arch: "x64",
+				files: [file("engine.zip", ENGINE)],
+				executable: "bin/run",
+			},
+			{
+				id: "run-linux-x64-cpu",
+				engine: "run",
+				version: "1",
+				backend: "cpu",
+				os: "linux",
+				arch: "x64",
+				files: [file("engine.zip", ENGINE)],
+				executable: "bin/run",
+			},
+		],
+	},
+];
+
+const machine = (gpuMemory: number | null, memory = 32): Hardware => ({
+	os: "linux",
+	arch: "x64",
+	wsl: false,
+	memoryBytes: memory * GB,
+	gpus:
+		gpuMemory == null
+			? []
+			: [{ vendor: "nvidia", name: "Card", memoryBytes: gpuMemory * GB }],
+});
+
+/** A server holding `files`, answering ranges as a download host does. */
+function remote(files: Record<string, Uint8Array>) {
+	const requests: { url: string; range: string | null }[] = [];
+	const control = {
+		/** When set, a download stalls on this after its first bytes. */
+		hold: null as Promise<void> | null,
+		status: 200,
+		ignoreRange: false,
+		/** How many bytes to leave out of the end of each answer. */
+		cut: 0,
+	};
+	const fetch = async (target: string, init?: RequestInit) => {
+		const range = new Headers(init?.headers).get("range");
+		requests.push({ url: target, range });
+		const data = files[target];
+		if (!data) return new Response("Not found", { status: 404 });
+		if (control.status !== 200) {
+			return new Response("Unavailable", { status: control.status });
+		}
+		const start =
+			range && !control.ignoreRange ? Number(range.match(/\d+/)?.[0]) : 0;
+		const body = data.slice(start, data.length - control.cut);
+		const signal = init?.signal;
+		const { hold } = control;
+		const stream = new ReadableStream<Uint8Array>({
+			async start(controller) {
+				const aborted = new Promise<never>((_, reject) => {
+					signal?.addEventListener("abort", () => reject(signal.reason));
+				});
+				try {
+					controller.enqueue(body.slice(0, 4));
+					if (hold) await Promise.race([hold, aborted]);
+					if (body.length > 4) controller.enqueue(body.slice(4));
+					controller.close();
+				} catch (error) {
+					controller.error(error);
+				}
+			},
+		});
+		return new Response(stream, { status: start > 0 ? 206 : 200 });
+	};
+	return { fetch, requests, control };
+}
+
+const HOSTED = {
+	[url("a.safetensors")]: UNET_A,
+	[url("a-small.gguf")]: UNET_A_SMALL,
+	[url("b.safetensors")]: UNET_B,
+	[url("encoder.safetensors")]: ENCODER,
+	[url("engine.zip")]: ENGINE,
+	[url("demo.png")]: PNG,
+	[url("page.html")]: bytes("<script>alert(1)</script>"),
+};
+
+async function setup(
+	options: { hardware?: Hardware; catalog?: LocalModelSpec[] } = {},
+) {
+	const root = await mkdtemp(join(tmpdir(), "open-reel-models-"));
+	dirs.push(root);
+	const host = remote(HOSTED);
+	const hardware = options.hardware ?? machine(24);
+	const store = new LocalModelStore({
+		root,
+		catalog: options.catalog ?? CATALOG,
+		engines: ENGINES,
+		fetch: host.fetch,
+		hardware: async () => hardware,
+	});
+	const events: LocalModelEvent[] = [];
+	store.subscribe((event) => events.push(event));
+	const status = async (id: string) => {
+		const found = (await store.list()).models.find((m) => m.id === id);
+		if (!found) throw new Error(`Not listed: ${id}`);
+		return found;
+	};
+	const blobs = () => readdir(join(root, "blobs")).catch(() => []);
+	const engines = () => readdir(join(root, "engines")).catch(() => []);
+	return { root, store, events, status, blobs, engines, ...host };
+}
+
+function gate() {
+	let open!: () => void;
+	const promise = new Promise<void>((resolve) => {
+		open = resolve;
+	});
+	return { promise, open };
+}
+
+async function until(condition: () => Promise<boolean> | boolean) {
+	for (let i = 0; i < 200; i++) {
+		if (await condition()) return;
+		await Bun.sleep(5);
+	}
+	throw new Error("Timed out waiting for a condition");
+}
+
+const A_FULL = UNET_A.length + ENCODER.length;
+const A_SMALL = UNET_A_SMALL.length + ENCODER.length;
+
+test("lists each model with the variant this machine runs best", async () => {
+	const { store } = await setup();
+	const view = await store.list();
+	expect(view.hardware.gpus[0]?.memoryBytes).toBe(24 * GB);
+	expect(view.engines).toEqual([
+		{
+			engine: "run",
+			name: "Runner",
+			build: "run-linux-x64-cuda",
+			version: "1",
+			backend: "cuda",
+			throughWindows: false,
+			installed: false,
+			size: ENGINE.length,
+			usedBy: [],
+		},
+	]);
+	const [a] = view.models;
+	expect(a).toMatchObject({
+		state: "available",
+		variant: "full",
+		installed: false,
+		// The engine is part of the first install.
+		size: A_FULL + ENGINE.length,
+		receivedBytes: 0,
+		reclaimableBytes: 0,
+		demos: [{ media: "image", caption: "A sample" }, { media: "image" }],
+	});
+	expect(a?.variants.map((v) => [v.id, v.fit, v.size])).toEqual([
+		["full", "gpu", A_FULL],
+		["small", "gpu", A_SMALL],
+	]);
+	// Where files come from stays on the server.
+	expect(JSON.stringify(view)).not.toContain("models.example/");
+	expect(view.disk.usedBytes).toBe(0);
+});
+
+test("a smaller card gets the smaller variant, and says what the larger needs", async () => {
+	const { store, status } = await setup({ hardware: machine(8) });
+	const a = await status("a");
+	expect(a.variant).toBe("small");
+	expect(a.variants.map((v) => v.fit)).toEqual(["offload", "gpu"]);
+
+	await store.install("a");
+	await store.idle();
+	expect(await status("a")).toMatchObject({
+		installed: true,
+		variant: "small",
+	});
+});
+
+test("installing fetches the engine and the files, and runs from them", async () => {
+	const { store, status, events, blobs, engines, root } = await setup();
+	await store.install("a");
+	expect((await status("a")).state).not.toBe("available");
+	await store.idle();
+
+	const installed = await status("a");
+	expect(installed).toMatchObject({
+		state: "installed",
+		installed: true,
+		variant: "full",
+		// The engine is extracted, so its archive no longer counts.
+		size: A_FULL,
+		receivedBytes: A_FULL,
+	});
+	expect(installed.error).toBeUndefined();
+	expect(await engines()).toEqual(["run-linux-x64-cuda"]);
+	// The archive is dropped once extracted.
+	expect((await blobs()).sort()).toEqual(
+		[sha256(UNET_A), sha256(ENCODER)].sort(),
+	);
+
+	const runtime = await store.runtime("a");
+	expect(runtime.variant.id).toBe("full");
+	expect(runtime.build.id).toBe("run-linux-x64-cuda");
+	expect(runtime.throughWindows).toBe(false);
+	expect(runtime.executable).toBe(
+		join(root, "engines", "run-linux-x64-cuda", "bin", "run"),
+	);
+	expect((await stat(runtime.executable)).mode & 0o111).toBeTruthy();
+	expect(await Bun.file(runtime.files.model as string).bytes()).toEqual(UNET_A);
+	expect(Object.keys(runtime.files)).toEqual(["model", "encoder"]);
+
+	const view = await store.list();
+	expect(view.engines[0]).toMatchObject({ installed: true, usedBy: ["a"] });
+	expect(view.disk.usedBytes).toBeGreaterThan(A_FULL);
+
+	await Bun.sleep(20); // progress is reported off the download's own path
+	expect(events.at(-1)).toEqual({ type: "models.changed" });
+	expect(events.some((e) => e.type === "model.progress")).toBe(true);
+
+	// Installing again does nothing.
+	const before = events.length;
+	await store.install("a");
+	expect(events).toHaveLength(before);
+});
+
+test("models share files and the engine; the engine goes with the last one", async () => {
+	const { store, status, requests, blobs, engines } = await setup();
+	await store.install("a");
+	await store.idle();
+	expect(await status("b")).toMatchObject({
+		installed: false,
+		// Neither the encoder nor the engine needs downloading again.
+		size: UNET_B.length + ENCODER.length,
+		receivedBytes: ENCODER.length,
+		reclaimableBytes: 0,
+	});
+
+	await store.install("b");
+	await store.idle();
+	expect(requests.map((r) => r.url)).toEqual([
+		url("engine.zip"),
+		url("a.safetensors"),
+		url("encoder.safetensors"),
+		url("b.safetensors"),
+	]);
+	// Deleting one frees only what the other does not use.
+	expect((await status("a")).reclaimableBytes).toBe(UNET_A.length);
+
+	await store.remove("a");
+	expect(await status("a")).toMatchObject({ state: "available" });
+	expect((await status("b")).state).toBe("installed");
+	expect((await blobs()).sort()).toEqual(
+		[sha256(UNET_B), sha256(ENCODER)].sort(),
+	);
+	expect(await engines()).toEqual(["run-linux-x64-cuda"]);
+	expect(store.runtime("a")).rejects.toBeInstanceOf(ValidationError);
+
+	// The last model takes its engine with it.
+	const b = await status("b");
+	expect(b.reclaimableBytes).toBeGreaterThan(UNET_B.length + ENCODER.length);
+	await store.remove("b");
+	expect(await blobs()).toEqual([]);
+	expect(await engines()).toEqual([]);
+	expect((await store.list()).disk.usedBytes).toBe(0);
+});
+
+test("another variant can be asked for, unless it cannot run here", async () => {
+	const { store, status } = await setup({ hardware: machine(null, 16) });
+	expect((await status("a")).variants.map((v) => v.fit)).toEqual([
+		"none",
+		"cpu",
+	]);
+	expect(store.install("a", "full")).rejects.toThrow(
+		"does not run on this machine",
+	);
+	expect(store.install("a", "nope")).rejects.toBeInstanceOf(NotFoundError);
+
+	await store.install("a", "small");
+	await store.idle();
+	const runtime = await store.runtime("a");
+	expect(runtime.variant.id).toBe("small");
+	expect(runtime.build.id).toBe("run-linux-x64-cpu");
+});
+
+test("a model no variant of which fits is refused", async () => {
+	const { store, status } = await setup({ hardware: machine(null, 2) });
+	expect((await status("a")).variant).toBeNull();
+	expect(store.install("a")).rejects.toThrow("does not run on this machine");
+});
+
+test("a model installed before variants existed keeps working", async () => {
+	const { store, root, status } = await setup();
+	await store.install("a", "small");
+	await store.idle();
+	// The marker of an older version: empty, naming no variant.
+	await Bun.write(join(root, "installed", "a"), "");
+	expect(await status("a")).toMatchObject({
+		installed: true,
+		variant: "small",
+	});
+	expect((await store.runtime("a")).variant.id).toBe("small");
+});
+
+test("an installed model without its engine gets the engine on install", async () => {
+	const { store, root, status, requests } = await setup();
+	await store.install("a", "small");
+	await store.idle();
+	await rm(join(root, "engines"), { recursive: true });
+	expect(await status("a")).toMatchObject({ installed: true, ready: false });
+	expect(store.runtime("a")).rejects.toThrow("engine");
+
+	requests.length = 0;
+	await store.install("a");
+	await store.idle();
+	expect(await status("a")).toMatchObject({ ready: true, variant: "small" });
+	// Only the engine was downloaded again.
+	expect(requests.map((r) => r.url)).toEqual([url("engine.zip")]);
+});
+
+test("a canceled install keeps what it downloaded and resumes from there", async () => {
+	const { store, status, requests, control, blobs } = await setup();
+	await store.install("b");
+	await store.idle();
+	control.hold = new Promise(() => {});
+	await store.install("a");
+	await until(
+		async () => (await status("a")).receivedBytes === ENCODER.length + 4,
+	);
+	expect((await status("a")).state).toBe("downloading");
+
+	await store.cancel("a");
+	expect(await status("a")).toMatchObject({
+		state: "available",
+		receivedBytes: ENCODER.length + 4,
+	});
+	expect((await status("a")).error).toBeUndefined();
+	expect(await blobs()).toContain(`${sha256(UNET_A)}.part`);
+
+	control.hold = null;
+	await store.install("a");
+	await store.idle();
+	expect((await status("a")).state).toBe("installed");
+	expect(requests.filter((r) => r.url === url("a.safetensors"))).toEqual([
+		{ url: url("a.safetensors"), range: null },
+		{ url: url("a.safetensors"), range: "bytes=4-" },
+	]);
+	expect(
+		await Bun.file((await store.runtime("a")).files.model as string).bytes(),
+	).toEqual(UNET_A);
+});
+
+test("a host that ignores the range is downloaded from the start", async () => {
+	const { store, status, control } = await setup();
+	control.hold = new Promise(() => {});
+	await store.install("a");
+	await until(async () => (await status("a")).receivedBytes === 4);
+	await store.cancel("a");
+
+	control.hold = null;
+	control.ignoreRange = true;
+	await store.install("a");
+	await store.idle();
+	expect(await status("a")).toMatchObject({ state: "installed" });
+});
+
+test("deleting a half-downloaded model removes what it had fetched", async () => {
+	const { store, status, control, blobs } = await setup();
+	control.hold = new Promise(() => {});
+	await store.install("a");
+	await until(async () => (await status("a")).receivedBytes === 4);
+	await store.remove("a");
+	expect(await status("a")).toMatchObject({
+		state: "available",
+		receivedBytes: 0,
+	});
+	expect(await blobs()).toEqual([]);
+});
+
+test("a file that fails its check is discarded and reported", async () => {
+	const { store, status, blobs, root } = await setup();
+	const tampered = remote({
+		...HOSTED,
+		[url("a.safetensors")]: bytes("weights of model A"), // same length
+	});
+	const bad = new LocalModelStore({
+		root,
+		catalog: CATALOG,
+		engines: ENGINES,
+		fetch: tampered.fetch,
+		hardware: async () => machine(24),
+	});
+	await bad.install("a");
+	await bad.idle();
+	const failed = (await bad.list()).models[0];
+	expect(failed?.state).toBe("available");
+	expect(failed?.error).toBe("a.safetensors did not match its expected hash");
+	expect(await blobs()).not.toContain(sha256(UNET_A));
+	expect(await blobs()).not.toContain(`${sha256(UNET_A)}.part`);
+
+	// Trying again starts clean, and the engine is not fetched twice.
+	await store.install("a");
+	await store.idle();
+	expect(await status("a")).toMatchObject({ state: "installed" });
+});
+
+test("a broken engine archive fails the install and leaves nothing half extracted", async () => {
+	const broken = bytes("this is not a zip archive at all");
+	const { root } = await setup();
+	const engines: LocalEngineSpec[] = [
+		{
+			...(ENGINES[0] as LocalEngineSpec),
+			builds: (ENGINES[0] as LocalEngineSpec).builds.map((build) => ({
+				...build,
+				files: [file("broken.zip", broken)],
+			})),
+		},
+	];
+	const host = remote({ ...HOSTED, [url("broken.zip")]: broken });
+	const store = new LocalModelStore({
+		root,
+		catalog: CATALOG,
+		engines,
+		fetch: host.fetch,
+		hardware: async () => machine(24),
+	});
+	await store.install("b");
+	await store.idle();
+	const b = (await store.list()).models[1];
+	expect(b?.error).toBe("Not a zip archive");
+	expect(b?.installed).toBe(false);
+	expect(await readdir(join(root, "engines")).catch(() => [])).toEqual([]);
+});
+
+test("a download that fails or is cut short is reported, and can be retried", async () => {
+	const { store, status, control } = await setup();
+	control.status = 503;
+	await store.install("a");
+	await store.idle();
+	expect((await status("a")).error).toBe(
+		"Could not download engine.zip (HTTP 503)",
+	);
+
+	control.status = 200;
+	control.cut = 1;
+	await store.install("a");
+	await store.idle();
+	expect((await status("a")).error).toBe(
+		"The download of engine.zip was cut short",
+	);
+
+	control.cut = 0;
+	await store.install("a");
+	await store.idle();
+	const done = await status("a");
+	expect(done.state).toBe("installed");
+	expect(done.error).toBeUndefined();
+});
+
+test("installs run one at a time, and a waiting one cancels at once", async () => {
+	const { store, status, control } = await setup();
+	const hold = gate();
+	control.hold = hold.promise;
+	await store.install("a");
+	await store.install("b");
+	await until(async () => (await status("a")).state === "downloading");
+	expect((await status("b")).state).toBe("queued");
+
+	await store.cancel("b");
+	expect((await status("b")).state).toBe("available");
+	hold.open();
+	await store.idle();
+	expect((await status("a")).state).toBe("installed");
+	expect((await status("b")).state).toBe("available");
+});
+
+test("refuses a model that does not fit on the disk", async () => {
+	const huge = { ...file("huge.safetensors", UNET_A), size: 1e18 };
+	const { store, requests } = await setup({
+		catalog: [model("huge", [variant("full", 1, [huge])])],
+	});
+	expect(store.install("huge")).rejects.toThrow("Not enough disk space");
+	await store.idle();
+	expect(requests).toHaveLength(0);
+});
+
+test("unknown models and malformed catalogs are refused", async () => {
+	const { store, root } = await setup();
+	expect(store.install("nope")).rejects.toBeInstanceOf(NotFoundError);
+	expect(store.remove("nope")).rejects.toBeInstanceOf(NotFoundError);
+
+	const invalid =
+		(catalog: LocalModelSpec[], engines: LocalEngineSpec[] = ENGINES) =>
+		() =>
+			new LocalModelStore({ root, catalog, engines });
+	const good = file("a.safetensors", UNET_A);
+	const one = (files = [good], engine = "run") => [
+		model("a", [{ ...variant("v", 1, files), engine }]),
+	];
+	expect(invalid([model("../escape", [variant("v", 1, [good])])])).toThrow(
+		"Invalid or repeated",
+	);
+	expect(invalid([model("a", [])])).toThrow("without variants");
+	expect(invalid(one([]))).toThrow("has no files");
+	expect(invalid(one([good, good]))).toThrow("Repeated file name");
+	expect(invalid(one([{ ...good, sha256: "abc" }]))).toThrow("Invalid hash");
+	expect(invalid(one([{ ...good, url: "http://models.example/a" }]))).toThrow(
+		"Not an HTTPS URL",
+	);
+	expect(invalid(one([good], "missing"))).toThrow("Unknown engine");
+	expect(
+		invalid([
+			model(
+				"a",
+				[variant("v", 1, [good])],
+				[{ url: "file:///etc/passwd", media: "image" }],
+			),
+		]),
+	).toThrow("Not an HTTPS URL");
+	const engine = ENGINES[0] as LocalEngineSpec;
+	const build = engine.builds[0] as LocalEngineSpec["builds"][number];
+	expect(
+		invalid(one(), [
+			{ ...engine, builds: [{ ...build, executable: "../../bin/sh" }] },
+		]),
+	).toThrow("Unsafe executable path");
+});
+
+test("a demo is fetched once, kept, and served as what its bytes are", async () => {
+	const { store, requests } = await setup();
+	const [first, second] = await Promise.all([
+		store.demo("a", 0),
+		store.demo("a", 0),
+	]);
+	expect(first.mime).toBe("image/png");
+	expect(await first.blob.bytes()).toEqual(PNG);
+	expect(second.mime).toBe("image/png");
+	await store.demo("a", 0);
+	expect(requests).toEqual([{ url: url("demo.png"), range: null }]);
+
+	// Whatever the catalog links to, only images and videos are stored.
+	expect(store.demo("a", 1)).rejects.toThrow("not an image or a video");
+	expect(store.demo("a", 2)).rejects.toBeInstanceOf(NotFoundError);
+	expect(store.demo("a", -1)).rejects.toBeInstanceOf(NotFoundError);
+});
+
+test("leftover temporary folders are not taken for engines", async () => {
+	const { store, root } = await setup();
+	await mkdir(join(root, "engines", "run-linux-x64-cuda.1234.tmp"), {
+		recursive: true,
+	});
+	expect((await store.list()).engines[0]?.installed).toBe(false);
+});

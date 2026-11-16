@@ -54,8 +54,11 @@ export const api = {
 			body: file,
 		}),
 	localModels: () => request<LocalModelsView>("/api/local-models"),
-	installModel: (id: string) =>
-		request<void>(`/api/local-models/${id}/install`, { method: "POST" }),
+	installModel: (id: string, variant?: string) =>
+		request<void>(
+			`/api/local-models/${id}/install`,
+			send("POST", variant ? { variant } : {}),
+		),
 	cancelModel: (id: string) =>
 		request<void>(`/api/local-models/${id}/cancel`, { method: "POST" }),
 	deleteModel: (id: string) =>

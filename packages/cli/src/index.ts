@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { defaultDataDir } from "@open-reel/core";
+import { defaultDataDir, defaultModelsDir } from "@open-reel/core";
 import {
 	createApp,
 	createRuntime,
@@ -44,7 +44,11 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 
 const WEB_DIST = join(import.meta.dir, "..", "..", "..", "apps", "web", "dist");
 const dataDir = values["data-dir"] ?? defaultDataDir();
-const runtime = await createRuntime({ dataDir }).catch((error) => {
+// An explicit data directory keeps everything, models included, inside it.
+const modelsDir = values["data-dir"]
+	? join(dataDir, "models")
+	: await defaultModelsDir(dataDir);
+const runtime = await createRuntime({ dataDir, modelsDir }).catch((error) => {
 	if (!(error instanceof DataDirInUseError)) throw error;
 	console.error(`${error.message}.`);
 	process.exit(1);
@@ -87,6 +91,9 @@ await runtime.start();
 const url = `http://localhost:${server.port}`;
 console.log(`open-reel is running at ${url}`);
 console.log(`Data directory: ${dataDir}`);
+if (modelsDir !== join(dataDir, "models")) {
+	console.log(`Local models: ${modelsDir}`);
+}
 
 if (!values.dev && !values["no-open"]) {
 	const opener =

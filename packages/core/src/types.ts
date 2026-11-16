@@ -156,15 +156,95 @@ export type EngineEvent =
 			message?: string;
 	  };
 
-/** One file of a model that runs on this machine. */
+export type GpuVendor = "nvidia" | "amd" | "apple" | "intel";
+
+export interface Gpu {
+	vendor: GpuVendor;
+	name: string;
+	/** Memory the GPU can use. On Apple silicon it shares the system's. */
+	memoryBytes: number;
+	/** The NVIDIA driver version, which decides the CUDA versions it runs. */
+	driver?: string;
+}
+
+export interface Hardware {
+	os: "linux" | "darwin" | "win32" | "other";
+	arch: "x64" | "arm64" | "other";
+	/** Linux under Windows: the GPU is reached through the Windows driver. */
+	wsl: boolean;
+	memoryBytes: number;
+	gpus: Gpu[];
+}
+
+/** How an engine reaches the hardware. */
+export type Backend = "cuda" | "rocm" | "metal" | "vulkan" | "cpu";
+
+/** How well a variant of a model runs on this machine. */
+export type Fit =
+	/** On the GPU, at full speed. */
+	| "gpu"
+	/** On the GPU, moving weights in from system memory: slower. */
+	| "offload"
+	/** On the CPU: much slower. */
+	| "cpu"
+	/** Not at all: it does not fit in this machine's memory. */
+	| "none";
+
+/** A file to download, checked by its hash after downloading. */
 export interface LocalModelFile {
-	/** The name the file is known by, unique within its model. */
+	/** The name the file is known by, unique within its variant or build. */
 	name: string;
 	/** Where to download it from. Pinned to a revision, so it never changes. */
 	url: string;
 	size: number;
-	/** Checked after downloading. Files with the same hash are stored once. */
+	/** Files with the same hash are stored once. */
 	sha256: string;
+	/** What the engine uses it for, e.g. "vae". */
+	role?: string;
+}
+
+/** What is needed to pick a build for a machine. */
+export interface EngineBuildSpec {
+	id: string;
+	engine: string;
+	backend: Backend;
+	os: "linux" | "darwin" | "win32";
+	arch: "x64" | "arm64";
+	/** The oldest NVIDIA driver it runs on, as `major.minor`. */
+	minNvidiaDriver?: string;
+}
+
+/** One downloadable build of an engine, for one platform and backend. */
+export interface EngineBuild extends EngineBuildSpec {
+	version: string;
+	/** Zip archives, extracted together into the build's folder. */
+	files: LocalModelFile[];
+	/** The program to run, relative to the build's folder. */
+	executable: string;
+}
+
+/** A program that runs local models. */
+export interface LocalEngineSpec {
+	id: string;
+	name: string;
+	homepage: string;
+	license: string;
+	builds: EngineBuild[];
+}
+
+/** What is needed to pick a variant for a machine. */
+export interface VariantSpec {
+	id: string;
+	/** What sets it apart, e.g. "4-bit". */
+	label: string;
+	engine: string;
+	/** GPU memory to run at full speed, without offloading. */
+	memoryBytes: number;
+}
+
+/** One way to run a model: its weights at one precision, for one engine. */
+export interface LocalModelVariant extends VariantSpec {
+	files: LocalModelFile[];
 }
 
 /** A sample of what a model produces, published by its authors. */
@@ -172,6 +252,23 @@ export interface LocalModelDemo {
 	url: string;
 	media: Media;
 	caption?: string;
+}
+
+/** How a local model is run when the request does not say otherwise. */
+export interface LocalModelDefaults {
+	/** The longer side of the output, in pixels; the other follows the ratio. */
+	size: number;
+	aspectRatios: string[];
+	steps: number;
+	cfgScale: number;
+	sampler?: string;
+	/** Tells the model what to avoid; some models are trained to expect one. */
+	negativePrompt?: string;
+	/** Shift of the noise schedule, for flow models such as Wan. */
+	flowShift?: number;
+	/** Video models: frames per second, and the lengths they can make. */
+	fps?: number;
+	durations?: number[];
 }
 
 /** A model that can be downloaded and kept on this machine. */
@@ -184,8 +281,10 @@ export interface LocalModelSpec {
 	license: string;
 	/** The model's page, for its full description and license terms. */
 	homepage: string;
-	files: LocalModelFile[];
+	/** Best quality first. */
+	variants: LocalModelVariant[];
 	demos: LocalModelDemo[];
+	defaults: LocalModelDefaults;
 }
 
 export type LocalModelState =
@@ -195,29 +294,63 @@ export type LocalModelState =
 	| "verifying"
 	| "installed";
 
-export interface LocalModelStatus
-	extends Omit<LocalModelSpec, "files" | "demos"> {
-	state: LocalModelState;
+export interface LocalVariantStatus extends VariantSpec {
+	fit: Fit;
+	/** What its files take on disk. */
+	size: number;
 	files: { name: string; size: number; present: boolean }[];
-	/** Demos are fetched through the server, by their position in this list. */
-	demos: Omit<LocalModelDemo, "url">[];
-	/** What the model takes on disk once installed. */
+}
+
+export interface LocalModelStatus
+	extends Omit<LocalModelSpec, "variants" | "demos" | "defaults"> {
+	state: LocalModelState;
+	variants: LocalVariantStatus[];
+	/**
+	 * The variant installed, or being installed, or the one an install would
+	 * pick for this machine. Null when no variant runs here.
+	 */
+	variant: string | null;
+	/** Whether `variant` is installed, rather than proposed. */
+	installed: boolean;
+	/** Installed with its engine, so it can run. */
+	ready: boolean;
+	/** What installing `variant` downloads: its files and, if missing, its engine. */
 	size: number;
 	/** How much of `size` is on disk now, counting interrupted downloads. */
 	receivedBytes: number;
 	/** What deleting it frees: files other installed models use stay. */
 	reclaimableBytes: number;
+	/** Demos are fetched through the server, by their position in this list. */
+	demos: Omit<LocalModelDemo, "url">[];
 	/** Why the last install stopped, if it failed. */
 	error?: string;
 }
 
+/** The build of an engine this machine would run. */
+export interface LocalEngineStatus {
+	engine: string;
+	name: string;
+	build: string;
+	version: string;
+	backend: Backend;
+	/** Run from WSL as a Windows program, to reach the GPU. */
+	throughWindows: boolean;
+	installed: boolean;
+	/** What it takes to download. */
+	size: number;
+	/** Installed models that run on it. It is deleted with the last one. */
+	usedBy: string[];
+}
+
 export interface LocalModelsView {
+	hardware: Hardware;
+	engines: LocalEngineStatus[];
 	models: LocalModelStatus[];
 	disk: {
-		/** Where models are stored. */
+		/** Where models and engines are stored. */
 		path: string;
 		freeBytes: number;
-		/** Taken by models, including interrupted downloads. */
+		/** Taken by models and engines, including interrupted downloads. */
 		usedBytes: number;
 	};
 }

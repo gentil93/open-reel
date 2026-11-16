@@ -253,6 +253,23 @@ describe("job engine", () => {
 		expect(app.provider.submitted).toHaveLength(1);
 	});
 
+	test("a provider can run fewer jobs at once than the engine allows", async () => {
+		const provider = Object.assign(new FakeProvider(), { maxConcurrency: 1 });
+		const app = boot(await tempDir(), provider, 4);
+		const g = gate();
+		provider.gate = g.promise;
+		const { session } = await app.service.createTurn(LOCAL_USER, {
+			prompt: "x",
+			modelIds: ["fake/alpha", "fake/beta"],
+		});
+		await settle();
+		const during = (await app.service.getSession(LOCAL_USER, session.id))
+			.turns[0]?.jobs;
+		expect(during?.map((j) => j.status)).toEqual(["running", "queued"]);
+		g.open();
+		await app.engine.idle();
+	});
+
 	test("reports progress and status changes to listeners", async () => {
 		const app = boot(await tempDir());
 		const seen: string[] = [];

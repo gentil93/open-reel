@@ -2,7 +2,12 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FakeProvider, type LocalModelSpec } from "@open-reel/core";
+import {
+	FakeProvider,
+	type LocalEngineSpec,
+	type LocalModelSpec,
+} from "@open-reel/core";
+import { zip } from "@open-reel/core/testing";
 import {
 	createApp,
 	createRuntime,
@@ -17,6 +22,36 @@ afterEach(async () => {
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]);
 const WEIGHTS = new TextEncoder().encode("the weights of a small model");
+const ENGINE = zip([{ name: "run", data: new TextEncoder().encode("run") }]);
+const hash = (data: Uint8Array) =>
+	new Bun.CryptoHasher("sha256").update(data).digest("hex");
+const ENGINES: LocalEngineSpec[] = [
+	{
+		id: "run",
+		name: "Runner",
+		homepage: "https://engine.example",
+		license: "MIT",
+		builds: [
+			{
+				id: "run-cpu",
+				engine: "run",
+				version: "1",
+				backend: "cpu",
+				os: "linux",
+				arch: "x64",
+				executable: "run",
+				files: [
+					{
+						name: "run.zip",
+						url: "https://models.example/run.zip",
+						size: ENGINE.byteLength,
+						sha256: hash(ENGINE),
+					},
+				],
+			},
+		],
+	},
+];
 const LOCAL_MODEL: LocalModelSpec = {
 	id: "tiny",
 	name: "Tiny",
@@ -25,19 +60,31 @@ const LOCAL_MODEL: LocalModelSpec = {
 	summary: "A model for tests.",
 	license: "MIT",
 	homepage: "https://models.example",
-	files: [
+	variants: [
 		{
-			name: "tiny.safetensors",
-			url: "https://models.example/tiny.safetensors",
-			size: WEIGHTS.byteLength,
-			sha256: new Bun.CryptoHasher("sha256").update(WEIGHTS).digest("hex"),
+			id: "full",
+			label: "Full",
+			engine: "run",
+			memoryBytes: 1,
+			files: [
+				{
+					name: "tiny.safetensors",
+					url: "https://models.example/tiny.safetensors",
+					size: WEIGHTS.byteLength,
+					sha256: hash(WEIGHTS),
+					role: "model",
+				},
+			],
 		},
 	],
 	demos: [{ url: "https://models.example/demo.png", media: "image" }],
+	defaults: { size: 512, aspectRatios: ["1:1"], steps: 1, cfgScale: 1 },
 };
 /** Stands in for the hosts models and their demos are downloaded from. */
 const download = async (url: string) =>
-	new Response(url.endsWith(".png") ? PNG : WEIGHTS);
+	new Response(
+		url.endsWith(".png") ? PNG : url.endsWith(".zip") ? ENGINE : WEIGHTS,
+	);
 
 async function setup() {
 	// A nested path that does not exist yet, as on a first run.
@@ -48,6 +95,14 @@ async function setup() {
 		dataDir: dir,
 		providers: [provider],
 		localModels: [LOCAL_MODEL],
+		engines: ENGINES,
+		hardware: async () => ({
+			os: "linux",
+			arch: "x64",
+			wsl: false,
+			memoryBytes: 8 * 1024 ** 3,
+			gpus: [],
+		}),
 		fetch: download,
 	});
 	cleanups.push(async () => {
@@ -324,7 +379,8 @@ test("a local model is listed, installed, and deleted", async () => {
 	expect(before.models[0]).toMatchObject({
 		id: "tiny",
 		state: "available",
-		size: WEIGHTS.byteLength,
+		// The engine comes with the first model.
+		size: WEIGHTS.byteLength + ENGINE.byteLength,
 		demos: [{ media: "image" }],
 	});
 	// Where files come from is the server's business.
@@ -339,7 +395,8 @@ test("a local model is listed, installed, and deleted", async () => {
 	await runtime.models.idle();
 	const installed = await list();
 	expect(installed.models[0]?.state).toBe("installed");
-	expect(installed.disk.usedBytes).toBe(WEIGHTS.byteLength);
+	// The weights and the extracted engine.
+	expect(installed.disk.usedBytes).toBe(WEIGHTS.byteLength + 3);
 	let text = "";
 	while (!text.includes("event: models.changed")) {
 		text += new TextDecoder().decode((await reader.read()).value);

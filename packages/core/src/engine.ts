@@ -119,7 +119,9 @@ export class JobEngine {
 
 	private pump(providerId: string): void {
 		const queue = this.waiting.get(providerId) ?? [];
-		while ((this.active.get(providerId) ?? 0) < this.limit) {
+		const adapter = this.deps.registry.adapter(providerId);
+		const limit = Math.min(this.limit, adapter?.maxConcurrency ?? this.limit);
+		while ((this.active.get(providerId) ?? 0) < limit) {
 			const jobId = queue.shift();
 			if (!jobId) return;
 			this.active.set(providerId, (this.active.get(providerId) ?? 0) + 1);

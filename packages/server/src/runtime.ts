@@ -5,15 +5,22 @@ import {
 	FakeProvider,
 	FileKeyStore,
 	FsAssetStore,
+	type Hardware,
 	JobEngine,
+	type LocalEngineSpec,
 	type LocalModelSpec,
 	LocalModelStore,
+	LocalProvider,
 	type ProviderAdapter,
 	ProviderRegistry,
 	ReelService,
 	SqliteRepository,
 } from "@open-reel/core";
-import { builtinLocalModels, builtinProviders } from "@open-reel/providers";
+import {
+	builtinEngines,
+	builtinLocalModels,
+	builtinProviders,
+} from "@open-reel/providers";
 
 export interface Runtime {
 	service: ReelService;
@@ -63,10 +70,16 @@ function isRunning(pid: number): boolean {
 
 export interface RuntimeOptions {
 	dataDir: string;
+	/** Where models and engines go. Defaults to `models` in the data directory. */
+	modelsDir?: string;
 	/** Defaults to the built-in providers. */
 	providers?: ProviderAdapter[];
 	/** Models that can be downloaded. Defaults to the built-in catalog. */
 	localModels?: LocalModelSpec[];
+	/** Engines that run them. Defaults to the built-in ones. */
+	engines?: LocalEngineSpec[];
+	/** Defaults to looking at this machine. */
+	hardware?: () => Promise<Hardware>;
 	/** Used to download models and their demos. */
 	fetch?: (url: string, init?: RequestInit) => Promise<Response>;
 }
@@ -79,8 +92,20 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 		fake.delayMs = 1500;
 		providers.push(fake);
 	}
+	const catalog = options.localModels ?? builtinLocalModels();
+	const models = new LocalModelStore({
+		root: options.modelsDir ?? join(options.dataDir, "models"),
+		catalog,
+		engines: options.engines ?? builtinEngines(),
+		fetch: options.fetch,
+		hardware: options.hardware,
+	});
+	// Installed local models are offered next to the remote ones.
+	const local = new LocalProvider({ store: models, catalog });
+	await local.load();
 	const registry = new ProviderRegistry();
-	for (const provider of providers) registry.register(provider);
+	for (const provider of [...providers, local]) registry.register(provider);
+	local.onChange = () => registry.refresh(local.id);
 
 	// Generated images and keys are private to the owner.
 	await mkdir(options.dataDir, { recursive: true, mode: 0o700 });
@@ -90,11 +115,6 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 	const keys = new FileKeyStore(join(options.dataDir, "auth.json"));
 	const engine = new JobEngine({ repo, assets, registry, keys });
 	const service = new ReelService({ repo, assets, registry, keys, engine });
-	const models = new LocalModelStore({
-		root: join(options.dataDir, "models"),
-		catalog: options.localModels ?? builtinLocalModels(),
-		fetch: options.fetch,
-	});
 	return {
 		service,
 		engine,

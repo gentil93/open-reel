@@ -84,6 +84,8 @@ export function useLiveJobs(): void {
 			modelProgress.clear();
 			notify();
 			void client.invalidateQueries({ queryKey: ["local-models"] });
+			// Installed models can be picked in the composer.
+			void client.invalidateQueries({ queryKey: ["models"] });
 		});
 		source.addEventListener("model.progress", (message) => {
 			const event = JSON.parse(message.data) as LocalModelEvent;

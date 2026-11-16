@@ -198,7 +198,13 @@ export function createApp(options: AppOptions): Hono {
 	// Models are shared by everyone using this installation.
 	app.get("/api/local-models", async (c) => c.json(await models.list()));
 	app.post("/api/local-models/:id/install", async (c) => {
-		await models.install(c.req.param("id"));
+		// No body, or one naming the variant to install instead of the best fit.
+		const body = await c.req.json().catch(() => ({}));
+		const variant = (body as { variant?: unknown } | null)?.variant;
+		if (variant != null && typeof variant !== "string") {
+			throw new ValidationError("variant must be a string");
+		}
+		await models.install(c.req.param("id"), variant ?? undefined);
 		return c.body(null, 202);
 	});
 	app.post("/api/local-models/:id/cancel", async (c) => {
