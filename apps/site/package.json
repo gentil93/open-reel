@@ -1,0 +1,20 @@
+{
+	"name": "@open-reel/site",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "vite",
+		"build": "vite build",
+		"typecheck": "tsc -p ."
+	},
+	"dependencies": {
+		"@fontsource/big-shoulders-display": "5.1.0",
+		"@fontsource/ibm-plex-mono": "5.1.0",
+		"@fontsource/inter-tight": "5.1.0",
+		"gsap": "3.12.5"
+	},
+	"devDependencies": {
+		"vite": "6.0.7"
+	}
+}

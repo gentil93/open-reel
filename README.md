@@ -62,6 +62,8 @@ bun test && bun run typecheck && bun run lint
 | `packages/providers` | One adapter per provider, and the catalog of local models    |
 | `packages/server`    | HTTP API and the live event stream                           |
 | `packages/cli`       | The `open-reel` command                                      |
+| `apps/web`           | The app's interface                                          |
+| `apps/site`          | The landing page (`bun run dev:site`)                        |
 | `apps/web`           | The React interface                                          |
 
 After changing `packages/core/src/db/schema.ts`, run

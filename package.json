@@ -11,10 +11,11 @@
 		"test": "bun test",
 		"lint": "biome check .",
 		"format": "biome check --write .",
-		"build": "bun run --filter '@open-reel/web' build",
+		"build": "bun run --filter '@open-reel/web' --filter '@open-reel/site' build",
 		"start": "bun packages/cli/src/index.ts",
 		"dev:server": "bun --watch packages/cli/src/index.ts --dev",
-		"dev:web": "bun run --filter '@open-reel/web' dev"
+		"dev:web": "bun run --filter '@open-reel/web' dev",
+		"dev:site": "bun run --filter '@open-reel/site' dev"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.0.0",
