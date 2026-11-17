@@ -1,0 +1,49 @@
+name: Bug report
+description: Something does not work as it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reproduce it
+      placeholder: |
+        1. Open …
+        2. Choose …
+        3. See …
+    validations:
+      required: true
+  - type: dropdown
+    id: how
+    attributes:
+      label: How you run open-reel
+      options:
+        - Desktop app
+        - From source (bun run start)
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System
+      placeholder: "Windows 11, NVIDIA RTX 4070 12 GB"
+      description: Your system, and your graphics card if the problem involves local models.
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model and provider
+      placeholder: "fal · FLUX.1 schnell"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error messages or logs
+      description: Remove any API key before pasting.
+      render: text

@@ -1,109 +1,80 @@
 # open-reel
 
 One interface for many image and video generation models. Open source, runs on
-your machine, and uses your own API keys.
+your computer, and uses your own API keys or models that run on your own
+graphics card.
 
 - **Compare models side by side.** Send one prompt to several models and see
   each result with its time and cost.
 - **Iterate like a conversation.** Any image can become the reference for your
   next prompt, or the first frame of a video.
-- **Keep everything.** Every result is saved locally with the prompt and
-  parameters that produced it, in a searchable gallery.
-- **Manage local models.** See what each open model can do and what it takes
-  on disk, then download, pause, resume or delete it. Generating with them is
-  not available yet.
+- **Run models on your computer.** open-reel looks at your hardware, picks the
+  engine and the version of each model that fits it, downloads and checks the
+  files, and runs them. Free, private, and offline once downloaded.
+- **Keep everything.** Every result is saved on your computer with the prompt
+  and parameters that produced it, in a searchable gallery.
 
-Supported today: [fal](https://fal.ai), [Replicate](https://replicate.com) and
-[OpenRouter](https://openrouter.ai) for images and video, and OpenAI (GPT
-Image) and Google Gemini (Nano Banana) for images. A desktop app and running
-the downloaded models are planned.
+| Where pictures are made             | Models                                                                          |
+| ----------------------------------- | ------------------------------------------------------------------------------- |
+| On your computer                    | SDXL Turbo, Stable Diffusion XL, FLUX.1 schnell, Z-Image Turbo, Wan 2.1 (video) |
+| [fal](https://fal.ai)               | FLUX, Veo, Kling, Hailuo, Wan and more, images and video                        |
+| [Replicate](https://replicate.com)  | Images and video                                                                |
+| [OpenRouter](https://openrouter.ai) | Images and video                                                                |
+| OpenAI                              | GPT Image                                                                       |
+| Google Gemini                       | Nano Banana                                                                     |
 
-## Run it
+The interface speaks English and Brazilian Portuguese. More languages are
+welcome: see [Translate](CONTRIBUTING.md#translate).
 
-You need [Bun](https://bun.sh) 1.4 or newer.
+## Install
+
+**Desktop app** (Windows, macOS, Linux): installers will be published on the
+[releases page](https://github.com/gentil93/open-reel/releases). Until the
+first release, run it from source.
+
+**From source**, with [Bun](https://bun.sh) 1.4 or newer:
 
 ```sh
-git clone <this repository> && cd open-reel
+git clone https://github.com/gentil93/open-reel.git && cd open-reel
 bun install
 bun run build
 bun run start
 ```
 
-This opens `http://localhost:4096`. Add an API key under **Providers**, pick
-one or more models, and write a prompt.
+This opens `http://localhost:4096`. The first screen walks you to a first
+picture: download a model that runs on your computer, or paste an API key.
 
-Options: `bun run start --port 5000 --no-open --data-dir ./data` (see
-`bun run start --help`).
-
-Keys can also come from the environment: `FAL_KEY`, `OPENAI_API_KEY`,
-`GEMINI_API_KEY`, `REPLICATE_API_TOKEN`, `OPENROUTER_API_KEY`.
+`bun run start --help` lists the options. Keys can also come from the
+environment: `FAL_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`,
+`REPLICATE_API_TOKEN`, `OPENROUTER_API_KEY`.
 
 ## Your data
 
-Sessions, images, keys and downloaded models live in `~/.local/share/open-reel` (or
-`$XDG_DATA_HOME/open-reel`, or `$OPEN_REEL_DATA_DIR`). The directory is
-readable only by you. Keys are sent only to the provider they belong to and are
-never returned by the API.
+Sessions, pictures, keys and models stay on your computer, in a directory
+readable only by you:
 
-The server listens on `127.0.0.1` only and refuses requests that do not come
-from its own page, so other websites you visit cannot use your keys.
+| System  | Directory                                                |
+| ------- | -------------------------------------------------------- |
+| Windows | `%APPDATA%\open-reel`                                    |
+| macOS   | `~/Library/Application Support/open-reel`                |
+| Linux   | `$XDG_DATA_HOME/open-reel` or `~/.local/share/open-reel` |
 
-## Translate
+`OPEN_REEL_DATA_DIR` or `--data-dir` puts it elsewhere. Under WSL, models are
+kept on the Windows side, where the graphics card driver reads them fastest.
 
-open-reel speaks English and Brazilian Portuguese, and welcomes more languages.
-Each language is one JSON file per part of the project:
+Keys are sent only to the provider they belong to and are never returned by
+the API. The server listens on `127.0.0.1` only and refuses requests that do
+not come from its own page, so other websites cannot use your keys. Nothing is
+collected about you: open-reel has no telemetry.
 
-- the app: `apps/web/src/locales/<language>.json`
-- the site: `apps/site/src/locales/<language>.json`
+## Contribute
 
-Copy `en.json`, translate the values (keep words in `{braces}` as they are),
-and add the language to the list next to the catalogs (`apps/web/src/i18n.tsx`
-and `apps/site/src/languages.ts`). Anything you leave out shows in English, so a
-partial translation is welcome too. `bun test` checks that every translation
-matches the English catalog.
-
-## Develop
-
-```sh
-OPEN_REEL_FAKE=1 bun run dev:server   # API on :4096, with a key-free fake provider
-bun run dev:web                       # UI on :5173 with hot reload
-bun test && bun run typecheck && bun run lint
-```
-
-| Package              | What it holds                                                |
-| -------------------- | ------------------------------------------------------------ |
-| `packages/core`      | Domain types, job engine, storage, and the provider contract |
-| `packages/providers` | One adapter per provider, and the catalog of local models    |
-| `packages/server`    | HTTP API and the live event stream                           |
-| `packages/cli`       | The `open-reel` command                                      |
-| `apps/web`           | The app's interface                                          |
-| `apps/site`          | The landing page (`bun run dev:site`)                        |
-| `apps/web`           | The React interface                                          |
-
-After changing `packages/core/src/db/schema.ts`, run
-`bunx drizzle-kit generate` inside `packages/core`.
-
-## Add a provider
-
-A provider is one file in `packages/providers/src` implementing
-`ProviderAdapter` from `@open-reel/core`:
-
-1. `listModels()` describes each model and what it supports (aspect ratios,
-   seed, images per request, reference images). The interface builds itself
-   from this.
-2. `submit()` starts a request and returns a JSON-serializable handle.
-3. `events()` follows that handle and yields `progress`, then `completed` or
-   `failed`.
-
-If the provider has a server-side queue, set `resumable = true` and the handle
-is used to re-attach after a restart (`fal.ts` is the example). If it answers
-in a single request, do the call inside `events()` and set `resumable = false`
-(`openai.ts`).
-
-Then register it in `packages/providers/src/index.ts` and add a test file that
-calls `providerContract(new YourProvider())` and exercises the adapter against
-a scripted `fetch`, as the existing tests do.
+Bug reports, translations, new providers and new local models are all
+welcome. [CONTRIBUTING.md](CONTRIBUTING.md) explains how the project is laid
+out, how to run it while developing, and what a pull request needs. Everyone
+taking part follows the [code of conduct](CODE_OF_CONDUCT.md). To report a
+security problem, see [SECURITY.md](SECURITY.md).
 
 ## License
 
-MIT
+[MIT](LICENSE)
