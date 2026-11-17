@@ -1,6 +1,6 @@
 import "./styles.css";
-import { develop, loadImage } from "@open-reel/motion";
 import { createTranslator, matchLanguage } from "@open-reel/i18n";
+import { develop, loadImage } from "@open-reel/motion";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { LINKS } from "./config";
@@ -67,9 +67,9 @@ for (const button of $$<HTMLAnchorElement>("[data-download]")) {
 if (!LINKS.releases)
 	for (const note of $$("[data-coming]")) note.hidden = false;
 
-/* ---------- film strips ---------- */
+/* ---------- picture strips ---------- */
 
-const REEL = [
+const PICTURES = [
 	"ramen",
 	"fisherman",
 	"whale",
@@ -83,9 +83,9 @@ const REEL = [
 
 const tracks = $$(".track");
 for (const track of tracks) {
-	const frames = REEL.map(
-		(name, i) =>
-			`<figure class="frame"><img src="${root}shots/${name}.webp" alt="" loading="lazy"><figcaption>${String(i * 3 + 12).padStart(3, "0")}A · ${t(`reel.${name}` as Key)}</figcaption></figure>`,
+	const frames = PICTURES.map(
+		(name) =>
+			`<figure class="frame"><img src="${root}shots/${name}.webp" alt="" loading="lazy"><figcaption>${t(`reel.${name}` as Key)}</figcaption></figure>`,
 	).join("");
 	// Twice over, so the loop has no seam.
 	track.innerHTML = frames + frames;
@@ -172,20 +172,8 @@ function motion(): void {
 		delay: 0.2,
 	});
 
-	// A projector light that follows the pointer across the hero.
-	const hero = $(".hero");
-	const spot = $(".spot");
-	gsap.set(spot, { x: hero.clientWidth * 0.7, y: 160 });
-	const toX = gsap.quickTo(spot, "x", { duration: 0.6, ease: "power3" });
-	const toY = gsap.quickTo(spot, "y", { duration: 0.6, ease: "power3" });
-	hero.addEventListener("pointermove", (event) => {
-		const box = hero.getBoundingClientRect();
-		toX(event.clientX - box.left);
-		toY(event.clientY - box.top);
-	});
-
-	// The film rolls on its own and speeds up with the scroll.
-	const rolls = tracks.map((track) => {
+	// The pictures drift on their own and speed up with the scroll.
+	const drifts = tracks.map((track) => {
 		const forward = Number(track.dataset.direction) < 0;
 		return gsap.fromTo(
 			track,
@@ -198,13 +186,13 @@ function motion(): void {
 		end: "max",
 		onUpdate: (self) => {
 			const boost = 1 + Math.min(6, Math.abs(self.getVelocity()) / 300);
-			for (const roll of rolls) {
-				gsap.to(roll, {
+			for (const drift of drifts) {
+				gsap.to(drift, {
 					timeScale: boost,
 					duration: 0.3,
 					overwrite: true,
 					onComplete: () => {
-						gsap.to(roll, { timeScale: 1, duration: 1.2 });
+						gsap.to(drift, { timeScale: 1, duration: 1.2 });
 					},
 				});
 			}
@@ -246,17 +234,17 @@ function motion(): void {
 			0.6,
 		);
 
-	// Contact sheet: negatives turn positive as they reach the light.
+	// Gallery: pictures sharpen as they scroll into view.
 	for (const figure of $$(".sheet figure")) {
 		ScrollTrigger.create({
 			trigger: figure,
 			start: "top 82%",
 			once: true,
-			onEnter: () => figure.classList.add("developed"),
+			onEnter: () => figure.classList.add("sharp"),
 		});
 	}
 
-	// The step numbers count up like a frame counter.
+	// The step numbers count up.
 	for (const number of $$(".steps b")) {
 		const target = Number(number.textContent);
 		const state = { n: 0 };

@@ -21,7 +21,7 @@
       "name": "@open-reel/site",
       "version": "0.0.0",
       "dependencies": {
-        "@fontsource/big-shoulders-display": "5.1.0",
+        "@fontsource/bricolage-grotesque": "5.3.0",
         "@fontsource/ibm-plex-mono": "5.1.0",
         "@fontsource/inter-tight": "5.1.0",
         "@open-reel/i18n": "workspace:*",
@@ -36,7 +36,7 @@
       "name": "@open-reel/web",
       "version": "0.0.0",
       "dependencies": {
-        "@fontsource/big-shoulders-display": "5.1.0",
+        "@fontsource/bricolage-grotesque": "5.3.0",
         "@fontsource/ibm-plex-mono": "5.1.0",
         "@fontsource/inter-tight": "5.1.0",
         "@open-reel/core": "workspace:*",
@@ -189,7 +189,7 @@
 
     "@esbuild/win32-x64": ["@esbuild/win32-x64@0.25.12", "", { "os": "win32", "cpu": "x64" }, "sha512-alJC0uCZpTFrSL0CCDjcgleBXPnCrEAhTBILpeAp7M/OFgoqtAetfBzX0xM00MUsVVPpVjlPuMbREqnZCXaTnA=="],
 
-    "@fontsource/big-shoulders-display": ["@fontsource/big-shoulders-display@5.1.0", "", {}, "sha512-2Hzxs1NSLDzLgsmBxpCarDyCYFOOR8YkUiCHZW9QMAgSExXKaEQWs4cx9NkVsmuepU/AsJ9wgmNo+diUe7gP9Q=="],
+    "@fontsource/bricolage-grotesque": ["@fontsource/bricolage-grotesque@5.3.0", "", {}, "sha512-MdOVb/5in11IfN/IQJOExMuu6AroCIQbirl0yX7NUvKk+h0HYIKfGaVAXRS/gCPil4aFxWhjZnOw28tUwv7tFw=="],
 
     "@fontsource/ibm-plex-mono": ["@fontsource/ibm-plex-mono@5.1.0", "", {}, "sha512-XKsZNyRCj6tz8zlatHmniSoLVephMD5GQG2sXgcaEb8DkUO+O61r28uTlIMEZuoZXtP4c4STvL+KUlJM5jZOEg=="],
 

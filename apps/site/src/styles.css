@@ -1,26 +1,33 @@
-@import "@fontsource/big-shoulders-display/700.css";
-@import "@fontsource/big-shoulders-display/900.css";
+@import "@fontsource/bricolage-grotesque/700.css";
+@import "@fontsource/bricolage-grotesque/800.css";
 @import "@fontsource/ibm-plex-mono/400.css";
 @import "@fontsource/ibm-plex-mono/500.css";
 @import "@fontsource/inter-tight/400.css";
 @import "@fontsource/inter-tight/500.css";
 @import "@fontsource/inter-tight/600.css";
 
-/* Darkroom: film base, safelight amber, silver highlights. One look, always dark. */
+/* Aurora: near-black surfaces, one warm gradient for what matters. Always dark. */
 :root {
 	color-scheme: dark;
-	--bg: #0d0b09;
-	--panel: #17130f;
-	--line: #2a241d;
-	--line-strong: #3a322a;
-	--fg: #efe7da;
-	--dim: #9a9083;
-	--amber: #f0a63a;
-	--amber-ink: #1a1004;
-	--red: #c8361e;
-	--display: "Big Shoulders Display", "Arial Narrow", sans-serif;
+	--bg: #09090b;
+	--panel: #141417;
+	--panel-2: #1b1b20;
+	--line: #27272a;
+	--line-strong: #3a3a40;
+	--fg: #fafafa;
+	--dim: #8b8b94;
+	--pink: #ff3d8b;
+	--orange: #ff8a3d;
+	--gold: #ffc861;
+	--aurora: linear-gradient(100deg, #ff3d8b, #ff8a3d 55%, #ffc861);
+	--ink-on-aurora: #1a0a10;
+	--good: #34d399;
+	--warn: #fbbf24;
+	--bad: #f87171;
+	--display: "Bricolage Grotesque", "Inter Tight", system-ui, sans-serif;
 	--body: "Inter Tight", system-ui, sans-serif;
 	--mono: "IBM Plex Mono", ui-monospace, monospace;
+	--ease: cubic-bezier(0.16, 1, 0.3, 1);
 	--max: 1200px;
 }
 
@@ -52,7 +59,7 @@ a {
 }
 
 :focus-visible {
-	outline: 2px solid var(--amber);
+	outline: 2px solid var(--pink);
 	outline-offset: 3px;
 }
 
@@ -66,43 +73,42 @@ a {
 	left: 16px;
 	top: -60px;
 	z-index: 100;
-	background: var(--amber);
-	color: var(--amber-ink);
+	background: var(--aurora);
+	color: var(--ink-on-aurora);
 	padding: 10px 14px;
-	border-radius: 4px;
+	border-radius: 10px;
 }
 
 .skip:focus {
 	top: 16px;
 }
 
-/* Film grain over everything, never in the way of clicks. */
-.grain {
+/* Aurora light behind the page, slowly drifting. */
+.sky {
 	pointer-events: none;
 	position: fixed;
-	inset: -50%;
-	z-index: 40;
-	opacity: 0.09;
-	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-	animation: grain 0.5s steps(4) infinite;
+	inset: -20% -10% auto;
+	height: 70vh;
+	z-index: 0;
+	background:
+		radial-gradient(40% 50% at 20% 30%, rgb(255 61 139 / 0.18), transparent 70%),
+		radial-gradient(35% 45% at 70% 20%, rgb(255 138 61 / 0.14), transparent 70%),
+		radial-gradient(30% 40% at 50% 60%, rgb(255 200 97 / 0.08), transparent 70%);
+	filter: blur(30px);
+	animation: drift 18s ease-in-out infinite alternate;
 }
 
-@keyframes grain {
-	0% {
-		transform: translate(0, 0);
+@keyframes drift {
+	to {
+		transform: translate3d(4%, 3%, 0) scale(1.08);
 	}
-	25% {
-		transform: translate(-3%, 2%);
-	}
-	50% {
-		transform: translate(2%, -3%);
-	}
-	75% {
-		transform: translate(-2%, -1%);
-	}
-	100% {
-		transform: translate(1%, 3%);
-	}
+}
+
+main,
+.nav,
+.footer {
+	position: relative;
+	z-index: 1;
 }
 
 /* ---------- nav ---------- */
@@ -119,14 +125,29 @@ a {
 }
 
 .logo {
-	font: 900 26px / 1 var(--display);
-	letter-spacing: 0.02em;
-	text-transform: uppercase;
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	font: 800 22px / 1 var(--display);
+	letter-spacing: -0.02em;
 	text-decoration: none;
 }
 
-.logo span {
-	color: var(--amber);
+.logo i {
+	position: relative;
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	background: var(--aurora);
+	box-shadow: 0 0 18px rgb(255 61 139 / 0.5);
+}
+
+.logo i::after {
+	content: "";
+	position: absolute;
+	inset: 5px;
+	border-radius: 50%;
+	background: var(--bg);
 }
 
 .nav-links {
@@ -151,13 +172,15 @@ a {
 	display: inline-flex;
 	align-items: center;
 	gap: 10px;
-	border-radius: 4px;
-	padding: 14px 20px;
-	font: 600 15px var(--body);
+	border-radius: 12px;
+	padding: 13px 20px;
+	font: 700 15px var(--display);
+	letter-spacing: -0.01em;
 	text-decoration: none;
 	transition:
-		transform 0.2s cubic-bezier(0.2, 0.7, 0.2, 1),
-		background 0.2s,
+		transform 0.2s var(--ease),
+		box-shadow 0.2s,
+		background-position 0.6s,
 		border-color 0.2s;
 }
 
@@ -165,17 +188,21 @@ a {
 	transform: scale(0.97);
 }
 
-.btn-amber {
-	background: var(--amber);
-	color: var(--amber-ink);
+.btn-primary {
+	background: var(--aurora);
+	background-size: 200% 100%;
+	color: var(--ink-on-aurora);
+	box-shadow: 0 8px 30px -8px rgb(255 61 139 / 0.6);
 }
 
-.btn-amber:hover {
-	background: #f6b85c;
+.btn-primary:hover {
+	background-position: 100% 0;
+	box-shadow: 0 12px 36px -8px rgb(255 138 61 / 0.7);
 }
 
 .btn-ghost {
 	border: 1px solid var(--line-strong);
+	font-weight: 500;
 }
 
 .btn-ghost:hover {
@@ -190,23 +217,6 @@ a {
 	padding-block: 48px 40px;
 }
 
-.spot {
-	pointer-events: none;
-	position: absolute;
-	width: 900px;
-	height: 900px;
-	left: -450px;
-	top: -450px;
-	border-radius: 50%;
-	background: radial-gradient(
-		circle,
-		rgb(240 166 58 / 0.2),
-		rgb(240 166 58 / 0.05) 35%,
-		transparent 65%
-	);
-	transform: translate(70vw, 160px);
-}
-
 .eyebrow {
 	position: relative;
 	margin: 0;
@@ -216,15 +226,15 @@ a {
 	font: 500 12px var(--mono);
 	letter-spacing: 0.14em;
 	text-transform: uppercase;
-	color: var(--amber);
+	color: var(--dim);
 }
 
 .eyebrow i {
-	width: 8px;
-	height: 8px;
+	width: 7px;
+	height: 7px;
 	border-radius: 50%;
-	background: var(--red);
-	box-shadow: 0 0 12px var(--red);
+	background: var(--good);
+	box-shadow: 0 0 10px var(--good);
 	animation: blink 1.6s ease-in-out infinite;
 }
 
@@ -237,14 +247,14 @@ a {
 h1 {
 	position: relative;
 	margin: 18px 0 0;
-	font: 900 clamp(64px, 12.5vw, 176px) / 0.86 var(--display);
-	text-transform: uppercase;
-	letter-spacing: -0.01em;
+	font: 800 clamp(48px, 9vw, 124px) / 0.98 var(--display);
+	letter-spacing: -0.04em;
 }
 
 h1 .line {
 	display: block;
 	overflow: hidden;
+	padding-bottom: 0.1em;
 }
 
 h1 .w {
@@ -253,7 +263,10 @@ h1 .w {
 
 h1 em {
 	font-style: normal;
-	color: var(--amber);
+	background: var(--aurora);
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
 }
 
 .lede {
@@ -285,44 +298,16 @@ h1 em {
 	color: var(--dim);
 }
 
-/* ---------- film strips ---------- */
+/* ---------- picture strips ---------- */
 .strips {
 	overflow: hidden;
 	padding-block: 24px 10px;
+	display: grid;
+	gap: 14px;
 }
 
 .strip {
 	position: relative;
-	background: #050403;
-	padding-block: 22px;
-	transform: rotate(-2deg) scale(1.04);
-}
-
-.strip + .strip {
-	transform: rotate(1.4deg) scale(1.04);
-	margin-top: -10px;
-}
-
-.strip::before,
-.strip::after {
-	content: "";
-	position: absolute;
-	left: 0;
-	right: 0;
-	height: 12px;
-	background: repeating-linear-gradient(
-		90deg,
-		transparent 0 10px,
-		var(--line) 10px 22px
-	);
-}
-
-.strip::before {
-	top: 5px;
-}
-
-.strip::after {
-	bottom: 5px;
 }
 
 .track {
@@ -336,7 +321,7 @@ h1 em {
 	flex: none;
 	height: 168px;
 	margin: 0;
-	border-radius: 3px;
+	border-radius: 14px;
 	overflow: hidden;
 }
 
@@ -366,7 +351,7 @@ h1 em {
 .kicker {
 	margin: 0;
 	font: 500 12px var(--mono);
-	color: var(--amber);
+	color: var(--dim);
 	letter-spacing: 0.14em;
 	text-transform: uppercase;
 }
@@ -374,8 +359,8 @@ h1 em {
 h2 {
 	margin: 12px 0 0;
 	max-width: 18ch;
-	font: 900 clamp(44px, 7vw, 92px) / 0.92 var(--display);
-	text-transform: uppercase;
+	font: 800 clamp(36px, 6vw, 76px) / 1 var(--display);
+	letter-spacing: -0.035em;
 	text-wrap: balance;
 }
 
@@ -395,8 +380,13 @@ h2 {
 	padding: 18px 20px;
 	border: 1px solid var(--line-strong);
 	background: var(--panel);
-	border-radius: 6px;
+	border-radius: 12px;
 	font: 400 clamp(15px, 2vw, 20px) var(--mono);
+}
+
+.prompt::before {
+	content: "›";
+	color: var(--pink);
 }
 
 .typed {
@@ -408,7 +398,7 @@ h2 {
 	flex: none;
 	width: 10px;
 	height: 1.2em;
-	background: var(--amber);
+	background: var(--pink);
 	animation: blink 0.9s steps(2) infinite;
 }
 
@@ -424,15 +414,15 @@ h2 {
 	padding: 12px;
 	background: var(--panel);
 	border: 1px solid var(--line);
-	border-radius: 6px;
+	border-radius: 18px;
 }
 
 .shot canvas {
 	width: 100%;
 	height: auto;
 	aspect-ratio: 1;
-	border-radius: 3px;
-	background: #000;
+	border-radius: 10px;
+	background: var(--panel-2);
 }
 
 .shot figcaption {
@@ -452,7 +442,7 @@ h2 {
 }
 
 .free {
-	color: var(--amber);
+	color: var(--good);
 }
 
 /* ---------- local ---------- */
@@ -479,7 +469,7 @@ h2 {
 .spec {
 	background: var(--panel);
 	border: 1px solid var(--line-strong);
-	border-radius: 8px;
+	border-radius: 18px;
 	padding: 22px;
 	font: 400 14px var(--mono);
 	box-shadow: 0 30px 80px rgb(0 0 0 / 0.5);
@@ -518,7 +508,7 @@ h2 {
 	display: block;
 	height: 100%;
 	width: 100%;
-	background: var(--amber);
+	background: var(--good);
 	transform-origin: left;
 }
 
@@ -535,14 +525,14 @@ h2 {
 	justify-content: space-between;
 	gap: 12px;
 	padding: 10px 12px;
-	border-radius: 4px;
-	background: rgb(240 166 58 / 0.08);
-	border: 1px solid rgb(240 166 58 / 0.25);
+	border-radius: 10px;
+	background: rgb(52 211 153 / 0.08);
+	border: 1px solid rgb(52 211 153 / 0.25);
 }
 
 .picks em {
 	font-style: normal;
-	color: var(--amber);
+	color: var(--good);
 }
 
 .picks li.slow {
@@ -555,7 +545,7 @@ h2 {
 	color: var(--dim);
 }
 
-/* ---------- contact sheet ---------- */
+/* ---------- gallery ---------- */
 .sheet {
 	margin-top: 36px;
 	display: grid;
@@ -567,8 +557,8 @@ h2 {
 	position: relative;
 	margin: 0;
 	overflow: hidden;
-	border-radius: 4px;
-	background: #000;
+	border-radius: 18px;
+	background: var(--panel-2);
 	aspect-ratio: 4 / 5;
 }
 
@@ -581,13 +571,13 @@ h2 {
 		transform 1.4s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
-/* Negatives until they reach the light; only when motion is welcome. */
+/* Blurred until they scroll into view; only when motion is welcome. */
 .sheet figure:hover img {
 	transform: scale(1.04);
 }
 
-.motion .sheet figure:not(.developed) img {
-	filter: invert(1) sepia(0.6) hue-rotate(-20deg) saturate(1.6) contrast(0.9);
+.motion .sheet figure:not(.sharp) img {
+	filter: blur(10px) saturate(0.6);
 	transform: scale(1.08);
 }
 
@@ -611,6 +601,8 @@ h2 {
 	gap: 1px;
 	background: var(--line);
 	border: 1px solid var(--line);
+	border-radius: 18px;
+	overflow: hidden;
 }
 
 .steps li {
@@ -620,13 +612,18 @@ h2 {
 
 .steps b {
 	display: block;
-	font: 900 48px / 1 var(--display);
-	color: var(--amber);
+	font: 800 48px / 1 var(--display);
+	letter-spacing: -0.03em;
+	background: var(--aurora);
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
 }
 
 .steps h3 {
 	margin: 14px 0 6px;
-	font: 600 18px var(--body);
+	font: 700 18px var(--display);
+	letter-spacing: -0.02em;
 }
 
 .steps p {
@@ -685,7 +682,7 @@ h2 {
 }
 
 .footer .logo {
-	font-size: 20px;
+	font-size: 18px;
 	color: var(--fg);
 }
 
@@ -702,7 +699,7 @@ h2 {
 	html {
 		scroll-behavior: auto;
 	}
-	.grain,
+	.sky,
 	.eyebrow i,
 	.caret {
 		animation: none;

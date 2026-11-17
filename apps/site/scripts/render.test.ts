@@ -28,7 +28,7 @@ test("every language renders a complete page in that language", async () => {
 		en,
 		await loadCatalog("pt-BR"),
 	);
-	expect(portuguese).toContain("Sua placa de vídeo é um estúdio de cinema.");
+	expect(portuguese).toContain("Roda no seu computador, de graça.");
 	// Pages in a folder reach the shared files one level up.
 	expect(portuguese).toContain('src="../src/main.ts"');
 	expect(portuguese).toContain('src="../shots/fisherman.webp"');
@@ -39,7 +39,7 @@ test("plain text is escaped; only .html keys may carry markup", () => {
 		"hero.eyebrow": "<script>alert(1)</script>",
 	});
 	expect(page).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
-	expect(page).toContain('<span class="w"><em>One</em></span>');
+	expect(page).toContain('<span class="w"><em>Generate</em></span>');
 });
 
 test("a key the catalog lacks fails the build instead of shipping", () => {
