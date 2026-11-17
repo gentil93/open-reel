@@ -1,5 +1,5 @@
 import { mkdir, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { sniffMime } from "../mime";
 import type {
 	ProviderAdapter,
@@ -14,6 +14,7 @@ import type {
 	ModelSpec,
 } from "../types";
 import type { LocalModelStore, LocalRuntime } from "./store";
+import { WarmEngines } from "./warm";
 
 export interface LocalHandle {
 	modelId: string;
@@ -175,6 +176,19 @@ export interface LocalProviderOptions {
 	spawn?: Spawn;
 	/** For engines that run as Windows programs under WSL. */
 	windowsPath?: PathMapper;
+	/**
+	 * Keeps a model loaded between pictures. `false` runs the engine once per
+	 * picture, as tests and engines without a server do.
+	 */
+	warm?: WarmEngines | false;
+}
+
+/** The engine's server program, next to its one-shot program. */
+function serverProgram(executable: string): string {
+	return join(
+		dirname(executable),
+		basename(executable).replace("sd-cli", "sd-server"),
+	);
 }
 
 /**
@@ -195,12 +209,14 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 	private catalog: LocalModelSpec[];
 	private spawn: Spawn;
 	private windowsPath: PathMapper;
+	private warm: WarmEngines | false;
 
 	constructor(options: LocalProviderOptions) {
 		this.store = options.store;
 		this.catalog = options.catalog;
 		this.spawn = options.spawn ?? spawnProcess;
 		this.windowsPath = options.windowsPath ?? windowsPath;
+		this.warm = options.warm ?? new WarmEngines({ spawn: this.spawn });
 		this.store.subscribe((event) => {
 			if (event.type === "models.changed") void this.load();
 		});
@@ -211,6 +227,9 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 		const view = await this.store.list();
 		// Offered only once its engine is there too.
 		const installed = view.models.filter((m) => m.ready).map((m) => m.id);
+		// A loaded model holds its files open, and Windows cannot delete them.
+		const loaded = this.warm ? this.warm.loaded?.split(":")[0] : null;
+		if (this.warm && loaded && !installed.includes(loaded)) this.warm.stop();
 		if (installed.join() === this.installed.join()) return;
 		this.installed = installed;
 		this.onChange?.();
@@ -261,6 +280,52 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 		const path = runtime.throughWindows
 			? this.windowsPath
 			: async (p: string) => p;
+
+		// Pictures go through a server that keeps the model loaded, when the
+		// engine has one. Not under WSL, where the server's port on the Windows
+		// side cannot be reached, and not yet for video.
+		const server = serverProgram(runtime.executable);
+		if (
+			this.warm &&
+			!video &&
+			!runtime.throughWindows &&
+			server !== runtime.executable &&
+			(await Bun.file(server).exists())
+		) {
+			const defaults = runtime.model.defaults;
+			const { width, height } = dimensions(
+				defaults.size,
+				handle.params.aspectRatio,
+			);
+			const argv = [server];
+			for (const [role, file] of Object.entries(runtime.files)) {
+				const option = ROLE_OPTIONS[role];
+				if (option) argv.push(option, file);
+			}
+			try {
+				yield* this.warm.run(
+					`${runtime.model.id}:${runtime.variant.id}`,
+					argv,
+					{
+						video: false,
+						prompt: handle.params.prompt,
+						negativePrompt: defaults.negativePrompt,
+						width,
+						height,
+						seed: handle.params.seed ?? Math.floor(Math.random() * 2 ** 31),
+						steps: defaults.steps,
+						cfgScale: defaults.cfgScale,
+						sampler: defaults.sampler,
+						flowShift: defaults.flowShift,
+					},
+					ctx.signal,
+				);
+				return;
+			} catch (error) {
+				if (ctx.signal.aborted) throw error;
+				// The server would not start; run the engine once instead.
+			}
+		}
 		const argv = [
 			runtime.executable,
 			...(await engineArguments(
@@ -353,5 +418,10 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 
 	async cancel(): Promise<void> {
 		// Aborting the job's signal already stops the engine.
+	}
+
+	/** Unloads the model, so no engine outlives open-reel. */
+	close(): void {
+		if (this.warm) this.warm.stop();
 	}
 }

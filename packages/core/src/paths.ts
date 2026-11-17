@@ -42,13 +42,27 @@ async function output(argv: string[]): Promise<string | null> {
 }
 
 /**
- * Directory for downloaded models and engines. Under WSL it is on the Windows
- * side: engines run there as Windows programs, and they read files on the
- * Linux side about twenty times slower.
+ * Directory for downloaded models and engines. On Windows it is the local
+ * app data, never the roaming one that may be synced between computers.
+ * Under WSL it is that same Windows folder: engines run there as Windows
+ * programs, and they read files on the Linux side about twenty times slower.
+ * So the desktop app and open-reel under WSL share what they download.
  */
-export async function defaultModelsDir(dataDir: string): Promise<string> {
-	if (process.env.OPEN_REEL_MODELS_DIR) return process.env.OPEN_REEL_MODELS_DIR;
-	if ((await detectHardware({ run: async () => null })).wsl) {
+export async function defaultModelsDir(
+	dataDir: string,
+	platform: NodeJS.Platform = process.platform,
+	env: Record<string, string | undefined> = process.env,
+): Promise<string> {
+	if (env.OPEN_REEL_MODELS_DIR) return env.OPEN_REEL_MODELS_DIR;
+	if (platform === "win32") {
+		return env.LOCALAPPDATA
+			? win32.join(env.LOCALAPPDATA, "open-reel", "models")
+			: win32.join(dataDir, "models");
+	}
+	if (
+		platform === "linux" &&
+		(await detectHardware({ run: async () => null })).wsl
+	) {
 		const windows = await output(["cmd.exe", "/c", "echo", "%LOCALAPPDATA%"]);
 		const linux =
 			windows && !windows.includes("%")

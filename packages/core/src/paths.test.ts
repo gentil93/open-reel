@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { defaultDataDir, plainPath } from "./paths";
+import { defaultDataDir, defaultModelsDir, plainPath } from "./paths";
 
 describe("defaultDataDir", () => {
 	test("follows each system's convention", () => {
@@ -41,5 +41,26 @@ describe("plainPath", () => {
 			"\\\\?\\UNC\\server\\share",
 		);
 		expect(plainPath("/home/ana/open-reel")).toBe("/home/ana/open-reel");
+	});
+});
+
+describe("defaultModelsDir", () => {
+	test("keeps models in the local, not roaming, app data on Windows", async () => {
+		expect(
+			await defaultModelsDir(
+				"C:\\Users\\ana\\AppData\\Roaming\\open-reel",
+				"win32",
+				{
+					LOCALAPPDATA: "C:\\Users\\ana\\AppData\\Local",
+				},
+			),
+		).toBe("C:\\Users\\ana\\AppData\\Local\\open-reel\\models");
+	});
+
+	test("keeps them with the data elsewhere, unless told otherwise", async () => {
+		expect(await defaultModelsDir("/d", "darwin", {})).toBe("/d/models");
+		expect(
+			await defaultModelsDir("/d", "win32", { OPEN_REEL_MODELS_DIR: "/m" }),
+		).toBe("/m");
 	});
 });

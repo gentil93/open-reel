@@ -128,6 +128,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 		close: () => {
 			// Downloads stop with the process; what they fetched is resumed later.
 			void models.close();
+			local.close();
 			repo.close();
 			unlock();
 		},

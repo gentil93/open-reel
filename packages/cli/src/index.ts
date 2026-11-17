@@ -65,10 +65,13 @@ const WEB_DIST = resources
 	: join(import.meta.dir, "..", "..", "..", "apps", "web", "dist");
 const migrationsDir = resources ? join(resources, "drizzle") : undefined;
 const dataDir = values["data-dir"] ?? defaultDataDir();
-// An explicit data directory keeps everything, models included, inside it.
-const modelsDir = values["data-dir"]
-	? join(dataDir, "models")
-	: await defaultModelsDir(dataDir);
+// An explicit data directory keeps everything inside it, models included,
+// unless OPEN_REEL_MODELS_DIR names another place for them.
+const modelsDir =
+	process.env.OPEN_REEL_MODELS_DIR ??
+	(values["data-dir"]
+		? join(dataDir, "models")
+		: await defaultModelsDir(dataDir));
 const runtime = await createRuntime({
 	dataDir,
 	modelsDir,
