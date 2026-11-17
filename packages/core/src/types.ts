@@ -207,6 +207,8 @@ export type EngineEvent =
 			message?: string;
 			stage?: ProgressStage;
 			position?: number;
+			step?: number;
+			steps?: number;
 	  };
 
 export type GpuVendor = "nvidia" | "amd" | "apple" | "intel";

@@ -52,15 +52,18 @@ export function App() {
 
 	return (
 		<div className="flex h-full">
-			<div className="grain" aria-hidden="true" />
 			<UpdateToast />
 			<nav className="flex w-60 shrink-0 flex-col border-r border-line bg-panel max-md:hidden">
 				<div className="p-4">
 					<a
 						href={href.newChat}
-						className="font-display text-2xl leading-none font-black uppercase tracking-wide"
+						className="flex items-center gap-2 font-display text-xl leading-none font-extrabold tracking-tight"
 					>
-						open<span className="text-accent">·</span>reel
+						<i
+							aria-hidden="true"
+							className="aurora relative size-4 rounded-full shadow-[0_0_14px_rgb(255_61_139/0.5)] after:absolute after:inset-[4px] after:rounded-full after:bg-panel"
+						/>
+						open-reel
 					</a>
 				</div>
 				<div className="flex flex-col gap-1 px-2">

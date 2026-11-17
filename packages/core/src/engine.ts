@@ -202,6 +202,8 @@ export class JobEngine {
 						message: event.message,
 						stage: event.stage,
 						position: event.position,
+						step: event.step,
+						steps: event.steps,
 					});
 				} else if (event.type === "failed") {
 					throw new CodedError(event.error, event.code, event.params);

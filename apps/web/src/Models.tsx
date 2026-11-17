@@ -509,7 +509,7 @@ export function Models() {
 	return (
 		<div className="min-h-0 flex-1 overflow-y-auto p-6">
 			<div className="mx-auto max-w-5xl">
-				<h1 className="font-display text-4xl leading-none font-black uppercase tracking-wide">
+				<h1 className="font-display text-4xl leading-none font-extrabold tracking-tight">
 					{t("models.title")}
 				</h1>
 				<p className="mt-2 max-w-2xl text-sm leading-relaxed text-dim">

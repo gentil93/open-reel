@@ -31,6 +31,9 @@ export type ProviderEvent =
 			stage?: ProgressStage;
 			/** Place in the provider's queue, when `stage` is "queued". */
 			position?: number;
+			/** Sampling steps done and in all, when the model reports them. */
+			step?: number;
+			steps?: number;
 	  }
 	| { type: "completed"; outputs: ProviderOutput[]; costUsd?: number }
 	| {

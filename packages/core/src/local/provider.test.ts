@@ -168,8 +168,11 @@ describe("engine arguments", () => {
 			samplingProgress(
 				"  |============>          | 1/4 -   5.02s/it - ETA 00:15",
 			),
-		).toBe(0.25);
-		expect(samplingProgress("  |=====>| 30/30 - 2.10it/s")).toBe(1);
+		).toEqual({ step: 1, steps: 4 });
+		expect(samplingProgress("  |=====>| 30/30 - 2.10it/s")).toEqual({
+			step: 30,
+			steps: 30,
+		});
 		// Loading bars count tensors, not steps.
 		expect(samplingProgress("  |######   | 18/219 - 615.45MB/s")).toBeNull();
 		expect(samplingProgress("[I] generating image: 1/1 - seed 42")).toBeNull();
@@ -298,12 +301,16 @@ describe("running", () => {
 				fraction: 0.25,
 				message: "Generating",
 				stage: "generating",
+				step: 1,
+				steps: 4,
 			},
 			{
 				type: "progress",
 				fraction: 1,
 				message: "Generating",
 				stage: "generating",
+				step: 4,
+				steps: 4,
 			},
 			{
 				type: "completed",

@@ -3,7 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { api, assetUrl } from "./api";
 import { useI18n } from "./i18n";
-import { href } from "./route";
+import { PickerDialog } from "./Picker";
 
 export interface Draft {
 	prompt: string;
@@ -51,6 +51,8 @@ export function Composer(props: Props) {
 	const [aspectRatio, setAspectRatio] = useState("");
 	const [count, setCount] = useState(1);
 	const [media, setMedia] = useState<Media>("image");
+	// The picker window, to find and set up another model.
+	const [picking, setPicking] = useState(false);
 	const [seconds, setSeconds] = useState<number | null>(null);
 	const fileInput = useRef<HTMLInputElement>(null);
 
@@ -146,42 +148,43 @@ export function Composer(props: Props) {
 				)}
 				<fieldset className="flex flex-wrap items-center gap-1.5">
 					<legend className="sr-only">{t("composer.models")}</legend>
-					{offered.map((model) => {
-						const reason = blocked(model);
-						const on = chosen.includes(model.id) && !reason;
-						return (
-							<button
-								key={model.id}
-								type="button"
-								aria-pressed={on}
-								disabled={reason !== null}
-								title={reason ?? model.id}
-								onClick={() =>
-									setChosen(
+					{offered
+						.filter((m) => ready.has(m.providerId) || chosen.includes(m.id))
+						.map((model) => {
+							const reason = blocked(model);
+							const on = chosen.includes(model.id) && !reason;
+							return (
+								<button
+									key={model.id}
+									type="button"
+									aria-pressed={on}
+									disabled={reason !== null}
+									title={reason ?? model.id}
+									onClick={() =>
+										setChosen(
+											on
+												? chosen.filter((id) => id !== model.id)
+												: [...chosen, model.id],
+										)
+									}
+									className={`rounded-full border px-3 py-1 text-sm transition-colors disabled:opacity-40 ${
 										on
-											? chosen.filter((id) => id !== model.id)
-											: [...chosen, model.id],
-									)
-								}
-								className={`rounded-full border px-3 py-1 text-sm transition-colors disabled:opacity-40 ${
-									on
-										? "border-accent bg-accent text-accent-ink shadow-[0_0_14px_rgb(240_166_58/0.3)]"
-										: "border-line text-dim hover:border-dim hover:text-ink"
-								}`}
-							>
-								<span className="opacity-60">{model.providerId} · </span>
-								{model.name}
-							</button>
-						);
-					})}
-					{offered.some((m) => !ready.has(m.providerId)) && (
-						<a
-							href={href.settings}
-							className="px-2 text-sm text-accent underline"
-						>
-							{t("composer.addKeys")}
-						</a>
-					)}
+											? "aurora border-transparent shadow-[0_0_14px_rgb(255_61_139/0.35)]"
+											: "border-line text-dim hover:border-dim hover:text-ink"
+									}`}
+								>
+									<span className="opacity-60">{model.providerId} · </span>
+									{model.name}
+								</button>
+							);
+						})}
+					<button
+						type="button"
+						onClick={() => setPicking(true)}
+						className="rounded-full border border-dashed border-line-strong px-3 py-1 text-sm text-dim transition-colors hover:border-accent hover:text-ink"
+					>
+						+ {t("composer.chooseModel")}
+					</button>
 				</fieldset>
 
 				{references.length > 0 && (
@@ -321,7 +324,7 @@ export function Composer(props: Props) {
 						type="button"
 						onClick={submit}
 						disabled={!canSend}
-						className="rounded-md bg-accent px-5 py-1.5 font-display text-lg font-bold uppercase tracking-wider text-accent-ink shadow-[0_0_20px_rgb(240_166_58/0.3)] transition-[transform,box-shadow] hover:-translate-y-0.5 hover:shadow-[0_0_32px_rgb(240_166_58/0.45)] disabled:translate-y-0 disabled:opacity-40 disabled:shadow-none"
+						className="cta rounded-lg px-5 py-2 font-display text-base font-bold"
 					>
 						{selected.length > 1
 							? t("composer.compare", { count: selected.length })
@@ -329,6 +332,19 @@ export function Composer(props: Props) {
 					</button>
 				</div>
 			</div>
+			{picking && (
+				<PickerDialog
+					media={media}
+					onClose={() => setPicking(false)}
+					onUse={(modelId, kind) => {
+						setMedia(kind);
+						setChosen((current) =>
+							current.includes(modelId) ? current : [...current, modelId],
+						);
+						setPicking(false);
+					}}
+				/>
+			)}
 		</div>
 	);
 }

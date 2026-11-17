@@ -1,5 +1,5 @@
-import { latent } from "@open-reel/motion";
 import { createTranslator, matchLanguage } from "@open-reel/i18n";
+import { latent } from "@open-reel/motion";
 import "./index.css";
 import en from "./locales/en.json";
 import ptBR from "./locales/pt-BR.json";

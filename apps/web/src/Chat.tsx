@@ -114,9 +114,13 @@ function JobCard(props: {
 						fraction={job.status === "running" ? progress?.fraction : undefined}
 					>
 						<p
-							className="rounded bg-bg/70 px-2 py-1 font-mono text-[11px] uppercase tracking-wider text-ink"
+							className="flex items-center gap-2 rounded-full border border-white/10 bg-bg/70 px-3 py-1.5 text-sm font-medium text-ink backdrop-blur"
 							aria-live="polite"
 						>
+							<i
+								aria-hidden="true"
+								className={`breathe size-2 rounded-full ${job.status === "queued" ? "bg-dim" : "bg-accent shadow-[0_0_10px_var(--accent)]"}`}
+							/>
 							{job.status === "queued"
 								? t("job.waiting")
 								: describeProgress(i18n, progress)}
@@ -125,7 +129,7 @@ function JobCard(props: {
 							type="button"
 							onClick={() => cancel.mutate()}
 							disabled={cancel.isPending}
-							className="rounded-md border border-line-strong bg-bg/70 px-3 py-1 text-xs hover:border-dim"
+							className="rounded-full border border-line-strong bg-bg/70 px-3 py-1 text-xs text-dim backdrop-blur hover:text-ink"
 						>
 							{t("common.cancel")}
 						</button>
@@ -275,6 +279,13 @@ function describeProgress(
 		progress.fraction == null
 			? null
 			: i18n.number(progress.fraction, { style: "percent" });
+	// Local models say which sampling step they are on.
+	if (progress.stage === "generating" && progress.step && progress.steps) {
+		return i18n.t("progress.step", {
+			step: progress.step,
+			steps: progress.steps,
+		});
+	}
 	const stage =
 		progress.stage === "queued"
 			? progress.position != null
@@ -379,7 +390,7 @@ export function Chat({
 							<p className="font-mono text-[11px] uppercase tracking-[0.18em] text-accent">
 								{t("chat.eyebrow")}
 							</p>
-							<h1 className="mt-3 font-display text-5xl leading-[0.9] font-black uppercase tracking-wide sm:text-6xl">
+							<h1 className="mt-3 font-display text-5xl leading-[0.95] font-extrabold tracking-tight sm:text-6xl">
 								{t("chat.heading")}
 							</h1>
 							<p className="mt-4 max-w-xl leading-relaxed text-dim">

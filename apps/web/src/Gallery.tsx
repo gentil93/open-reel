@@ -36,7 +36,7 @@ export function Gallery({
 		<div className="min-h-0 flex-1 overflow-y-auto p-6">
 			<div className="mx-auto max-w-6xl">
 				<div className="flex flex-wrap items-center justify-between gap-4">
-					<h1 className="font-display text-4xl leading-none font-black uppercase tracking-wide">
+					<h1 className="font-display text-4xl leading-none font-extrabold tracking-tight">
 						{t("gallery.title")}
 					</h1>
 					<input

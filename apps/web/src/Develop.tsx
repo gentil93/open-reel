@@ -73,7 +73,7 @@ export function LatentFrame(props: {
 				className="absolute inset-x-0 bottom-0 h-0.5 bg-line"
 			>
 				<div
-					className={`h-full ${props.fraction == null ? "film-edge w-full opacity-60" : "bg-accent"} transition-[width] duration-500`}
+					className={`h-full ${props.fraction == null ? "flow w-full opacity-70" : "flow"} transition-[width] duration-500`}
 					style={
 						props.fraction == null
 							? undefined
@@ -86,8 +86,8 @@ export function LatentFrame(props: {
 }
 
 /**
- * A finished picture. With `fresh`, it develops out of grain once, as a
- * print does in the tray; otherwise it simply fades in.
+ * A finished picture. With `fresh`, it comes out of noise once, as a
+ * diffusion model's picture does; otherwise it simply fades in.
  */
 export function DevelopedImage(props: {
 	src: string;

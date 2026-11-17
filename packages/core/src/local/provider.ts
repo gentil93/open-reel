@@ -158,14 +158,15 @@ export async function engineArguments(
 }
 
 /** Reads "| 3/8 - 1.2s/it" from the engine's sampling progress bar. */
-export function samplingProgress(line: string): number | null {
+export function samplingProgress(
+	line: string,
+): { step: number; steps: number } | null {
 	const match = line.match(
 		/\|[=> ]*\|\s*(\d+)\/(\d+)\s+-\s+[\d.]+\s*(?:s\/it|it\/s)/,
 	);
 	if (!match) return null;
-	const done = Number(match[1]);
-	const total = Number(match[2]);
-	return total > 0 ? Math.min(1, done / total) : null;
+	const steps = Number(match[2]);
+	return steps > 0 ? { step: Math.min(Number(match[1]), steps), steps } : null;
 }
 
 export interface LocalProviderOptions {
@@ -293,15 +294,22 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 				const line = next.value;
 				if (line.trim()) tail.push(line.trim());
 				if (tail.length > 20) tail.shift();
-				const fraction = samplingProgress(line);
+				const sampling = samplingProgress(line);
 				// The bar redraws many times a second; report whole percents.
-				if (fraction != null && Math.floor(fraction * 100) !== last) {
+				const fraction = sampling && sampling.step / sampling.steps;
+				if (
+					sampling &&
+					fraction != null &&
+					Math.floor(fraction * 100) !== last
+				) {
 					last = Math.floor(fraction * 100);
 					yield {
 						type: "progress",
 						fraction,
 						message: "Generating",
 						stage: "generating",
+						step: sampling.step,
+						steps: sampling.steps,
 					};
 				}
 			}

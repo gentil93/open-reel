@@ -89,7 +89,7 @@ export function Settings() {
 	});
 	return (
 		<div className="mx-auto w-full max-w-2xl overflow-y-auto p-8">
-			<h1 className="font-display text-4xl leading-none font-black uppercase tracking-wide">
+			<h1 className="font-display text-4xl leading-none font-extrabold tracking-tight">
 				{t("settings.title")}
 			</h1>
 			<section className="mt-6">
