@@ -23,10 +23,11 @@ const BACKGROUND: Color = Color(13, 11, 9, 255);
 /// to shut down cleanly; a kill would leave its lock and database unflushed.
 struct Server(Mutex<Option<CommandChild>>);
 
-/// Pages that belong to the app: its splash and the local server.
+/// Pages that belong to the app: its splash, the local server, and what the
+/// webview loads on its own (WebView2 starts at `about:blank`).
 fn is_internal(url: &Url) -> bool {
     match url.scheme() {
-        "tauri" => true,
+        "tauri" | "about" | "data" | "blob" => true,
         "http" | "https" => matches!(
             url.host_str(),
             Some("localhost" | "127.0.0.1" | "tauri.localhost")
@@ -35,9 +36,13 @@ fn is_internal(url: &Url) -> bool {
     }
 }
 
-/// Opens anything else, such as a provider's key page, in the system browser.
+/// Opens web and mail links, such as a provider's key page, in the system
+/// browser. Anything else is just refused: handing an unknown scheme to the
+/// system would ask the person which app should open it.
 fn open_outside(app: &AppHandle, url: &Url) {
-    let _ = app.opener().open_url(url.as_str(), None::<&str>);
+    if matches!(url.scheme(), "http" | "https" | "mailto") {
+        let _ = app.opener().open_url(url.as_str(), None::<&str>);
+    }
 }
 
 /// Shows the splash again, saying why the server stopped.
