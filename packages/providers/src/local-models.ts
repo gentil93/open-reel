@@ -1,4 +1,5 @@
 import type { LocalModelFile, LocalModelSpec } from "@open-reel/core";
+import { PROFILES } from "./profiles";
 
 /** A file in a Hugging Face repository, at a fixed revision. */
 const hf = (repo: string, revision: string, path: string) =>
@@ -99,6 +100,7 @@ export function builtinLocalModels(): LocalModelSpec[] {
 	return [
 		{
 			id: "sdxl-turbo",
+			profile: PROFILES.sdxlTurbo,
 			name: "SDXL Turbo",
 			author: "Stability AI",
 			media: "image",
@@ -139,6 +141,7 @@ export function builtinLocalModels(): LocalModelSpec[] {
 		},
 		{
 			id: "sdxl-base",
+			profile: PROFILES.sdxl,
 			name: "Stable Diffusion XL",
 			author: "Stability AI",
 			media: "image",
@@ -180,6 +183,7 @@ export function builtinLocalModels(): LocalModelSpec[] {
 		},
 		{
 			id: "flux-schnell",
+			profile: PROFILES.fluxSchnell,
 			name: "FLUX.1 schnell",
 			author: "Black Forest Labs",
 			media: "image",
@@ -242,6 +246,7 @@ export function builtinLocalModels(): LocalModelSpec[] {
 		},
 		{
 			id: "z-image-turbo",
+			profile: PROFILES.zImage,
 			name: "Z-Image Turbo",
 			author: "Tongyi-MAI (Alibaba)",
 			media: "image",
@@ -341,6 +346,7 @@ export function builtinLocalModels(): LocalModelSpec[] {
 		},
 		{
 			id: "wan-2.1-t2v-1.3b",
+			profile: PROFILES.wanLocal,
 			name: "Wan 2.1 T2V 1.3B",
 			author: "Wan-AI (Alibaba)",
 			media: "video",

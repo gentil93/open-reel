@@ -50,7 +50,7 @@ bun test && bun run typecheck && bun run lint
 | `packages/server`    | HTTP API and the live event stream                                         |
 | `packages/cli`       | The `open-reel` command                                                    |
 | `packages/i18n`      | Translation helpers shared by the app and the site                         |
-| `packages/motion`  | The visual effects the app and the site share                              |
+| `packages/motion`    | The visual effects the app and the site share                              |
 | `apps/web`           | The app's interface (React)                                                |
 | `apps/site`          | The landing page                                                           |
 | `apps/desktop`       | The desktop app: a Tauri window around the compiled server                 |

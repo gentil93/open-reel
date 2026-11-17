@@ -235,6 +235,7 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 					}),
 				},
 				pricing: { usdPerOutput: 0 },
+				...(model.profile && { profile: model.profile }),
 			}));
 	}
 

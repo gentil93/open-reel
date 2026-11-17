@@ -46,6 +46,48 @@ export interface ModelCapabilities {
 	durations?: number[];
 }
 
+/** What a model is good at, shown as tags; the interface translates each. */
+export type BestFor =
+	| "speed"
+	| "drafts"
+	| "photo"
+	| "text"
+	| "illustration"
+	| "editing"
+	| "instructions"
+	| "detail"
+	| "motion"
+	| "cinema"
+	| "sound";
+
+/**
+ * How a model compares with others, so people can choose without knowing
+ * model names. Curated by the project, not reported by providers.
+ */
+export interface ModelProfile {
+	/**
+	 * The same model reached through different services shares a family, so
+	 * it is shown once, e.g. Nano Banana through Google, fal and OpenRouter.
+	 */
+	family: string;
+	/** The family's name as people know it. */
+	name: string;
+	/** Who made the model. */
+	author: string;
+	/** 1 slow to 3 fast, relative to other models of the same media. */
+	speed: 1 | 2 | 3;
+	/** 1 basic to 3 best, relative to other models of the same media. */
+	quality: 1 | 2 | 3;
+	/** Writes legible words inside pictures. */
+	text: boolean;
+	bestFor: BestFor[];
+	/**
+	 * A picture of the shared comparison prompt made with this model, by its
+	 * file name among the interface's samples.
+	 */
+	sample?: string;
+}
+
 export interface ModelSpec {
 	/** Globally unique: `${providerId}/${providerModelId}`. */
 	id: string;
@@ -57,6 +99,8 @@ export interface ModelSpec {
 	capabilities: ModelCapabilities;
 	/** Used to estimate a job's cost when the provider does not report one. */
 	pricing?: { usdPerOutput?: number; usdPerSecond?: number };
+	/** Absent for models the project has not described yet. */
+	profile?: ModelProfile;
 }
 
 export type JobStatus =
@@ -294,6 +338,7 @@ export interface LocalModelSpec {
 	variants: LocalModelVariant[];
 	demos: LocalModelDemo[];
 	defaults: LocalModelDefaults;
+	profile?: ModelProfile;
 }
 
 export type LocalModelState =
