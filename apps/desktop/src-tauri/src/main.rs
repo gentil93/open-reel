@@ -5,6 +5,8 @@
 //! The server is a compiled sidecar on a free loopback port; the window shows
 //! a splash until the server says where it listens, then opens the app there.
 
+use std::fs::{create_dir_all, File};
+use std::io::Write;
 use std::sync::Mutex;
 
 use tauri::webview::NewWindowResponse;
@@ -45,16 +47,37 @@ fn open_outside(app: &AppHandle, url: &Url) {
     }
 }
 
+/// The splash's address. Asked of the window instead, it can still be
+/// `about:blank` while the webview starts (WebView2 does that).
+fn splash_url() -> Url {
+    let origin = if cfg!(windows) {
+        "http://tauri.localhost"
+    } else {
+        "tauri://localhost"
+    };
+    Url::parse(&format!("{origin}/splash.html")).expect("a valid address")
+}
+
 /// Shows the splash again, saying why the server stopped.
-fn show_failure(window: &WebviewWindow, splash: &Url, detail: &str) {
-    let mut url = splash.clone();
-    url.query_pairs_mut().clear().append_pair("failed", detail.trim());
+fn show_failure(window: &WebviewWindow, detail: &str) {
+    let mut url = splash_url();
+    url.query_pairs_mut().append_pair("failed", detail.trim());
     let _ = window.navigate(url);
+}
+
+/// Keeps what the server says in `server.log`, next to the app's other logs,
+/// so a failure can be looked into after the window is gone.
+fn open_log(app: &AppHandle) -> Option<File> {
+    let dir = app.path().app_log_dir().ok()?;
+    create_dir_all(&dir).ok()?;
+    let mut file = File::create(dir.join("server.log")).ok()?;
+    let _ = writeln!(file, "open-reel {}", app.package_info().version);
+    Some(file)
 }
 
 fn start_server(app: &AppHandle, window: WebviewWindow) -> Result<(), Box<dyn std::error::Error>> {
     let resources = app.path().resource_dir()?.join("resources");
-    let splash = window.url()?;
+    let mut log = open_log(app);
     let (mut events, child) = app
         .shell()
         .sidecar("open-reel-server")?
@@ -78,6 +101,9 @@ fn start_server(app: &AppHandle, window: WebviewWindow) -> Result<(), Box<dyn st
             match event {
                 CommandEvent::Stdout(line) => {
                     let line = String::from_utf8_lossy(&line);
+                    if let Some(file) = log.as_mut() {
+                        let _ = writeln!(file, "{}", line.trim_end());
+                    }
                     if let Some(address) = line.trim().strip_prefix(READY) {
                         if let (false, Ok(url)) = (ready, Url::parse(address.trim())) {
                             ready = true;
@@ -86,18 +112,27 @@ fn start_server(app: &AppHandle, window: WebviewWindow) -> Result<(), Box<dyn st
                     }
                 }
                 CommandEvent::Stderr(line) => {
-                    errors.push_str(&String::from_utf8_lossy(&line));
+                    let line = String::from_utf8_lossy(&line);
+                    if let Some(file) = log.as_mut() {
+                        let _ = writeln!(file, "{}", line.trim_end());
+                    }
+                    errors.push_str(line.trim_end());
                     errors.push('\n');
                 }
                 CommandEvent::Error(error) => {
+                    if let Some(file) = log.as_mut() {
+                        let _ = writeln!(file, "error: {error}");
+                    }
                     errors.push_str(&error);
                     errors.push('\n');
                 }
                 CommandEvent::Terminated(status) => {
-                    if errors.trim().is_empty() {
-                        errors = format!("The server stopped (code {:?}).", status.code);
+                    let stopped = format!("The server stopped (code {:?}).", status.code);
+                    if let Some(file) = log.as_mut() {
+                        let _ = writeln!(file, "{stopped}");
                     }
-                    show_failure(&window, &splash, &errors);
+                    errors.push_str(&stopped);
+                    show_failure(&window, &errors);
                     break;
                 }
                 _ => {}
@@ -142,8 +177,7 @@ fn main() {
                 })
                 .build()?;
             if let Err(error) = start_server(app.handle(), window.clone()) {
-                let splash = window.url()?;
-                show_failure(&window, &splash, &error.to_string());
+                show_failure(&window, &format!("Could not start the server: {error}"));
             }
             Ok(())
         })

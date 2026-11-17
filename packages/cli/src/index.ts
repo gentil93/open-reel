@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { writeSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { defaultDataDir, defaultModelsDir } from "@open-reel/core";
@@ -113,10 +114,13 @@ const server = listen();
 // Only now that this process owns the port and the data directory.
 await runtime.start();
 const url = `http://localhost:${server.port}`;
-console.log(`open-reel is running at ${url}`);
-console.log(`Data directory: ${dataDir}`);
+// Written straight to the descriptor, so the line is out at once: the
+// desktop app waits for it before opening the window on this address.
+const say = (line: string) => writeSync(1, `${line}\n`);
+say(`open-reel is running at ${url}`);
+say(`Data directory: ${dataDir}`);
 if (modelsDir !== join(dataDir, "models")) {
-	console.log(`Local models: ${modelsDir}`);
+	say(`Local models: ${modelsDir}`);
 }
 
 if (!values.dev && !values["no-open"]) {
