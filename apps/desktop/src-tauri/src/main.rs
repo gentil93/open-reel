@@ -76,7 +76,9 @@ fn open_log(app: &AppHandle) -> Option<File> {
 }
 
 fn start_server(app: &AppHandle, window: WebviewWindow) -> Result<(), Box<dyn std::error::Error>> {
-    let resources = app.path().resource_dir()?.join("resources");
+    // Windows paths come as `\\?\C:\...`, where forward slashes are not
+    // separators; the server's libraries join paths with them.
+    let resources = dunce::simplified(&app.path().resource_dir()?).join("resources");
     let mut log = open_log(app);
     let (mut events, child) = app
         .shell()

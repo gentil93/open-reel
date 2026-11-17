@@ -21,6 +21,13 @@ export function defaultDataDir(
 	return join(env.XDG_DATA_HOME ?? join(home, ".local", "share"), "open-reel");
 }
 
+/**
+ * `\\?\C:\...` turns into `C:\...`: in that form Windows takes no forward
+ * slashes, and the libraries reading these folders join paths with them.
+ */
+export function plainPath(path: string): string {
+	return /^\\\\\?\\[A-Za-z]:\\/.test(path) ? path.slice(4) : path;
+}
 async function output(argv: string[]): Promise<string | null> {
 	try {
 		const child = Bun.spawn(argv, { stdout: "pipe", stderr: "ignore" });

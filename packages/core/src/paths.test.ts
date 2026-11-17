@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { defaultDataDir } from "./paths";
+import { defaultDataDir, plainPath } from "./paths";
 
 describe("defaultDataDir", () => {
 	test("follows each system's convention", () => {
@@ -25,5 +25,21 @@ describe("defaultDataDir", () => {
 		expect(defaultDataDir("win32", { OPEN_REEL_DATA_DIR: "/x" }, "")).toBe(
 			"/x",
 		);
+	});
+});
+
+describe("plainPath", () => {
+	test("drops the long-path prefix Windows gives some paths", () => {
+		expect(plainPath("\\\\?\\C:\\Program Files\\open-reel")).toBe(
+			"C:\\Program Files\\open-reel",
+		);
+	});
+
+	test("leaves other paths alone", () => {
+		expect(plainPath("C:\\open-reel")).toBe("C:\\open-reel");
+		expect(plainPath("\\\\?\\UNC\\server\\share")).toBe(
+			"\\\\?\\UNC\\server\\share",
+		);
+		expect(plainPath("/home/ana/open-reel")).toBe("/home/ana/open-reel");
 	});
 });

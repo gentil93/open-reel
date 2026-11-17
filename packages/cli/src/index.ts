@@ -2,7 +2,7 @@
 import { writeSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { defaultDataDir, defaultModelsDir } from "@open-reel/core";
+import { defaultDataDir, defaultModelsDir, plainPath } from "@open-reel/core";
 import {
 	createApp,
 	createRuntime,
@@ -57,13 +57,13 @@ if (parentPid != null && !(Number.isInteger(parentPid) && parentPid > 0)) {
 	process.exit(1);
 }
 
+const resources = values.resources ? plainPath(values.resources) : undefined;
+
 // A compiled binary has no source tree around it, so it is told where things are.
-const WEB_DIST = values.resources
-	? join(values.resources, "web")
+const WEB_DIST = resources
+	? join(resources, "web")
 	: join(import.meta.dir, "..", "..", "..", "apps", "web", "dist");
-const migrationsDir = values.resources
-	? join(values.resources, "drizzle")
-	: undefined;
+const migrationsDir = resources ? join(resources, "drizzle") : undefined;
 const dataDir = values["data-dir"] ?? defaultDataDir();
 // An explicit data directory keeps everything, models included, inside it.
 const modelsDir = values["data-dir"]
