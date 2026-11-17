@@ -114,7 +114,6 @@ fn start_server(app: &AppHandle, window: WebviewWindow) -> Result<(), Box<dyn st
                         if let (false, Ok(url)) = (ready, Url::parse(address.trim())) {
                             ready = true;
                             let _ = window.navigate(url);
-                            tauri::async_runtime::spawn(update::check(app.clone()));
                         }
                     }
                 }
@@ -134,6 +133,9 @@ fn start_server(app: &AppHandle, window: WebviewWindow) -> Result<(), Box<dyn st
                     errors.push('\n');
                 }
                 CommandEvent::Terminated(status) => {
+                    app.state::<update::ServerExited>()
+                        .0
+                        .store(true, Ordering::SeqCst);
                     let stopped = format!("The server stopped (code {:?}).", status.code);
                     if let Some(file) = log.as_mut() {
                         let _ = writeln!(file, "{stopped}");
@@ -165,10 +167,10 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init())
         .manage(Server(Mutex::new(None)))
         .manage(update::Pending::default())
         .manage(update::Updating::default())
+        .manage(update::ServerExited::default())
         .invoke_handler(tauri::generate_handler![
             update::update_status,
             update::install_update
@@ -197,6 +199,9 @@ fn main() {
             if let Err(error) = start_server(app.handle(), window.clone()) {
                 show_failure(&window, &format!("Could not start the server: {error}"));
             }
+            // Independent of the server, so even a version whose server fails
+            // to start can still be replaced by the next one.
+            tauri::async_runtime::spawn(update::watch(app.handle().clone()));
             Ok(())
         })
         .build(tauri::generate_context!())

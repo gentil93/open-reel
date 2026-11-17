@@ -89,6 +89,18 @@ export function Composer(props: Props) {
 	// Without storage, the selection lasts for this visit only.
 	useEffect(() => rememberModels(chosen), [chosen]);
 
+	// Open on the kind of output the remembered models make, e.g. after a
+	// first video chosen in the welcome.
+	const settled = useRef(false);
+	useEffect(() => {
+		if (settled.current || models.length === 0) return;
+		settled.current = true;
+		const kinds = models
+			.filter((m) => chosen.includes(m.id))
+			.map((m) => m.media);
+		if (kinds.length > 0 && !kinds.includes("image")) setMedia("video");
+	}, [models, chosen]);
+
 	const upload = useMutation({
 		mutationFn: api.upload,
 		onSuccess: (asset) => setReferences([...references, asset.id]),

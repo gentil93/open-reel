@@ -163,13 +163,13 @@ dialog::backdrop {
 }
 
 .glow-card:hover,
-.glow-card[aria-pressed="true"] {
+.glow-card[data-chosen="true"] {
 	transform: translateY(-4px);
 	box-shadow: 0 18px 40px -18px rgb(255 61 139 / 0.45);
 }
 
 .glow-card:hover::before,
-.glow-card[aria-pressed="true"]::before {
+.glow-card[data-chosen="true"]::before {
 	opacity: 1;
 }
 

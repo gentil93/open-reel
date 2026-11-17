@@ -5,16 +5,18 @@ import { useI18n } from "./i18n";
 
 /** Offers a downloaded update in the desktop app. Nothing shows in a browser. */
 export function UpdateToast() {
-	const { t, explain } = useI18n();
+	const { t } = useI18n();
 	const [version, setVersion] = useState<string | null>(null);
 	const [dismissed, setDismissed] = useState(false);
 	const install = useMutation({ mutationFn: installUpdate });
 
 	useEffect(() => {
+		// Listening first, so an update that lands meanwhile is not missed.
+		const stop = onUpdateReady(setVersion);
 		pendingUpdate()
 			.then((found) => found && setVersion(found))
 			.catch(() => {});
-		return onUpdateReady(setVersion);
+		return stop;
 	}, []);
 
 	if (!version || dismissed) return null;
@@ -46,7 +48,7 @@ export function UpdateToast() {
 				</button>
 			</div>
 			{install.error && (
-				<p className="text-sm text-danger">{explain(install.error)}</p>
+				<p className="text-sm text-danger">{t("update.failed")}</p>
 			)}
 		</div>
 	);

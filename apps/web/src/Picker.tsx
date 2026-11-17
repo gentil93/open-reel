@@ -17,7 +17,7 @@ import {
 	useState,
 } from "react";
 import { api, demoUrl } from "./api";
-import { reduceMotion } from "./Develop";
+import { FRAME_MS, reduceMotion } from "./Develop";
 import { remaining, usd } from "./format";
 import { type I18n, useI18n } from "./i18n";
 import { useModelProgress } from "./live";
@@ -118,18 +118,22 @@ function bestForLabel(t: I18n["t"], tag: BestFor): string {
 
 /** What a cloud model costs, from the cheapest service that says. */
 function familyCost(i18n: I18n, family: Family): string {
-	const prices = family.routes.flatMap((route) =>
-		route.pricing?.usdPerSecond != null
-			? [{ value: route.pricing.usdPerSecond, perSecond: true }]
-			: route.pricing?.usdPerOutput != null
-				? [{ value: route.pricing.usdPerOutput, perSecond: false }]
-				: [],
-	);
-	const cheapest = prices.sort((a, b) => a.value - b.value)[0];
-	if (!cheapest) return i18n.t("picker.paid");
-	return cheapest.perSecond
-		? i18n.t("picker.perSecond", { price: usd(i18n, cheapest.value) })
-		: i18n.t("picker.perPicture", { price: usd(i18n, cheapest.value) });
+	// Prices per output and per second do not compare; per output comes first.
+	const cheapest = (values: (number | undefined)[]) =>
+		values.filter((v): v is number => v != null).sort((a, b) => a - b)[0];
+	const perOutput = cheapest(family.routes.map((r) => r.pricing?.usdPerOutput));
+	if (perOutput != null) {
+		return family.media === "video"
+			? i18n.t("picker.perVideo", { price: usd(i18n, perOutput) })
+			: i18n.t("picker.perPicture", { price: usd(i18n, perOutput) });
+	}
+	const perSecond = cheapest(family.routes.map((r) => r.pricing?.usdPerSecond));
+	if (perSecond != null) {
+		return i18n.t("picker.perSecond", { price: usd(i18n, perSecond) });
+	}
+	return family.media === "video"
+		? i18n.t("picker.paidVideo")
+		: i18n.t("picker.paid");
 }
 
 /** Three marks, `value` of them lit. */
@@ -180,13 +184,24 @@ function Reveal(props: {
 		}
 		latent(element, 0.4, performance.now() + offset * 97);
 		if (reduceMotion()) return;
+		// Drawn at film speed, and only while on screen: a grid can hold dozens.
 		let frame = 0;
+		let last = 0;
 		const draw = (time: number) => {
-			latent(element, 0.4, time + offset * 97);
 			frame = requestAnimationFrame(draw);
+			if (time - last < FRAME_MS) return;
+			last = time;
+			latent(element, 0.4, time + offset * 97);
 		};
-		frame = requestAnimationFrame(draw);
-		return () => cancelAnimationFrame(frame);
+		const watcher = new IntersectionObserver(([seen]) => {
+			cancelAnimationFrame(frame);
+			if (seen?.isIntersecting) frame = requestAnimationFrame(draw);
+		});
+		watcher.observe(element);
+		return () => {
+			watcher.disconnect();
+			cancelAnimationFrame(frame);
+		};
 	}, [props.src, props.delay, props.seed]);
 
 	return props.src ? (
@@ -325,9 +340,11 @@ function Hero(props: {
 								{entryName(props.pick)}
 							</h2>
 							<p className="mt-1 text-sm text-dim">
-								{props.pick.kind === "local"
-									? t("picker.whyLocal")
-									: t("picker.whyCloud")}
+								{props.pick.kind !== "local"
+									? t("picker.whyCloud")
+									: level === "great"
+										? t("picker.whyLocal")
+										: t("picker.whySlow")}
 							</p>
 						</div>
 					</div>
@@ -339,7 +356,8 @@ function Hero(props: {
 							<span
 								className={`rounded-full px-2.5 py-0.5 text-xs ${FIT_STYLE[level].bg} ${FIT_STYLE[level].text}`}
 							>
-								● {fitLabel(t, level)}
+								<span aria-hidden="true">● </span>
+								{fitLabel(t, level)}
 							</span>
 						)}
 						{need != null && (
@@ -378,6 +396,9 @@ function CompareStrip({ entries }: { entries: Entry[] }) {
 	const canvas = useRef<HTMLCanvasElement>(null);
 	const [current, setCurrent] = useState(0);
 	const [developing, setDeveloping] = useState(false);
+	// Pointing at or focusing the strip holds the current picture; with
+	// reduced motion it never moves on by itself.
+	const held = useRef(false);
 	const entry = entries[current % entries.length];
 	const src = entry && entryImage(entry);
 
@@ -387,15 +408,16 @@ function CompareStrip({ entries }: { entries: Entry[] }) {
 		let frame = 0;
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		let stopped = false;
+		const next = () => {
+			if (reduceMotion()) return;
+			timer = setTimeout(() => {
+				if (held.current) next();
+				else setCurrent((c) => (c + 1) % entries.length);
+			}, 2800);
+		};
 		loadImage(src)
 			.then((image) => {
 				if (stopped) return;
-				const next = () => {
-					timer = setTimeout(
-						() => setCurrent((c) => (c + 1) % entries.length),
-						reduceMotion() ? 6000 : 2800,
-					);
-				};
 				if (reduceMotion()) {
 					develop(element, image, 1);
 					return next();
@@ -413,7 +435,11 @@ function CompareStrip({ entries }: { entries: Entry[] }) {
 				};
 				frame = requestAnimationFrame(step);
 			})
-			.catch(() => {});
+			// A picture that fails to load is skipped, not waited on forever.
+			.catch(() => {
+				setDeveloping(false);
+				next();
+			});
 		return () => {
 			stopped = true;
 			cancelAnimationFrame(frame);
@@ -425,6 +451,18 @@ function CompareStrip({ entries }: { entries: Entry[] }) {
 	return (
 		<section
 			aria-label={t("picker.compareTitle")}
+			onPointerEnter={() => {
+				held.current = true;
+			}}
+			onPointerLeave={() => {
+				held.current = false;
+			}}
+			onFocus={() => {
+				held.current = true;
+			}}
+			onBlur={() => {
+				held.current = false;
+			}}
 			className="rise-in grid items-center gap-6 md:grid-cols-[17rem_1fr]"
 			style={{ "--i": 2 } as CSSProperties}
 		>
@@ -453,11 +491,7 @@ function CompareStrip({ entries }: { entries: Entry[] }) {
 							{entryName(entry)}
 						</span>
 						<span className="rounded-full border border-white/10 bg-bg/70 px-2.5 py-1 font-mono backdrop-blur">
-							{developing
-								? t("picker.generating")
-								: entry.kind === "local"
-									? t("picker.free")
-									: t("picker.cloud")}
+							{entry.kind === "local" ? t("picker.free") : t("picker.cloud")}
 						</span>
 					</div>
 				</div>
@@ -517,18 +551,27 @@ function Card(props: {
 		entry.kind === "cloud"
 			? [...new Set(entry.family.routes.map((r) => r.providerId))].join(" · ")
 			: null;
+	// Videos rarely show writing, so they get no text row.
+	const media = entry.kind === "cloud" ? entry.family.media : entry.model.media;
 	const needsKey =
 		(entry.kind === "cloud" && !entry.family.ready) ||
 		(entry.kind === "other" && !entry.ready);
 
 	return (
-		<button
-			type="button"
-			aria-pressed={props.chosen}
-			onClick={props.onChoose}
-			className="glow-card rise-in flex flex-col overflow-hidden rounded-2xl border border-line bg-panel text-left"
+		<article
+			data-chosen={props.chosen}
+			className="glow-card rise-in relative flex flex-col overflow-hidden rounded-2xl border border-line bg-panel"
 			style={{ "--i": props.index + 3 } as CSSProperties}
 		>
+			{/* One real button over the whole card, named after the model; the
+			    details stay readable as the card's own content. */}
+			<button
+				type="button"
+				aria-pressed={props.chosen}
+				aria-label={entryName(entry)}
+				onClick={props.onChoose}
+				className="absolute inset-0 z-10 rounded-2xl"
+			/>
 			<div className="relative aspect-[4/3] overflow-hidden bg-panel-2">
 				<Reveal
 					src={entryImage(entry)}
@@ -546,11 +589,12 @@ function Card(props: {
 						level ? FIT_STYLE[level].text : needsKey ? "text-ink" : "text-good"
 					}`}
 				>
+					{(level || !needsKey) && <span aria-hidden="true">● </span>}
 					{level
-						? `● ${fitLabel(t, level)}`
+						? fitLabel(t, level)
 						: needsKey
 							? t("picker.needsKey")
-							: `● ${t("picker.ready")}`}
+							: t("picker.ready")}
 				</span>
 			</div>
 			<div className="flex flex-1 flex-col gap-2.5 p-4">
@@ -580,10 +624,14 @@ function Card(props: {
 								label={t("picker.outOf", { value: profile.quality })}
 							/>
 						</dd>
-						<dt>{t("picker.text")}</dt>
-						<dd>
-							{profile.text ? t("picker.textGood") : t("picker.textPoor")}
-						</dd>
+						{media !== "video" && (
+							<>
+								<dt>{t("picker.text")}</dt>
+								<dd>
+									{profile.text ? t("picker.textGood") : t("picker.textPoor")}
+								</dd>
+							</>
+						)}
 					</dl>
 				)}
 				{local && need != null && level && props.gpuTotal != null && (
@@ -628,12 +676,13 @@ function Card(props: {
 					<span className="text-ink">{local ? t("picker.free") : ""}</span>
 				</p>
 			</div>
-		</button>
+		</article>
 	);
 }
 
 /** Downloading a local model, step by step, until it is ready. */
-function Download({ model }: { model: LocalModelStatus }) {
+function Download(props: { model: LocalModelStatus; autoStart: boolean }) {
+	const { model } = props;
 	const i18n = useI18n();
 	const { t } = i18n;
 	const live = useModelProgress(model.id);
@@ -642,7 +691,15 @@ function Download({ model }: { model: LocalModelStatus }) {
 	const received = live?.receivedBytes ?? model.receivedBytes;
 	const total = live?.size ?? model.size;
 	const speed = live?.bytesPerSecond ?? 0;
-	const started = state !== "available" || install.isPending;
+	// Until the first progress event arrives, a request sent counts as started.
+	const started =
+		state !== "available" || install.isPending || install.isSuccess;
+	const { mutate } = install;
+	// Chosen from "Download and use": start without a second click.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: only when the drawer opens
+	useEffect(() => {
+		if (props.autoStart && model.state === "available") mutate();
+	}, []);
 	const steps = [
 		["downloading", t("picker.stepDownload")],
 		["verifying", t("picker.stepCheck")],
@@ -889,8 +946,11 @@ export function Picker(props: {
 	);
 	const current = all.find((e) => e.key === chosen);
 
-	const choose = (entry: Entry) => {
+	// Which entry was chosen from the hero, to start its download at once.
+	const [autoStart, setAutoStart] = useState<string | null>(null);
+	const choose = (entry: Entry, start = false) => {
 		setChosen(entry.key);
+		setAutoStart(start ? entry.key : null);
 		requestAnimationFrame(() =>
 			drawer.current?.scrollIntoView({
 				block: "nearest",
@@ -913,38 +973,41 @@ export function Picker(props: {
 
 	return (
 		<div className="flex flex-col gap-8">
-			<div
-				className="flex rounded-full border border-line bg-panel p-1 self-start"
-				role="tablist"
-				aria-label={t("picker.media")}
-			>
+			<fieldset className="flex self-start rounded-full border border-line bg-panel p-1">
+				<legend className="sr-only">{t("picker.media")}</legend>
 				{(["image", "video"] as const).map((kind) => (
 					<button
 						key={kind}
 						type="button"
-						role="tab"
-						aria-selected={props.media === kind}
+						aria-pressed={props.media === kind}
 						onClick={() => {
 							props.setMedia(kind);
 							setChosen(null);
 						}}
-						className="rounded-full px-4 py-1.5 text-sm font-medium text-dim transition-colors aria-selected:bg-ink aria-selected:text-bg"
+						className="rounded-full px-4 py-1.5 text-sm font-medium text-dim transition-colors aria-pressed:bg-ink aria-pressed:text-bg"
 					>
 						{kind === "image" ? t("picker.image") : t("picker.video")}
 					</button>
 				))}
-			</div>
+			</fieldset>
 
-			<Hero
-				hardware={local.data?.hardware}
-				pick={pick}
-				onChoose={choose}
-				onSeeAll={() =>
-					grid.current?.scrollIntoView({
-						behavior: reduceMotion() ? "auto" : "smooth",
-					})
-				}
-			/>
+			{local.isPending ? (
+				<div
+					className="developing h-64 rounded-2xl border border-line"
+					aria-hidden="true"
+				/>
+			) : (
+				<Hero
+					hardware={local.data?.hardware}
+					pick={pick}
+					onChoose={(entry) => choose(entry, true)}
+					onSeeAll={() =>
+						grid.current?.scrollIntoView({
+							behavior: reduceMotion() ? "auto" : "smooth",
+						})
+					}
+				/>
+			)}
 
 			{withSamples.length >= 2 && (
 				<CompareStrip key={props.media} entries={withSamples} />
@@ -1011,7 +1074,10 @@ export function Picker(props: {
 					{readyId ? (
 						props.ready(readyId, entryName(current))
 					) : current.kind === "local" ? (
-						<Download model={current.model} />
+						<Download
+							model={current.model}
+							autoStart={autoStart === current.key}
+						/>
 					) : (
 						<KeyForm
 							routes={

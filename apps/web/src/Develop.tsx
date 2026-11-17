@@ -2,7 +2,7 @@ import { develop, latent, loadImage } from "@open-reel/motion";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 /** Develop and latent frames redraw at film speed: lively, and cheap. */
-const FRAME_MS = 1000 / 24;
+export const FRAME_MS = 1000 / 24;
 const DEVELOP_MS = 1600;
 /** Canvases stay small; they are covered by the real picture once done. */
 const CANVAS_MAX = 480;

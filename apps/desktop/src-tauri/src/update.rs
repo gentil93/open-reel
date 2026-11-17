@@ -21,6 +21,15 @@ pub struct Pending(Mutex<Option<(Update, Vec<u8>)>>);
 #[derive(Default)]
 pub struct Updating(pub AtomicBool);
 
+/// Set once the server process has exited, so an install can wait for it.
+#[derive(Default)]
+pub struct ServerExited(pub AtomicBool);
+
+/// How often a running app looks for a newer version.
+const RECHECK: Duration = Duration::from_secs(6 * 60 * 60);
+/// How long to wait for the server to stop before installing anyway.
+const STOP_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// Appends a line to `app.log`, next to `server.log`.
 pub fn log<R: Runtime>(app: &AppHandle<R>, line: &str) {
     let Ok(dir) = app.path().app_log_dir() else {
@@ -38,9 +47,22 @@ pub fn log<R: Runtime>(app: &AppHandle<R>, line: &str) {
     }
 }
 
+/// Checks now and then every few hours, until an update is waiting.
+pub async fn watch(app: AppHandle) {
+    loop {
+        check(app.clone()).await;
+        if app.state::<Pending>().0.lock().unwrap().is_some() {
+            return;
+        }
+        tauri::async_runtime::spawn_blocking(|| std::thread::sleep(RECHECK))
+            .await
+            .ok();
+    }
+}
+
 /// Looks for a newer version and downloads it. Failures, such as being
 /// offline, are only logged: nobody needs to hear that a check failed.
-pub async fn check(app: AppHandle) {
+async fn check(app: AppHandle) {
     let result = async {
         let mut builder = app.updater_builder();
         // Lets a development build try updates against another feed, such as a
@@ -81,24 +103,38 @@ pub fn update_status(pending: State<'_, Pending>) -> Option<String> {
 }
 
 /// Stops the server cleanly, installs the update and starts the new version.
+/// If installing fails, the app starts again as it was: its server is gone by
+/// then, and a fresh start is the simplest way back.
 #[tauri::command]
 pub async fn install_update(app: AppHandle) -> Result<(), String> {
-    let Some((update, bytes)) = app.state::<Pending>().0.lock().unwrap().take() else {
-        return Err("No update is waiting".into());
+    let pending = app.state::<Pending>().0.lock().unwrap().take();
+    let Some((update, bytes)) = pending else {
+        return Err("noPendingUpdate".into());
     };
     app.state::<Updating>().0.store(true, Ordering::SeqCst);
     // The installer replaces the server's executable, so it must have exited.
     drop(app.state::<Server>().0.lock().unwrap().take());
-    tauri::async_runtime::spawn_blocking(|| std::thread::sleep(Duration::from_millis(1500)))
-        .await
-        .ok();
+    let exited = app.clone();
+    let stopped = tauri::async_runtime::spawn_blocking(move || {
+        let start = std::time::Instant::now();
+        while !exited.state::<ServerExited>().0.load(Ordering::SeqCst) {
+            if start.elapsed() > STOP_TIMEOUT {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        true
+    })
+    .await
+    .unwrap_or(false);
+    if !stopped {
+        log(&app, "the server did not stop in time; installing anyway");
+    }
     log(&app, &format!("installing version {}", update.version));
     if let Err(error) = update.install(bytes) {
         log(&app, &format!("install failed: {error}"));
-        app.state::<Updating>().0.store(false, Ordering::SeqCst);
-        return Err(error.to_string());
     }
-    // On Windows the installer has already closed the app; elsewhere, start
-    // the new version.
+    // On Windows a successful install has already closed the app. Otherwise
+    // this starts the new version, or the old one again if installing failed.
     app.restart();
 }
