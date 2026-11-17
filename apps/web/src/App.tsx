@@ -8,6 +8,7 @@ import { useLiveJobs } from "./live";
 import { Models } from "./Models";
 import { href, navigate, useRoute } from "./route";
 import { Settings } from "./Settings";
+import { UpdateToast } from "./UpdateToast";
 
 const MAX_REFERENCES = 4;
 
@@ -52,6 +53,7 @@ export function App() {
 	return (
 		<div className="flex h-full">
 			<div className="grain" aria-hidden="true" />
+			<UpdateToast />
 			<nav className="flex w-60 shrink-0 flex-col border-r border-line bg-panel max-md:hidden">
 				<div className="p-4">
 					<a

@@ -1,0 +1,15 @@
+{
+	"$schema": "../gen/schemas/desktop-schema.json",
+	"identifier": "app-page",
+	"description": "What the app's page, served by the local server, may ask of the window: only to hear about and install updates.",
+	"windows": ["main"],
+	"remote": {
+		"urls": ["http://localhost:*", "http://127.0.0.1:*"]
+	},
+	"permissions": [
+		"core:event:allow-listen",
+		"core:event:allow-unlisten",
+		"allow-update-status",
+		"allow-install-update"
+	]
+}

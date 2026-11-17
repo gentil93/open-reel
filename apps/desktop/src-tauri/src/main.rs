@@ -5,8 +5,11 @@
 //! The server is a compiled sidecar on a free loopback port; the window shows
 //! a splash until the server says where it listens, then opens the app there.
 
+mod update;
+
 use std::fs::{create_dir_all, File};
 use std::io::Write;
+use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 
 use tauri::webview::NewWindowResponse;
@@ -18,12 +21,12 @@ use tauri_plugin_shell::ShellExt;
 
 /// The line the server prints once it listens, followed by its address.
 const READY: &str = "open-reel is running at ";
-/// The darkroom's film base, so the window never flashes white.
-const BACKGROUND: Color = Color(13, 11, 9, 255);
+/// The app's background, so the window never flashes white.
+const BACKGROUND: Color = Color(9, 9, 11, 255);
 
 /// The running server. Dropping it closes the server's input, which tells it
 /// to shut down cleanly; a kill would leave its lock and database unflushed.
-struct Server(Mutex<Option<CommandChild>>);
+pub struct Server(pub Mutex<Option<CommandChild>>);
 
 /// Pages that belong to the app: its splash, the local server, and what the
 /// webview loads on its own (WebView2 starts at `about:blank`).
@@ -95,6 +98,7 @@ fn start_server(app: &AppHandle, window: WebviewWindow) -> Result<(), Box<dyn st
         .spawn()?;
     *app.state::<Server>().0.lock().unwrap() = Some(child);
 
+    let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let mut ready = false;
         // What the server said on stderr, to show if it stops.
@@ -110,6 +114,7 @@ fn start_server(app: &AppHandle, window: WebviewWindow) -> Result<(), Box<dyn st
                         if let (false, Ok(url)) = (ready, Url::parse(address.trim())) {
                             ready = true;
                             let _ = window.navigate(url);
+                            tauri::async_runtime::spawn(update::check(app.clone()));
                         }
                     }
                 }
@@ -133,8 +138,11 @@ fn start_server(app: &AppHandle, window: WebviewWindow) -> Result<(), Box<dyn st
                     if let Some(file) = log.as_mut() {
                         let _ = writeln!(file, "{stopped}");
                     }
-                    errors.push_str(&stopped);
-                    show_failure(&window, &errors);
+                    // Stopped on purpose to install an update: not a failure.
+                    if !app.state::<update::Updating>().0.load(Ordering::SeqCst) {
+                        errors.push_str(&stopped);
+                        show_failure(&window, &errors);
+                    }
                     break;
                 }
                 _ => {}
@@ -156,7 +164,15 @@ fn main() {
         }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(Server(Mutex::new(None)))
+        .manage(update::Pending::default())
+        .manage(update::Updating::default())
+        .invoke_handler(tauri::generate_handler![
+            update::update_status,
+            update::install_update
+        ])
         .setup(|app| {
             let navigation = app.handle().clone();
             let popups = app.handle().clone();

@@ -12,7 +12,8 @@
 		"windows": [],
 		"security": {
 			"csp": null
-		}
+		},
+		"withGlobalTauri": true
 	},
 	"bundle": {
 		"active": true,
@@ -30,6 +31,18 @@
 			"icons/128x128@2x.png",
 			"icons/icon.icns",
 			"icons/icon.ico"
-		]
+		],
+		"createUpdaterArtifacts": true
+	},
+	"plugins": {
+		"updater": {
+			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJERTdCRjYwNTYyNEMxQzYKUldUR3dTUldZTC9udlYyNDhjQitLcnExTjViVlMzbThzRmZwd2ljWFpFM2pWMkZhUUNQWWh4WTkK",
+			"endpoints": [
+				"https://github.com/gentil93/open-reel/releases/latest/download/latest.json"
+			],
+			"windows": {
+				"installMode": "passive"
+			}
+		}
 	}
 }
