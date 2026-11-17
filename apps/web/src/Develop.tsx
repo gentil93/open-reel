@@ -1,4 +1,4 @@
-import { develop, latent, loadImage } from "@open-reel/darkroom";
+import { develop, latent, loadImage } from "@open-reel/motion";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 /** Develop and latent frames redraw at film speed: lively, and cheap. */

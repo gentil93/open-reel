@@ -1,4 +1,4 @@
-import { latent } from "@open-reel/darkroom";
+import { latent } from "@open-reel/motion";
 import { createTranslator, matchLanguage } from "@open-reel/i18n";
 import "./index.css";
 import en from "./locales/en.json";

@@ -4,7 +4,7 @@ name: Site
 on:
   push:
     branches: [main]
-    paths: ["apps/site/**", "packages/i18n/**", "packages/darkroom/**"]
+    paths: ["apps/site/**", "packages/i18n/**", "packages/motion/**"]
   workflow_dispatch:
 
 permissions:

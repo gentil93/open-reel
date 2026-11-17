@@ -13,7 +13,7 @@
 		"@fontsource/ibm-plex-mono": "5.1.0",
 		"@fontsource/inter-tight": "5.1.0",
 		"@open-reel/core": "workspace:*",
-		"@open-reel/darkroom": "workspace:*",
+		"@open-reel/motion": "workspace:*",
 		"@open-reel/i18n": "workspace:*",
 		"@tanstack/react-query": "^5.0.0",
 		"react": "^19.0.0",

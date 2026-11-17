@@ -24,8 +24,8 @@
         "@fontsource/big-shoulders-display": "5.1.0",
         "@fontsource/ibm-plex-mono": "5.1.0",
         "@fontsource/inter-tight": "5.1.0",
-        "@open-reel/darkroom": "workspace:*",
         "@open-reel/i18n": "workspace:*",
+        "@open-reel/motion": "workspace:*",
         "gsap": "3.12.5",
       },
       "devDependencies": {
@@ -40,8 +40,8 @@
         "@fontsource/ibm-plex-mono": "5.1.0",
         "@fontsource/inter-tight": "5.1.0",
         "@open-reel/core": "workspace:*",
-        "@open-reel/darkroom": "workspace:*",
         "@open-reel/i18n": "workspace:*",
+        "@open-reel/motion": "workspace:*",
         "@tanstack/react-query": "^5.0.0",
         "react": "^19.0.0",
         "react-dom": "^19.0.0",
@@ -77,12 +77,12 @@
         "drizzle-kit": "^0.31.11",
       },
     },
-    "packages/darkroom": {
-      "name": "@open-reel/darkroom",
-      "version": "0.0.0",
-    },
     "packages/i18n": {
       "name": "@open-reel/i18n",
+      "version": "0.0.0",
+    },
+    "packages/motion": {
+      "name": "@open-reel/motion",
       "version": "0.0.0",
     },
     "packages/providers": {
@@ -209,11 +209,11 @@
 
     "@open-reel/core": ["@open-reel/core@workspace:packages/core"],
 
-    "@open-reel/darkroom": ["@open-reel/darkroom@workspace:packages/darkroom"],
-
     "@open-reel/desktop": ["@open-reel/desktop@workspace:apps/desktop"],
 
     "@open-reel/i18n": ["@open-reel/i18n@workspace:packages/i18n"],
+
+    "@open-reel/motion": ["@open-reel/motion@workspace:packages/motion"],
 
     "@open-reel/providers": ["@open-reel/providers@workspace:packages/providers"],
 

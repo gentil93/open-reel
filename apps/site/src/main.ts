@@ -1,5 +1,5 @@
 import "./styles.css";
-import { develop, loadImage } from "@open-reel/darkroom";
+import { develop, loadImage } from "@open-reel/motion";
 import { createTranslator, matchLanguage } from "@open-reel/i18n";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";

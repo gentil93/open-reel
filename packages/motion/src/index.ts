@@ -1,6 +1,6 @@
 /**
- * The Darkroom effects the site and the app share: pictures that come out of
- * grain the way a diffusion model shows them partway through.
+ * The effects the site and the app share: pictures that come out of noise the
+ * way a diffusion model shows them partway through, under the Aurora light.
  */
 
 const NOISE_SIZE = 256;
@@ -16,8 +16,8 @@ function noiseTexture(): HTMLCanvasElement {
 	for (let i = 0; i < data.data.length; i += 4) {
 		const value = Math.random() * 255;
 		data.data[i] = value;
-		data.data[i + 1] = value * 0.96;
-		data.data[i + 2] = value * 0.9;
+		data.data[i + 1] = value * 0.92;
+		data.data[i + 2] = value * 0.96;
 		data.data[i + 3] = 255;
 	}
 	ctx.putImageData(data, 0, 0);
@@ -70,9 +70,10 @@ export function develop(
 }
 
 /**
- * Draws a picture that does not exist yet: static under a safelight that
- * warms as `progress` goes from 0 to 1. Without a progress, the light breathes
- * with `time` (in milliseconds) so the frame still looks alive.
+ * Draws a picture that does not exist yet: noise under Aurora light that
+ * drifts with `time` (in milliseconds) and grows brighter and calmer as
+ * `progress` goes from 0 to 1. Without a progress, the light breathes so the
+ * frame still looks alive.
  */
 export function latent(
 	canvas: HTMLCanvasElement,
@@ -84,23 +85,31 @@ export function latent(
 	const { width, height } = canvas;
 	const p =
 		progress == null ? 0.25 + Math.sin(time / 900) * 0.12 : clamp(progress);
-	ctx.fillStyle = "#0d0b09";
+	ctx.fillStyle = "#0d0d10";
 	ctx.fillRect(0, 0, width, height);
-	// The safelight: an amber glow that grows as the picture forms.
-	const radius = Math.max(width, height) * (0.35 + p * 0.55);
-	const glow = ctx.createRadialGradient(
-		width / 2,
-		height * 0.55,
-		0,
-		width / 2,
-		height * 0.55,
-		radius,
-	);
-	glow.addColorStop(0, `rgba(240, 166, 58, ${0.1 + p * 0.28})`);
-	glow.addColorStop(1, "rgba(240, 166, 58, 0)");
-	ctx.fillStyle = glow;
-	ctx.fillRect(0, 0, width, height);
-	grain(ctx, 0.32 - p * 0.14);
+	// Two lights, pink and gold, drifting around each other.
+	const lights: [number, number, string][] = [
+		[Math.sin(time / 1300), Math.cos(time / 1700), "255, 61, 139"],
+		[Math.cos(time / 1500), Math.sin(time / 1100), "255, 200, 97"],
+	];
+	for (const [dx, dy, rgb] of lights) {
+		const x = width * (0.5 + dx * 0.28);
+		const y = height * (0.5 + dy * 0.22);
+		const glow = ctx.createRadialGradient(
+			x,
+			y,
+			0,
+			x,
+			y,
+			Math.max(width, height) * (0.35 + p * 0.5),
+		);
+		glow.addColorStop(0, `rgba(${rgb}, ${0.22 + p * 0.3})`);
+		glow.addColorStop(0.55, `rgba(255, 138, 61, ${0.08 + p * 0.12})`);
+		glow.addColorStop(1, "rgba(255, 138, 61, 0)");
+		ctx.fillStyle = glow;
+		ctx.fillRect(0, 0, width, height);
+	}
+	grain(ctx, 0.3 - p * 0.14);
 }
 
 export function loadImage(src: string): Promise<HTMLImageElement> {
