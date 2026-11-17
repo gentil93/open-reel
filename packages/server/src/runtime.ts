@@ -82,6 +82,8 @@ export interface RuntimeOptions {
 	hardware?: () => Promise<Hardware>;
 	/** Used to download models and their demos. */
 	fetch?: (url: string, init?: RequestInit) => Promise<Response>;
+	/** Database migrations. Defaults to the ones in the source tree. */
+	migrationsDir?: string;
 }
 
 /** Wires the core on a data directory. Call `start()` once ready to run jobs. */
@@ -110,7 +112,10 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 	// Generated images and keys are private to the owner.
 	await mkdir(options.dataDir, { recursive: true, mode: 0o700 });
 	const unlock = lockDataDir(options.dataDir);
-	const repo = new SqliteRepository(join(options.dataDir, "open-reel.sqlite"));
+	const repo = new SqliteRepository(
+		join(options.dataDir, "open-reel.sqlite"),
+		options.migrationsDir,
+	);
 	const assets = new FsAssetStore(join(options.dataDir, "assets"));
 	const keys = new FileKeyStore(join(options.dataDir, "auth.json"));
 	const engine = new JobEngine({ repo, assets, registry, keys });

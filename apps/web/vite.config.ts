@@ -5,6 +5,10 @@ import { defineConfig } from "vite";
 // In development the API runs separately: `bun run dev:server`.
 export default defineConfig({
 	plugins: [react(), tailwindcss()],
+	build: {
+		// The desktop app shows the splash while its server starts.
+		rollupOptions: { input: ["index.html", "splash.html"] },
+	},
 	server: {
 		port: 5173,
 		strictPort: true,

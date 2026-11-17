@@ -55,18 +55,19 @@ export interface Repository {
 	listUnfinishedJobs(): Promise<Job[]>;
 }
 
-const MIGRATIONS = join(import.meta.dir, "..", "..", "drizzle");
+/** Where the migrations are in the source tree. A packaged app passes its own. */
+export const MIGRATIONS_DIR = join(import.meta.dir, "..", "..", "drizzle");
 
 export class SqliteRepository implements Repository {
 	private sqlite: Database;
 	private db;
 
 	/** `path` may be ":memory:". */
-	constructor(path: string) {
+	constructor(path: string, migrationsDir = MIGRATIONS_DIR) {
 		this.sqlite = new Database(path, { create: true });
 		this.sqlite.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
 		this.db = drizzle(this.sqlite, { schema });
-		migrate(this.db, { migrationsFolder: MIGRATIONS });
+		migrate(this.db, { migrationsFolder: migrationsDir });
 	}
 
 	close(): void {

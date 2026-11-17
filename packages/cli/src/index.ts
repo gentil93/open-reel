@@ -13,11 +13,15 @@ const HELP = `open-reel — one interface for many image generation models
 
 Usage: open-reel [options]
 
-  --port <n>       Port to listen on (default 4096)
+  --port <n>       Port to listen on (default 4096; 0 picks a free one)
   --data-dir <p>   Where sessions, images and keys are stored
                    (default ${defaultDataDir()})
   --dev            Accept requests from the Vite dev server and skip the UI
   --no-open        Do not open the browser
+  --resources <p>  Where a packaged app keeps the built UI (web/) and the
+                   database migrations (drizzle/)
+  --parent-pid <n> Stop when the process with this id ends, such as the
+                   desktop app that started this server
   -h, --help       Show this help
 `;
 
@@ -27,6 +31,8 @@ const { values } = parseArgs({
 		"data-dir": { type: "string" },
 		dev: { type: "boolean", default: false },
 		"no-open": { type: "boolean", default: false },
+		resources: { type: "string" },
+		"parent-pid": { type: "string" },
 		help: { type: "boolean", short: "h", default: false },
 	},
 });
@@ -37,18 +43,35 @@ if (values.help) {
 }
 
 const port = Number(values.port);
-if (!Number.isInteger(port) || port < 1 || port > 65535) {
+if (!Number.isInteger(port) || port < 0 || port > 65535) {
 	console.error(`Invalid port: ${values.port}`);
 	process.exit(1);
 }
 
-const WEB_DIST = join(import.meta.dir, "..", "..", "..", "apps", "web", "dist");
+const parentPid =
+	values["parent-pid"] == null ? null : Number(values["parent-pid"]);
+if (parentPid != null && !(Number.isInteger(parentPid) && parentPid > 0)) {
+	console.error(`Invalid parent process id: ${values["parent-pid"]}`);
+	process.exit(1);
+}
+
+// A compiled binary has no source tree around it, so it is told where things are.
+const WEB_DIST = values.resources
+	? join(values.resources, "web")
+	: join(import.meta.dir, "..", "..", "..", "apps", "web", "dist");
+const migrationsDir = values.resources
+	? join(values.resources, "drizzle")
+	: undefined;
 const dataDir = values["data-dir"] ?? defaultDataDir();
 // An explicit data directory keeps everything, models included, inside it.
 const modelsDir = values["data-dir"]
 	? join(dataDir, "models")
 	: await defaultModelsDir(dataDir);
-const runtime = await createRuntime({ dataDir, modelsDir }).catch((error) => {
+const runtime = await createRuntime({
+	dataDir,
+	modelsDir,
+	migrationsDir,
+}).catch((error) => {
 	if (!(error instanceof DataDirInUseError)) throw error;
 	console.error(`${error.message}.`);
 	process.exit(1);
@@ -109,10 +132,24 @@ if (!values.dev && !values["no-open"]) {
 	}
 }
 
+function shutdown(): never {
+	server.stop(true);
+	runtime.close();
+	process.exit(0);
+}
+
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
-	process.on(signal, () => {
-		server.stop(true);
-		runtime.close();
-		process.exit(0);
-	});
+	process.on(signal, shutdown);
+}
+
+// If the desktop app dies without stopping this server, it must not linger
+// holding the data directory and the port.
+if (parentPid != null) {
+	setInterval(() => {
+		try {
+			process.kill(parentPid, 0);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "EPERM") shutdown();
+		}
+	}, 2000);
 }

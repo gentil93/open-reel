@@ -1,0 +1,16 @@
+{
+	"name": "@open-reel/desktop",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"prepare-bundle": "bun run --cwd ../web build && bun scripts/sidecar.ts",
+		"dev": "tauri dev",
+		"build": "tauri build",
+		"icons": "tauri icon icon.svg",
+		"typecheck": "tsc -p ."
+	},
+	"devDependencies": {
+		"@tauri-apps/cli": "2.12.5"
+	}
+}

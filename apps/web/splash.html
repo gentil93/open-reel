@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<meta name="color-scheme" content="dark" />
+		<title>open-reel</title>
+	</head>
+	<body>
+		<div class="grain" aria-hidden="true"></div>
+		<main class="flex h-full flex-col items-center justify-center gap-6 p-8 text-center">
+			<canvas id="frame" width="320" height="200" class="w-80 max-w-full rounded-md"></canvas>
+			<p class="font-display text-4xl leading-none font-black uppercase tracking-wide">
+				open<span class="text-accent">·</span>reel
+			</p>
+			<p id="status" class="font-mono text-xs uppercase tracking-[0.18em] text-dim" aria-live="polite"></p>
+			<pre id="detail" class="hidden max-w-xl whitespace-pre-wrap text-left font-mono text-xs text-danger"></pre>
+		</main>
+		<script type="module" src="/src/splash.ts"></script>
+	</body>
+</html>

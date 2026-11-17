@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+	<title>open-reel</title>
+	<rect width="1024" height="1024" rx="224" fill="#0d0b09"/>
+	<circle cx="512" cy="512" r="330" fill="none" stroke="#f0a63a" stroke-width="88"/>
+	<circle cx="512" cy="512" r="104" fill="#f0a63a"/>
+	<g fill="#0d0b09">
+		<circle cx="512" cy="182" r="40"/>
+		<circle cx="512" cy="842" r="40"/>
+		<circle cx="182" cy="512" r="40"/>
+		<circle cx="842" cy="512" r="40"/>
+	</g>
+</svg>

@@ -39,6 +39,8 @@
 	"composer.uploading": "Enviando…",
 	"composer.video": "Vídeo",
 	"composer.videoCount": "Vídeos",
+	"desktop.failed": "O open-reel não conseguiu iniciar.",
+	"desktop.starting": "Preparando o laboratório…",
 	"errors.assetNotFound": "Essa imagem não existe mais.",
 	"errors.downloadCutShort": "O download de {file} foi interrompido. Tente de novo para continuar de onde parou.",
 	"errors.downloadFailed": "Não foi possível baixar {file} (o servidor respondeu {status}). Tente mais tarde.",
