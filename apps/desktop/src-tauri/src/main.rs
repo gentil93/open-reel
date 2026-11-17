@@ -19,7 +19,8 @@ const READY: &str = "open-reel is running at ";
 /// The darkroom's film base, so the window never flashes white.
 const BACKGROUND: Color = Color(13, 11, 9, 255);
 
-/// The running server, stopped when the app exits.
+/// The running server. Dropping it closes the server's input, which tells it
+/// to shut down cleanly; a kill would leave its lock and database unflushed.
 struct Server(Mutex<Option<CommandChild>>);
 
 /// Pages that belong to the app: its splash and the local server.
@@ -146,9 +147,7 @@ fn main() {
 
     app.run(|app, event| {
         if let RunEvent::Exit = event {
-            if let Some(server) = app.state::<Server>().0.lock().unwrap().take() {
-                let _ = server.kill();
-            }
+            drop(app.state::<Server>().0.lock().unwrap().take());
         }
     });
 }

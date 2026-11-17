@@ -21,7 +21,8 @@ Usage: open-reel [options]
   --resources <p>  Where a packaged app keeps the built UI (web/) and the
                    database migrations (drizzle/)
   --parent-pid <n> Stop when the process with this id ends, such as the
-                   desktop app that started this server
+                   desktop app that started this server, or when it closes
+                   this server's standard input
   -h, --help       Show this help
 `;
 
@@ -142,9 +143,16 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 	process.on(signal, shutdown);
 }
 
-// If the desktop app dies without stopping this server, it must not linger
-// holding the data directory and the port.
+// The desktop app stops this server by closing its input, which lets it shut
+// down cleanly on every system. If the app dies instead, the server must not
+// linger holding the data directory and the port.
 if (parentPid != null) {
+	void (async () => {
+		for await (const _ of Bun.stdin.stream()) {
+			// Nothing is sent; only the end matters.
+		}
+		shutdown();
+	})();
 	setInterval(() => {
 		try {
 			process.kill(parentPid, 0);
