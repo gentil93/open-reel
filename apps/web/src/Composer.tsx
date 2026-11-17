@@ -25,6 +25,15 @@ interface Props {
 
 const STORAGE_KEY = "open-reel.models";
 
+/** Makes `ids` the models the composer starts with next time. */
+export function rememberModels(ids: string[]): void {
+	try {
+		localStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
+	} catch {
+		// Storage can be unavailable; the composer then starts with none.
+	}
+}
+
 function savedModels(): string[] {
 	try {
 		const value = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
@@ -75,13 +84,8 @@ export function Composer(props: Props) {
 		...new Set(selected.flatMap((m) => m.capabilities.durations ?? [])),
 	].sort((a, b) => a - b);
 
-	useEffect(() => {
-		try {
-			localStorage.setItem(STORAGE_KEY, JSON.stringify(chosen));
-		} catch {
-			// Storage can be unavailable; the selection then lasts for this visit only.
-		}
-	}, [chosen]);
+	// Without storage, the selection lasts for this visit only.
+	useEffect(() => rememberModels(chosen), [chosen]);
 
 	const upload = useMutation({
 		mutationFn: api.upload,
@@ -159,9 +163,9 @@ export function Composer(props: Props) {
 											: [...chosen, model.id],
 									)
 								}
-								className={`rounded-full border px-3 py-1 text-sm disabled:opacity-40 ${
+								className={`rounded-full border px-3 py-1 text-sm transition-colors disabled:opacity-40 ${
 									on
-										? "border-accent bg-accent text-accent-ink"
+										? "border-accent bg-accent text-accent-ink shadow-[0_0_14px_rgb(240_166_58/0.3)]"
 										: "border-line text-dim hover:border-dim hover:text-ink"
 								}`}
 							>
@@ -317,7 +321,7 @@ export function Composer(props: Props) {
 						type="button"
 						onClick={submit}
 						disabled={!canSend}
-						className="rounded-md bg-accent px-5 py-2 text-sm font-medium text-accent-ink disabled:opacity-40"
+						className="rounded-md bg-accent px-5 py-1.5 font-display text-lg font-bold uppercase tracking-wider text-accent-ink shadow-[0_0_20px_rgb(240_166_58/0.3)] transition-[transform,box-shadow] hover:-translate-y-0.5 hover:shadow-[0_0_32px_rgb(240_166_58/0.45)] disabled:translate-y-0 disabled:opacity-40 disabled:shadow-none"
 					>
 						{selected.length > 1
 							? t("composer.compare", { count: selected.length })

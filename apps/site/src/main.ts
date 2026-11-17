@@ -1,9 +1,9 @@
 import "./styles.css";
+import { develop, loadImage } from "@open-reel/darkroom";
 import { createTranslator, matchLanguage } from "@open-reel/i18n";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { LINKS } from "./config";
-import { develop, loadImage } from "./develop";
 import { LANGUAGES } from "./languages";
 import en from "./locales/en.json";
 import ptBR from "./locales/pt-BR.json";

@@ -40,15 +40,23 @@ export function App() {
 
 	const active = route.view === "chat" ? route.sessionId : undefined;
 	const navLink = (current: boolean) =>
-		`rounded-md px-3 py-2 text-sm ${current ? "bg-line text-ink" : "text-dim hover:text-ink"}`;
+		`relative rounded-md px-3 py-2 text-sm transition-colors before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded before:bg-accent before:transition-opacity ${
+			current
+				? "bg-line text-ink before:opacity-100"
+				: "text-dim before:opacity-0 hover:text-ink"
+		}`;
+	// Each view comes into the light when it is opened.
+	const scene =
+		route.view === "chat" ? `chat/${route.sessionId ?? ""}` : route.view;
 
 	return (
 		<div className="flex h-full">
+			<div className="grain" aria-hidden="true" />
 			<nav className="flex w-60 shrink-0 flex-col border-r border-line bg-panel max-md:hidden">
 				<div className="p-4">
 					<a
 						href={href.newChat}
-						className="font-mono text-sm font-semibold tracking-tight"
+						className="font-display text-2xl leading-none font-black uppercase tracking-wide"
 					>
 						open<span className="text-accent">·</span>reel
 					</a>
@@ -110,7 +118,7 @@ export function App() {
 				</div>
 			</nav>
 
-			<main className="flex min-w-0 flex-1 flex-col">
+			<main key={scene} className="scene-in flex min-w-0 flex-1 flex-col">
 				<div className="flex gap-1 border-b border-line bg-panel p-2 md:hidden">
 					<a href={href.newChat} className={navLink(route.view === "chat")}>
 						{t("nav.session")}

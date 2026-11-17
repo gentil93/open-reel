@@ -1,6 +1,7 @@
 import type { JobView, ModelSpec, TurnView } from "@open-reel/core/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+	type CSSProperties,
 	type Dispatch,
 	type SetStateAction,
 	useEffect,
@@ -9,11 +10,32 @@ import {
 } from "react";
 import { api, assetUrl, type SessionDetail } from "./api";
 import { Composer, type Draft } from "./Composer";
+import { DevelopedImage, LatentFrame } from "./Develop";
 import { duration, usd } from "./format";
 import { type I18n, useI18n } from "./i18n";
 import { Lightbox, type LightboxItem } from "./Lightbox";
 import { type JobProgress, useProgress } from "./live";
 import { href, navigate } from "./route";
+import { Welcome } from "./Welcome";
+
+const WELCOMED_KEY = "open-reel.welcomed";
+
+/** Whether this browser has been through the welcome, or skipped it. */
+function welcomed(): boolean {
+	try {
+		return localStorage.getItem(WELCOMED_KEY) === "1";
+	} catch {
+		return false;
+	}
+}
+
+function markWelcomed(): void {
+	try {
+		localStorage.setItem(WELCOMED_KEY, "1");
+	} catch {
+		// Without storage, the welcome shows again while there are no sessions.
+	}
+}
 
 interface Props {
 	sessionId?: string;
@@ -33,6 +55,7 @@ function Elapsed({ since }: { since: number }) {
 }
 
 function JobCard(props: {
+	index: number;
 	job: JobView;
 	prompt: string;
 	model: ModelSpec | undefined;
@@ -46,6 +69,8 @@ function JobCard(props: {
 	const cancel = useMutation({ mutationFn: () => api.cancelJob(job.id) });
 	const name = model?.name ?? job.modelId;
 	const pending = job.status === "queued" || job.status === "running";
+	// Pictures that finish while watched develop; ones already done just appear.
+	const watched = useRef(pending);
 	const [width, height] = (
 		job.params.aspectRatio ?? (model?.media === "video" ? "16:9" : "1:1")
 	)
@@ -53,15 +78,18 @@ function JobCard(props: {
 		.map(Number);
 
 	return (
-		<section className="flex min-w-0 flex-col rounded-lg border border-line bg-panel">
+		<section
+			className="rise-in flex min-w-0 flex-col rounded-lg border border-line bg-panel transition-colors hover:border-line-strong"
+			style={{ "--i": props.index } as CSSProperties}
+		>
 			<header className="flex items-baseline justify-between gap-3 border-b border-line px-3 py-2">
 				<h3 className="truncate text-sm font-medium">
 					{name}
-					<span className="ml-2 font-mono text-xs font-normal text-dim">
+					<span className="ml-2 font-mono text-[11px] font-normal uppercase tracking-wider text-dim">
 						{job.providerId}
 					</span>
 				</h3>
-				<p className="shrink-0 font-mono text-xs text-dim">
+				<p className="shrink-0 font-mono text-xs tabular-nums text-dim">
 					{job.status === "queued" && t("job.queued")}
 					{job.status === "running" && job.startedAt && (
 						<Elapsed since={job.startedAt} />
@@ -81,11 +109,14 @@ function JobCard(props: {
 
 			<div className="flex flex-1 flex-col gap-2 p-2">
 				{pending && (
-					<div
-						className="developing flex flex-col items-center justify-center gap-3 rounded-md"
-						style={{ aspectRatio: `${width} / ${height}` }}
+					<LatentFrame
+						ratio={(width || 1) / (height || 1)}
+						fraction={job.status === "running" ? progress?.fraction : undefined}
 					>
-						<p className="font-mono text-xs text-dim" aria-live="polite">
+						<p
+							className="rounded bg-bg/70 px-2 py-1 font-mono text-[11px] uppercase tracking-wider text-ink"
+							aria-live="polite"
+						>
 							{job.status === "queued"
 								? t("job.waiting")
 								: describeProgress(i18n, progress)}
@@ -94,11 +125,11 @@ function JobCard(props: {
 							type="button"
 							onClick={() => cancel.mutate()}
 							disabled={cancel.isPending}
-							className="rounded-md border border-line bg-panel px-3 py-1 text-xs hover:border-dim"
+							className="rounded-md border border-line-strong bg-bg/70 px-3 py-1 text-xs hover:border-dim"
 						>
 							{t("common.cancel")}
 						</button>
-					</div>
+					</LatentFrame>
 				)}
 				{job.status === "failed" && (
 					<p className="p-2 text-sm leading-relaxed text-danger">
@@ -140,7 +171,7 @@ function JobCard(props: {
 									loop
 									playsInline
 									preload="metadata"
-									className="w-full rounded-md bg-black"
+									className="print-in w-full rounded-md bg-black"
 								/>
 								<button
 									type="button"
@@ -158,10 +189,11 @@ function JobCard(props: {
 									onClick={open}
 									className="block w-full"
 								>
-									<img
+									<DevelopedImage
 										src={assetUrl(asset.id)}
 										alt={`${name}: ${props.prompt}`}
-										loading="lazy"
+										fresh={watched.current}
+										ratio={(width || 1) / (height || 1)}
 										className="w-full rounded-md"
 									/>
 								</button>
@@ -192,7 +224,7 @@ function TurnBlock(props: {
 	const columns = Math.min(turn.jobs.length, 3);
 	return (
 		<article className="flex flex-col gap-3">
-			<div className="flex items-start gap-3">
+			<div className="rise-in flex items-start gap-3">
 				{turn.referenceAssetIds.map((id) => (
 					<img
 						key={id}
@@ -202,6 +234,12 @@ function TurnBlock(props: {
 					/>
 				))}
 				<p className="whitespace-pre-wrap text-lg leading-snug">
+					<span
+						aria-hidden="true"
+						className="mr-2 align-middle font-mono text-[11px] tracking-wider text-accent"
+					>
+						▸
+					</span>
 					{turn.prompt}
 				</p>
 			</div>
@@ -211,9 +249,10 @@ function TurnBlock(props: {
 					gridTemplateColumns: `repeat(${columns}, minmax(0, ${columns === 1 ? "28rem" : "1fr"}))`,
 				}}
 			>
-				{turn.jobs.map((job) => (
+				{turn.jobs.map((job, index) => (
 					<JobCard
 						key={job.id}
+						index={index}
 						job={job}
 						prompt={turn.prompt}
 						model={props.models.get(job.modelId)}
@@ -270,6 +309,12 @@ export function Chat({
 		queryFn: () => api.session(sessionId as string),
 		enabled: sessionId != null,
 	});
+	const sessions = useQuery({ queryKey: ["sessions"], queryFn: api.sessions });
+	const [skipped, setSkipped] = useState(welcomed);
+	// A first visit: nothing made yet, so show the way to a first picture.
+	const firstRun = !sessionId && !skipped && sessions.data?.length === 0;
+	// Until the sessions arrive it is unknown whether this is a first visit.
+	const deciding = !sessionId && !skipped && sessions.isPending;
 	const [open, setOpen] = useState<LightboxItem | null>(null);
 	const end = useRef<HTMLDivElement>(null);
 	const turnCount = session.data?.turns.length ?? 0;
@@ -283,6 +328,7 @@ export function Chat({
 		mutationFn: (draft: Draft) =>
 			api.createTurn({ ...draft, sessionId, referenceAssetIds: references }),
 		onSuccess: ({ session: created, turn }) => {
+			markWelcomed();
 			// Drop only what was sent; more may have been added meanwhile.
 			setReferences((current) =>
 				current.filter((id) => !turn.referenceAssetIds.includes(id)),
@@ -317,12 +363,26 @@ export function Chat({
 					{loadError && (
 						<p className="text-sm text-danger">{i18n.explain(loadError)}</p>
 					)}
-					{!sessionId && (
-						<div className="py-16">
-							<h1 className="text-3xl font-semibold tracking-tight">
+					{firstRun && (
+						<Welcome
+							busy={create.isPending}
+							error={create.error ? i18n.explain(create.error) : null}
+							onSubmit={(draft) => create.mutate(draft)}
+							onSkip={() => {
+								markWelcomed();
+								setSkipped(true);
+							}}
+						/>
+					)}
+					{!sessionId && !firstRun && sessions.data && (
+						<div className="rise-in py-16">
+							<p className="font-mono text-[11px] uppercase tracking-[0.18em] text-accent">
+								{t("chat.eyebrow")}
+							</p>
+							<h1 className="mt-3 font-display text-5xl leading-[0.9] font-black uppercase tracking-wide sm:text-6xl">
 								{t("chat.heading")}
 							</h1>
-							<p className="mt-3 max-w-xl leading-relaxed text-dim">
+							<p className="mt-4 max-w-xl leading-relaxed text-dim">
 								{t("chat.intro")}
 							</p>
 						</div>
@@ -339,15 +399,17 @@ export function Chat({
 					<div ref={end} />
 				</div>
 			</div>
-			<Composer
-				models={models.data ?? []}
-				providers={providers.data ?? []}
-				references={references}
-				setReferences={setReferences}
-				busy={create.isPending}
-				error={create.error ? i18n.explain(create.error) : null}
-				onSubmit={(draft) => create.mutate(draft)}
-			/>
+			{!firstRun && !deciding && (
+				<Composer
+					models={models.data ?? []}
+					providers={providers.data ?? []}
+					references={references}
+					setReferences={setReferences}
+					busy={create.isPending}
+					error={create.error ? i18n.explain(create.error) : null}
+					onSubmit={(draft) => create.mutate(draft)}
+				/>
+			)}
 			{open && (
 				<Lightbox
 					item={open}

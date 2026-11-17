@@ -13,6 +13,7 @@
 		"@fontsource/big-shoulders-display": "5.1.0",
 		"@fontsource/ibm-plex-mono": "5.1.0",
 		"@fontsource/inter-tight": "5.1.0",
+		"@open-reel/darkroom": "workspace:*",
 		"@open-reel/i18n": "workspace:*",
 		"gsap": "3.12.5"
 	},
