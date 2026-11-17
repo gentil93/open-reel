@@ -11,6 +11,6 @@ meets.
 ## Reporting
 
 If someone breaks these rules, tell the maintainers privately at
-{{CONTACT}}. Reports are kept confidential. The maintainers decide what to do,
+[openreel.project@gmail.com](mailto:openreel.project@gmail.com). Reports are kept confidential. The maintainers decide what to do,
 from a warning to a ban from the project, following the Contributor Covenant's
 enforcement guidelines.
