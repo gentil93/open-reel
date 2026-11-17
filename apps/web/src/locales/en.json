@@ -57,6 +57,7 @@
 	"errors.downloadFailed": "Could not download {file} (the server answered {status}). Try again later.",
 	"errors.downloadTooLarge": "{file} came out larger than expected, so it was discarded.",
 	"errors.emptyKey": "The key is empty.",
+	"errors.engineDoesNotRun": "The engine does not run on this computer: {reason}",
 	"errors.engineExitCode": "The engine stopped unexpectedly (code {code}).",
 	"errors.engineMissing": "The engine for {model} is not installed. Install the model again.",
 	"errors.engineNoResult": "The engine finished without producing a picture.",

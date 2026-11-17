@@ -103,6 +103,8 @@ async function setup() {
 			memoryBytes: 8 * 1024 ** 3,
 			gpus: [],
 		}),
+		// The test engine is not a real program.
+		checkEngine: async () => null,
 		fetch: download,
 	});
 	cleanups.push(async () => {

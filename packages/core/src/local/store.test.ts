@@ -189,10 +189,18 @@ const HOSTED = {
 };
 
 async function setup(
-	options: { hardware?: Hardware; catalog?: LocalModelSpec[] } = {},
+	options: {
+		hardware?: Hardware;
+		catalog?: LocalModelSpec[];
+		/** Says why a freshly installed engine does not run; by default all do. */
+		checkEngine?: (executable: string) => Promise<string | null>;
+		root?: string;
+	} = {},
 ) {
-	const root = await mkdtemp(join(tmpdir(), "open-reel-models-"));
-	dirs.push(root);
+	// A second store on an existing root reopens it, as after a restart.
+	const root =
+		options.root ?? (await mkdtemp(join(tmpdir(), "open-reel-models-")));
+	if (!options.root) dirs.push(root);
 	const host = remote(HOSTED);
 	const hardware = options.hardware ?? machine(24);
 	const store = new LocalModelStore({
@@ -201,6 +209,7 @@ async function setup(
 		engines: ENGINES,
 		fetch: host.fetch,
 		hardware: async () => hardware,
+		checkEngine: options.checkEngine ?? (async () => null),
 	});
 	const events: LocalModelEvent[] = [];
 	store.subscribe((event) => events.push(event));
@@ -661,4 +670,43 @@ test("leftover temporary folders are not taken for engines", async () => {
 		recursive: true,
 	});
 	expect((await store.list()).engines[0]?.installed).toBe(false);
+});
+
+test("an engine that does not run here is set aside for the next best", async () => {
+	const tried: string[] = [];
+	const { store, status, engines, blobs, root } = await setup({
+		checkEngine: async (executable) => {
+			tried.push(executable);
+			return executable.includes("cuda")
+				? "cudart64_12.dll was not found"
+				: null;
+		},
+	});
+	await store.install("a");
+	await store.idle();
+	expect(tried.map((path) => path.includes("cuda"))).toEqual([true, false]);
+	expect((await status("a")).state).toBe("installed");
+	expect(await engines()).toEqual(["run-linux-x64-cpu"]);
+	expect((await store.runtime("a")).build.id).toBe("run-linux-x64-cpu");
+	// Neither the broken build nor its archive is left behind.
+	expect((await blobs()) as string[]).not.toContain(sha256(ENGINE));
+
+	// Remembered after a restart: the CUDA build is not offered again.
+	const again = await setup({ root, checkEngine: async () => null });
+	expect((await again.store.runtime("a")).build.id).toBe("run-linux-x64-cpu");
+	expect((await again.store.list()).engines[0]).toMatchObject({
+		build: "run-linux-x64-cpu",
+	});
+});
+
+test("when no engine runs here, the install says why", async () => {
+	const { store, status } = await setup({
+		checkEngine: async () => "the program was blocked",
+	});
+	await store.install("a");
+	await store.idle();
+	const failed = await status("a");
+	expect(failed.state).toBe("available");
+	expect(failed.errorCode).toBe("engineDoesNotRun");
+	expect(failed.errorParams).toEqual({ reason: "the program was blocked" });
 });

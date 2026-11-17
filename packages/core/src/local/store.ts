@@ -48,6 +48,38 @@ export interface LocalModelStoreOptions {
 	fetch?: Fetch;
 	/** Defaults to looking at this machine. */
 	hardware?: () => Promise<Hardware>;
+	/**
+	 * Tries an engine's program right after it is installed. Resolves with why
+	 * it does not run, or null when it does. Defaults to running it with
+	 * `--help`, which catches missing libraries and blocked programs.
+	 */
+	checkEngine?: (executable: string) => Promise<string | null>;
+}
+
+/** An engine build that was installed but does not run on this machine. */
+class EngineCheckFailed extends Error {}
+
+const CHECK_TIMEOUT_MS = 30_000;
+
+async function runsWithHelp(executable: string): Promise<string | null> {
+	try {
+		const child = Bun.spawn([executable, "--help"], {
+			stdin: "ignore",
+			stdout: "ignore",
+			stderr: "pipe",
+		});
+		const timer = setTimeout(() => child.kill(), CHECK_TIMEOUT_MS);
+		const [code, errors] = await Promise.all([
+			child.exited,
+			new Response(child.stderr).text(),
+		]);
+		clearTimeout(timer);
+		if (code === 0) return null;
+		const reason = errors.trim().split(/\r?\n/).at(-1);
+		return reason || `it stopped with code ${code}`;
+	} catch (error) {
+		return error instanceof Error ? error.message : String(error);
+	}
 }
 
 /** What it takes to run an installed model. */
@@ -210,6 +242,9 @@ export class LocalModelStore {
 	private fetch: Fetch;
 	private detect: () => Promise<Hardware>;
 	private hardware: Promise<Hardware> | null = null;
+	private checkEngine: (executable: string) => Promise<string | null>;
+	/** Builds that were installed here and did not run. */
+	private broken = new Set<string>();
 	private listeners = new Set<LocalModelListener>();
 	private installs = new Map<string, Install>();
 	private errors = new Map<string, ReturnType<typeof describeError>>();
@@ -224,6 +259,7 @@ export class LocalModelStore {
 		this.engines = options.engines;
 		this.fetch = options.fetch ?? globalThis.fetch;
 		this.detect = options.hardware ?? (() => detectHardware());
+		this.checkEngine = options.checkEngine ?? runsWithHelp;
 	}
 
 	subscribe(listener: LocalModelListener): () => void {
@@ -243,8 +279,31 @@ export class LocalModelStore {
 
 	/** Looked at once: the hardware does not change while the app runs. */
 	private machine(): Promise<Hardware> {
-		this.hardware ??= this.detect();
+		// What was learned about engines that do not run here comes with it.
+		this.hardware ??= Promise.all([this.detect(), this.loadBroken()]).then(
+			([hardware]) => hardware,
+		);
 		return this.hardware;
+	}
+
+	/** Builds that were tried here and did not run, kept across restarts. */
+	private brokenFile(): string {
+		return join(this.root, "broken-engines.json");
+	}
+
+	private async loadBroken(): Promise<void> {
+		const saved = await Bun.file(this.brokenFile())
+			.json()
+			.catch(() => []);
+		if (Array.isArray(saved)) {
+			for (const id of saved) if (typeof id === "string") this.broken.add(id);
+		}
+	}
+
+	private async markBroken(buildId: string): Promise<void> {
+		this.broken.add(buildId);
+		await mkdir(this.root, { recursive: true });
+		await Bun.write(this.brokenFile(), JSON.stringify([...this.broken]));
 	}
 
 	private spec(id: string): LocalModelSpec {
@@ -277,8 +336,9 @@ export class LocalModelStore {
 		const cache = new Map<string, BuildChoice<EngineBuild> | null>();
 		return (engine: string) => {
 			if (!cache.has(engine)) {
-				const builds =
-					this.engines.find((spec) => spec.id === engine)?.builds ?? [];
+				const builds = (
+					this.engines.find((spec) => spec.id === engine)?.builds ?? []
+				).filter((build) => !this.broken.has(build.id));
 				cache.set(engine, chooseBuild(engine, builds, hardware));
 			}
 			return cache.get(engine) ?? null;
@@ -636,8 +696,24 @@ export class LocalModelStore {
 				install.state = "downloading";
 				install.startedAt = Date.now();
 				this.emit({ type: "models.changed" });
-				if (!(await this.installedBuilds()).has(build.id)) {
-					await this.installEngine(model, build, install);
+				// A build that does not run here is set aside for the next best.
+				let current = build;
+				while (!(await this.installedBuilds()).has(current.id)) {
+					try {
+						await this.installEngine(model, current, install);
+					} catch (error) {
+						if (!(error instanceof EngineCheckFailed)) throw error;
+						await this.markBroken(current.id);
+						const next = this.chooser(await this.machine())(variant.engine);
+						if (!next) {
+							throw new CodedError(
+								`The engine does not run on this computer: ${error.message}`,
+								"engineDoesNotRun",
+								{ reason: error.message },
+							);
+						}
+						current = next.build;
+					}
 				}
 				for (const file of variant.files) {
 					await this.download(model, file, install);
@@ -686,6 +762,15 @@ export class LocalModelStore {
 			await rename(tmp, dir);
 		} finally {
 			await rm(tmp, { recursive: true, force: true });
+		}
+		const problem = await this.checkEngine(
+			join(dir, ...build.executable.split(/[\\/]/)),
+		);
+		if (problem) {
+			await rm(dir, { recursive: true, force: true });
+			for (const file of build.files)
+				await rm(this.blob(file.sha256), { force: true });
+			throw new EngineCheckFailed(problem);
 		}
 		// Extracted, the archives are only taking space.
 		for (const file of build.files)

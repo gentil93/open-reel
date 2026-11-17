@@ -84,6 +84,8 @@ export interface RuntimeOptions {
 	fetch?: (url: string, init?: RequestInit) => Promise<Response>;
 	/** Database migrations. Defaults to the ones in the source tree. */
 	migrationsDir?: string;
+	/** Tries a freshly installed engine. Defaults to running it. */
+	checkEngine?: (executable: string) => Promise<string | null>;
 }
 
 /** Wires the core on a data directory. Call `start()` once ready to run jobs. */
@@ -101,6 +103,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 		engines: options.engines ?? builtinEngines(),
 		fetch: options.fetch,
 		hardware: options.hardware,
+		checkEngine: options.checkEngine,
 	});
 	// Installed local models are offered next to the remote ones.
 	const local = new LocalProvider({ store: models, catalog });

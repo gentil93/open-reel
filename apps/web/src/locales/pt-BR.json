@@ -57,6 +57,7 @@
 	"errors.downloadFailed": "Não foi possível baixar {file} (o servidor respondeu {status}). Tente mais tarde.",
 	"errors.downloadTooLarge": "{file} veio maior do que o esperado e foi descartado.",
 	"errors.emptyKey": "A chave está vazia.",
+	"errors.engineDoesNotRun": "O motor não roda neste computador: {reason}",
 	"errors.engineExitCode": "O motor parou de forma inesperada (código {code}).",
 	"errors.engineMissing": "O motor do {model} não está instalado. Instale o modelo de novo.",
 	"errors.engineNoResult": "O motor terminou sem gerar uma imagem.",

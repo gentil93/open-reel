@@ -10,6 +10,7 @@ export const ERROR_CODES = [
 	"downloadFailed",
 	"downloadTooLarge",
 	"emptyKey",
+	"engineDoesNotRun",
 	"engineExitCode",
 	"engineMissing",
 	"engineNoResult",
