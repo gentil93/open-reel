@@ -15,7 +15,8 @@
 		"start": "bun packages/cli/src/index.ts",
 		"dev:server": "bun --watch packages/cli/src/index.ts --dev",
 		"dev:web": "bun run --filter '@open-reel/web' dev",
-		"dev:site": "bun run --filter '@open-reel/site' dev"
+		"dev:site": "bun run --filter '@open-reel/site' dev",
+		"preview:windows": "bun scripts/preview-windows.ts"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.0.0",
