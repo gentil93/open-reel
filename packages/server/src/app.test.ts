@@ -179,6 +179,15 @@ test("invalid requests get a 400 with the reason", async () => {
 			"string",
 		);
 	}
+	const unknown = await post("/api/turns", {
+		prompt: "x",
+		modelIds: ["nope/x"],
+	});
+	expect(await unknown.json()).toEqual({
+		error: "Unknown model: nope/x",
+		code: "unknownModel",
+		params: { model: "nope/x" },
+	});
 	expect((await call("/api/gallery?limit=0")).status).toBe(400);
 	expect((await call("/api/gallery?before=5")).status).toBe(400);
 	expect((await call("/api/sessions/missing")).status).toBe(404);

@@ -2,6 +2,7 @@ import type { GalleryItem } from "@open-reel/core/types";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { api, assetUrl, GALLERY_PAGE } from "./api";
+import { useI18n } from "./i18n";
 import { Lightbox, type LightboxItem } from "./Lightbox";
 
 export function Gallery({
@@ -9,6 +10,7 @@ export function Gallery({
 }: {
 	addReference(assetId: string): void;
 }) {
+	const { t, explain } = useI18n();
 	const [input, setInput] = useState("");
 	const [query, setQuery] = useState("");
 	const [open, setOpen] = useState<LightboxItem | null>(null);
@@ -34,24 +36,22 @@ export function Gallery({
 		<div className="min-h-0 flex-1 overflow-y-auto p-6">
 			<div className="mx-auto max-w-6xl">
 				<div className="flex flex-wrap items-center justify-between gap-4">
-					<h1 className="text-xl font-semibold">Gallery</h1>
+					<h1 className="text-xl font-semibold">{t("gallery.title")}</h1>
 					<input
 						type="search"
 						value={input}
 						onChange={(event) => setInput(event.target.value)}
-						placeholder="Search prompts"
-						aria-label="Search prompts"
+						placeholder={t("gallery.search")}
+						aria-label={t("gallery.search")}
 						className="w-72 max-w-full rounded-md border border-line bg-panel px-3 py-2 text-sm"
 					/>
 				</div>
 				{pages.error && (
-					<p className="mt-6 text-sm text-danger">{pages.error.message}</p>
+					<p className="mt-6 text-sm text-danger">{explain(pages.error)}</p>
 				)}
 				{pages.isSuccess && items.length === 0 && (
 					<p className="mt-16 text-center text-dim">
-						{query
-							? `Nothing has a prompt matching “${query}”.`
-							: "Images and videos you generate will appear here."}
+						{query ? t("gallery.noMatches", { query }) : t("gallery.empty")}
 					</p>
 				)}
 				<ul className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
@@ -76,20 +76,20 @@ export function Gallery({
 									<>
 										<video
 											src={assetUrl(item.id)}
-											aria-label={item.prompt ?? "Generated video"}
+											aria-label={item.prompt ?? t("gallery.generatedVideo")}
 											muted
 											playsInline
 											preload="metadata"
 											className="aspect-square w-full rounded-md border border-line object-cover"
 										/>
 										<span className="absolute bottom-1.5 left-1.5 rounded bg-black/75 px-1.5 py-0.5 font-mono text-[10px] uppercase text-white">
-											video
+											{t("gallery.videoBadge")}
 										</span>
 									</>
 								) : (
 									<img
 										src={assetUrl(item.id)}
-										alt={item.prompt ?? "Generated image"}
+										alt={item.prompt ?? t("common.generatedImage")}
 										loading="lazy"
 										className="aspect-square w-full rounded-md border border-line object-cover"
 									/>
@@ -106,7 +106,9 @@ export function Gallery({
 							disabled={pages.isFetchingNextPage}
 							className="rounded-md border border-line px-4 py-2 text-sm hover:border-dim"
 						>
-							{pages.isFetchingNextPage ? "Loading…" : "Load more"}
+							{pages.isFetchingNextPage
+								? t("gallery.loading")
+								: t("gallery.loadMore")}
 						</button>
 					</div>
 				)}

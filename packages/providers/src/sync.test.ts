@@ -29,7 +29,7 @@ test("openai: generates through the generations endpoint", async () => {
 	expect(calls).toHaveLength(0); // nothing is sent until the job is followed
 
 	expect(await collect(openai.events(handle, ctx()))).toEqual([
-		{ type: "progress", message: "Generating" },
+		{ type: "progress", message: "Generating", stage: "generating" },
 		{
 			type: "completed",
 			outputs: [
@@ -88,7 +88,7 @@ test("openai: an API error becomes a failed job with its message", async () => {
 		references: [],
 	});
 	expect(await collect(openai.events(handle, ctx()))).toEqual([
-		{ type: "progress", message: "Generating" },
+		{ type: "progress", message: "Generating", stage: "generating" },
 		{ type: "failed", error: "Rejected by the safety system" },
 	]);
 });
@@ -116,7 +116,7 @@ test("google: sends references and ratio, and reads the inline image", async () 
 		references: [reference],
 	});
 	expect(await collect(google.events(handle, ctx()))).toEqual([
-		{ type: "progress", message: "Generating" },
+		{ type: "progress", message: "Generating", stage: "generating" },
 		{ type: "completed", outputs: [{ data: PNG, mime: "image/png" }] },
 	]);
 	expect(calls[0]?.url).toBe(

@@ -38,11 +38,17 @@ export function adaptParams(
 ): GenerationParams {
 	const caps = model.capabilities;
 	if (params.referenceAssetIds.length > caps.maxReferenceImages) {
-		throw new ValidationError(
-			caps.maxReferenceImages === 0
-				? `${model.name} does not accept reference images`
-				: `${model.name} accepts at most ${caps.maxReferenceImages} reference images`,
-		);
+		throw caps.maxReferenceImages === 0
+			? new ValidationError(
+					`${model.name} does not accept reference images`,
+					"noReferences",
+					{ model: model.name },
+				)
+			: new ValidationError(
+					`${model.name} accepts at most ${caps.maxReferenceImages} reference images`,
+					"tooManyReferences",
+					{ model: model.name, count: caps.maxReferenceImages },
+				);
 	}
 	const durations = caps.durations ?? [];
 	// Always explicit, so the stored parameters say what was actually asked for.
@@ -87,7 +93,9 @@ export class ReelService {
 
 	async setProviderKey(ctx: UserContext, providerId: string, key: string) {
 		this.requireProvider(providerId);
-		if (!key.trim()) throw new ValidationError("The key is empty");
+		if (!key.trim()) {
+			throw new ValidationError("The key is empty", "emptyKey");
+		}
 		await this.deps.keys.set(ctx, providerId, key.trim());
 	}
 
@@ -98,7 +106,13 @@ export class ReelService {
 
 	private requireProvider(providerId: string) {
 		if (!this.deps.registry.adapter(providerId)) {
-			throw new NotFoundError(`Unknown provider: ${providerId}`);
+			throw new NotFoundError(
+				`Unknown provider: ${providerId}`,
+				"unknownProvider",
+				{
+					provider: providerId,
+				},
+			);
 		}
 	}
 
@@ -111,7 +125,9 @@ export class ReelService {
 		id: string,
 	): Promise<Session & { turns: TurnView[] }> {
 		const session = await this.deps.repo.getSession(ctx, id);
-		if (!session) throw new NotFoundError("Session not found");
+		if (!session) {
+			throw new NotFoundError("Session not found", "sessionNotFound");
+		}
 		return { ...session, turns: await this.deps.repo.listTurns(ctx, id) };
 	}
 
@@ -136,11 +152,15 @@ export class ReelService {
 		}
 		const params = parsed.data;
 		if (modelIds.length === 0)
-			throw new ValidationError("Choose at least one model");
+			throw new ValidationError("Choose at least one model", "noModel");
 
 		const models = [...new Set(modelIds)].map((id) => {
 			const model = this.deps.registry.model(id);
-			if (!model) throw new ValidationError(`Unknown model: ${id}`);
+			if (!model) {
+				throw new ValidationError(`Unknown model: ${id}`, "unknownModel", {
+					model: id,
+				});
+			}
 			return model;
 		});
 		const references = await this.deps.repo.getAssets(
@@ -148,10 +168,16 @@ export class ReelService {
 			params.referenceAssetIds,
 		);
 		if (references.length !== new Set(params.referenceAssetIds).size) {
-			throw new ValidationError("A reference image was not found");
+			throw new ValidationError(
+				"A reference image was not found",
+				"referenceNotFound",
+			);
 		}
 		if (references.some((asset) => !asset.mime.startsWith("image/"))) {
-			throw new ValidationError("Only images can be used as references");
+			throw new ValidationError(
+				"Only images can be used as references",
+				"referenceNotImage",
+			);
 		}
 		const jobParams = models.map((model) => adaptParams(model, params));
 
@@ -159,7 +185,9 @@ export class ReelService {
 		let session: Session;
 		if (sessionId) {
 			const existing = await this.deps.repo.getSession(ctx, sessionId);
-			if (!existing) throw new NotFoundError("Session not found");
+			if (!existing) {
+				throw new NotFoundError("Session not found", "sessionNotFound");
+			}
 			session = { ...existing, updatedAt: now };
 		} else {
 			session = {
@@ -191,6 +219,8 @@ export class ReelService {
 			status: "queued",
 			handle: null,
 			error: null,
+			errorCode: null,
+			errorParams: null,
 			costUsd: null,
 			createdAt: now,
 			startedAt: null,
@@ -208,7 +238,7 @@ export class ReelService {
 	async cancelJob(ctx: UserContext, jobId: string): Promise<void> {
 		const job = await this.deps.repo.findJob(jobId);
 		if (!job || job.userId !== ctx.userId)
-			throw new NotFoundError("Job not found");
+			throw new NotFoundError("Job not found", "jobNotFound");
 		await this.deps.engine.cancel(jobId);
 	}
 
@@ -218,6 +248,7 @@ export class ReelService {
 		if (!mime || !UPLOAD_MIMES.includes(mime)) {
 			throw new ValidationError(
 				"Only PNG, JPEG and WebP images can be uploaded",
+				"uploadType",
 			);
 		}
 		const stored = await this.deps.assets.put(ctx, data);
@@ -244,7 +275,9 @@ export class ReelService {
 	): Promise<{ asset: Asset; blob: Blob }> {
 		const [asset] = await this.deps.repo.getAssets(ctx, [id]);
 		const blob = asset && (await this.deps.assets.get(ctx, asset.hash));
-		if (!asset || !blob) throw new NotFoundError("Asset not found");
+		if (!asset || !blob) {
+			throw new NotFoundError("Asset not found", "assetNotFound");
+		}
 		return { asset, blob };
 	}
 

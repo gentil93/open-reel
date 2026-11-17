@@ -19,7 +19,14 @@ import * as schema from "./schema";
 export type JobPatch = Partial<
 	Pick<
 		Job,
-		"status" | "handle" | "error" | "costUsd" | "startedAt" | "finishedAt"
+		| "status"
+		| "handle"
+		| "error"
+		| "errorCode"
+		| "errorParams"
+		| "costUsd"
+		| "startedAt"
+		| "finishedAt"
 	>
 >;
 

@@ -10,8 +10,9 @@ import {
 import { api, assetUrl, type SessionDetail } from "./api";
 import { Composer, type Draft } from "./Composer";
 import { duration, usd } from "./format";
+import { type I18n, useI18n } from "./i18n";
 import { Lightbox, type LightboxItem } from "./Lightbox";
-import { useProgress } from "./live";
+import { type JobProgress, useProgress } from "./live";
 import { href, navigate } from "./route";
 
 interface Props {
@@ -22,12 +23,13 @@ interface Props {
 }
 
 function Elapsed({ since }: { since: number }) {
+	const i18n = useI18n();
 	const [now, setNow] = useState(Date.now);
 	useEffect(() => {
 		const timer = setInterval(() => setNow(Date.now()), 100);
 		return () => clearInterval(timer);
 	}, []);
-	return <>{duration(now - since)}</>;
+	return <>{duration(i18n, now - since)}</>;
 }
 
 function JobCard(props: {
@@ -38,6 +40,8 @@ function JobCard(props: {
 	onUseAsReference(assetId: string): void;
 }) {
 	const { job, model } = props;
+	const i18n = useI18n();
+	const { t } = i18n;
 	const progress = useProgress(job.id);
 	const cancel = useMutation({ mutationFn: () => api.cancelJob(job.id) });
 	const name = model?.name ?? job.modelId;
@@ -58,20 +62,20 @@ function JobCard(props: {
 					</span>
 				</h3>
 				<p className="shrink-0 font-mono text-xs text-dim">
-					{job.status === "queued" && "queued"}
+					{job.status === "queued" && t("job.queued")}
 					{job.status === "running" && job.startedAt && (
 						<Elapsed since={job.startedAt} />
 					)}
 					{job.status === "succeeded" && job.startedAt && job.finishedAt && (
 						<>
-							{duration(job.finishedAt - job.startedAt)}
-							{job.costUsd != null && ` · ${usd(job.costUsd)}`}
+							{duration(i18n, job.finishedAt - job.startedAt)}
+							{job.costUsd != null && ` · ${usd(i18n, job.costUsd)}`}
 						</>
 					)}
 					{job.status === "failed" && (
-						<span className="text-danger">failed</span>
+						<span className="text-danger">{t("job.failed")}</span>
 					)}
-					{job.status === "canceled" && "canceled"}
+					{job.status === "canceled" && t("job.canceled")}
 				</p>
 			</header>
 
@@ -83,8 +87,8 @@ function JobCard(props: {
 					>
 						<p className="font-mono text-xs text-dim" aria-live="polite">
 							{job.status === "queued"
-								? "Waiting for a slot"
-								: (progress ?? "Starting")}
+								? t("job.waiting")
+								: describeProgress(i18n, progress)}
 						</p>
 						<button
 							type="button"
@@ -92,15 +96,21 @@ function JobCard(props: {
 							disabled={cancel.isPending}
 							className="rounded-md border border-line bg-panel px-3 py-1 text-xs hover:border-dim"
 						>
-							Cancel
+							{t("common.cancel")}
 						</button>
 					</div>
 				)}
 				{job.status === "failed" && (
-					<p className="p-2 text-sm leading-relaxed text-danger">{job.error}</p>
+					<p className="p-2 text-sm leading-relaxed text-danger">
+						{i18n.explain({
+							message: job.error ?? "",
+							code: job.errorCode,
+							params: job.errorParams,
+						})}
+					</p>
 				)}
 				{job.status === "canceled" && (
-					<p className="p-2 text-sm text-dim">Canceled before it finished.</p>
+					<p className="p-2 text-sm text-dim">{t("job.canceledEarly")}</p>
 				)}
 				<div
 					className={
@@ -137,14 +147,14 @@ function JobCard(props: {
 									onClick={open}
 									className={`${overlay} right-2 top-2`}
 								>
-									Details
+									{t("job.details")}
 								</button>
 							</div>
 						) : (
 							<div key={asset.id} className="group relative">
 								<button
 									type="button"
-									aria-label={`Open image from ${name}`}
+									aria-label={t("job.openImage", { model: name })}
 									onClick={open}
 									className="block w-full"
 								>
@@ -160,7 +170,7 @@ function JobCard(props: {
 									onClick={() => props.onUseAsReference(asset.id)}
 									className={`${overlay} bottom-2 left-2`}
 								>
-									Use as reference
+									{t("common.useAsReference")}
 								</button>
 							</div>
 						);
@@ -178,6 +188,7 @@ function TurnBlock(props: {
 	onUseAsReference(assetId: string): void;
 }) {
 	const { turn } = props;
+	const { t } = useI18n();
 	const columns = Math.min(turn.jobs.length, 3);
 	return (
 		<article className="flex flex-col gap-3">
@@ -186,7 +197,7 @@ function TurnBlock(props: {
 					<img
 						key={id}
 						src={assetUrl(id)}
-						alt="Reference"
+						alt={t("common.reference")}
 						className="size-12 shrink-0 rounded-md border border-line object-cover"
 					/>
 				))}
@@ -215,12 +226,39 @@ function TurnBlock(props: {
 	);
 }
 
+/** What a running job is doing, in the reader's language. */
+function describeProgress(
+	i18n: I18n,
+	progress: JobProgress | undefined,
+): string {
+	if (!progress) return i18n.t("job.starting");
+	const percent =
+		progress.fraction == null
+			? null
+			: i18n.number(progress.fraction, { style: "percent" });
+	const stage =
+		progress.stage === "queued"
+			? progress.position != null
+				? i18n.t("progress.queuedAt", { position: progress.position })
+				: i18n.t("progress.queued")
+			: progress.stage === "starting"
+				? i18n.t("progress.starting")
+				: progress.stage === "loading"
+					? i18n.t("progress.loading")
+					: progress.stage === "generating"
+						? i18n.t("progress.generating")
+						: progress.message;
+	return [stage, percent].filter(Boolean).join(" · ") || i18n.t("job.starting");
+}
+
 export function Chat({
 	sessionId,
 	references,
 	setReferences,
 	addReference,
 }: Props) {
+	const i18n = useI18n();
+	const { t } = i18n;
 	const client = useQueryClient();
 	const models = useQuery({ queryKey: ["models"], queryFn: api.models });
 	const providers = useQuery({
@@ -277,17 +315,15 @@ export function Chat({
 			<div className="min-h-0 flex-1 overflow-y-auto">
 				<div className="mx-auto flex max-w-5xl flex-col gap-10 p-6">
 					{loadError && (
-						<p className="text-sm text-danger">{loadError.message}</p>
+						<p className="text-sm text-danger">{i18n.explain(loadError)}</p>
 					)}
 					{!sessionId && (
 						<div className="py-16">
 							<h1 className="text-3xl font-semibold tracking-tight">
-								One prompt, every model.
+								{t("chat.heading")}
 							</h1>
 							<p className="mt-3 max-w-xl leading-relaxed text-dim">
-								Pick one model to iterate on an image, or several to see how
-								each answers the same prompt. Any image can become the reference
-								for your next prompt, or the first frame of a video.
+								{t("chat.intro")}
 							</p>
 						</div>
 					)}
@@ -309,7 +345,7 @@ export function Chat({
 				references={references}
 				setReferences={setReferences}
 				busy={create.isPending}
-				error={create.error?.message ?? null}
+				error={create.error ? i18n.explain(create.error) : null}
 				onSubmit={(draft) => create.mutate(draft)}
 			/>
 			{open && (

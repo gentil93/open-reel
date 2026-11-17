@@ -3,6 +3,7 @@ import { useState } from "react";
 import { api } from "./api";
 import { Chat } from "./Chat";
 import { Gallery } from "./Gallery";
+import { useI18n } from "./i18n";
 import { useLiveJobs } from "./live";
 import { Models } from "./Models";
 import { href, navigate, useRoute } from "./route";
@@ -12,6 +13,7 @@ const MAX_REFERENCES = 4;
 
 export function App() {
 	useLiveJobs();
+	const { t } = useI18n();
 	const route = useRoute();
 	const client = useQueryClient();
 	const sessions = useQuery({ queryKey: ["sessions"], queryFn: api.sessions });
@@ -56,14 +58,14 @@ export function App() {
 						href={href.newChat}
 						className={navLink(route.view === "chat" && !active)}
 					>
-						New session
+						{t("nav.newSession")}
 					</a>
 					<a href={href.gallery} className={navLink(route.view === "gallery")}>
-						Gallery
+						{t("nav.gallery")}
 					</a>
 				</div>
 				<div className="mt-4 px-5 font-mono text-[11px] uppercase tracking-wider text-dim">
-					Sessions
+					{t("nav.sessions")}
 				</div>
 				<ul className="mt-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2">
 					{sessions.data?.map((session) => (
@@ -77,13 +79,9 @@ export function App() {
 							</a>
 							<button
 								type="button"
-								aria-label={`Delete session: ${session.title}`}
+								aria-label={t("nav.deleteSession", { title: session.title })}
 								onClick={() => {
-									if (
-										window.confirm(
-											"Delete this session? Its images stay in the gallery.",
-										)
-									) {
+									if (window.confirm(t("nav.deleteSessionConfirm"))) {
 										remove.mutate(session.id);
 									}
 								}}
@@ -94,18 +92,20 @@ export function App() {
 						</li>
 					))}
 					{sessions.data?.length === 0 && (
-						<li className="px-3 py-2 text-sm text-dim">Nothing yet.</li>
+						<li className="px-3 py-2 text-sm text-dim">
+							{t("nav.noSessions")}
+						</li>
 					)}
 				</ul>
 				<div className="flex flex-col gap-1 border-t border-line p-2">
 					<a href={href.models} className={navLink(route.view === "models")}>
-						Local models
+						{t("nav.localModels")}
 					</a>
 					<a
 						href={href.settings}
 						className={navLink(route.view === "settings")}
 					>
-						Providers
+						{t("nav.settings")}
 					</a>
 				</div>
 			</nav>
@@ -113,19 +113,19 @@ export function App() {
 			<main className="flex min-w-0 flex-1 flex-col">
 				<div className="flex gap-1 border-b border-line bg-panel p-2 md:hidden">
 					<a href={href.newChat} className={navLink(route.view === "chat")}>
-						Session
+						{t("nav.session")}
 					</a>
 					<a href={href.gallery} className={navLink(route.view === "gallery")}>
-						Gallery
+						{t("nav.gallery")}
 					</a>
 					<a href={href.models} className={navLink(route.view === "models")}>
-						Models
+						{t("nav.models")}
 					</a>
 					<a
 						href={href.settings}
 						className={navLink(route.view === "settings")}
 					>
-						Providers
+						{t("nav.settings")}
 					</a>
 				</div>
 				{route.view === "chat" && (

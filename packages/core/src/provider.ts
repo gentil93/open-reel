@@ -1,4 +1,5 @@
-import type { GenerationParams, ModelSpec } from "./types";
+import type { ErrorCode, ErrorParams } from "./errors";
+import type { GenerationParams, ModelSpec, ProgressStage } from "./types";
 
 export interface ReferenceImage {
 	data: Uint8Array;
@@ -22,9 +23,24 @@ export type ProviderOutput =
 	| { data: Uint8Array; mime: string };
 
 export type ProviderEvent =
-	| { type: "progress"; fraction?: number; message?: string }
+	| {
+			type: "progress";
+			fraction?: number;
+			/** English text; `stage` says the same for the interface to translate. */
+			message?: string;
+			stage?: ProgressStage;
+			/** Place in the provider's queue, when `stage` is "queued". */
+			position?: number;
+	  }
 	| { type: "completed"; outputs: ProviderOutput[]; costUsd?: number }
-	| { type: "failed"; error: string };
+	| {
+			type: "failed";
+			/** English text, shown when the code is unknown to the interface. */
+			error: string;
+			/** Set when the provider can say why in a way the interface translates. */
+			code?: ErrorCode;
+			params?: ErrorParams;
+	  };
 
 /**
  * One provider of generation models, remote or local.

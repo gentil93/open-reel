@@ -35,5 +35,17 @@
 		"parser": {
 			"tailwindDirectives": true
 		}
-	}
+	},
+	"overrides": [
+		{
+			"includes": ["apps/site/src/page.html"],
+			"linter": {
+				"rules": {
+					"a11y": {
+						"useValidLang": "off"
+					}
+				}
+			}
+		}
+	]
 }

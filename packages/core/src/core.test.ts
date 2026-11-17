@@ -298,6 +298,11 @@ describe("job engine", () => {
 			?.jobs[0];
 		expect(job?.status).toBe("failed");
 		expect(job?.error).toContain("No API key");
+		// Stored with a code, so the interface can say it in any language.
+		expect([job?.errorCode, job?.errorParams]).toEqual([
+			"noApiKey",
+			{ provider: "Fake (fake)" },
+		]);
 
 		await app.service.setProviderKey(LOCAL_USER, "fake", "secret");
 		await app.service.createTurn(LOCAL_USER, {

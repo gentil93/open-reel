@@ -2,6 +2,7 @@ import type { Media, ModelSpec, ProviderStatus } from "@open-reel/core/types";
 import { useMutation } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { api, assetUrl } from "./api";
+import { useI18n } from "./i18n";
 import { href } from "./route";
 
 export interface Draft {
@@ -35,6 +36,7 @@ function savedModels(): string[] {
 
 export function Composer(props: Props) {
 	const { models, providers, references, setReferences } = props;
+	const { t, explain } = useI18n();
 	const [prompt, setPrompt] = useState("");
 	const [chosen, setChosen] = useState<string[]>(savedModels);
 	const [aspectRatio, setAspectRatio] = useState("");
@@ -48,11 +50,16 @@ export function Composer(props: Props) {
 	);
 	/** Why a model cannot be used right now, if it cannot. */
 	const blocked = (model: ModelSpec): string | null => {
-		if (!ready.has(model.providerId)) return "needs an API key";
+		if (!ready.has(model.providerId)) {
+			return t("composer.blocked.needsKey", { model: model.name });
+		}
 		if (references.length > model.capabilities.maxReferenceImages) {
 			return model.capabilities.maxReferenceImages === 0
-				? "cannot use reference images"
-				: `takes at most ${model.capabilities.maxReferenceImages} references`;
+				? t("composer.blocked.noReferences", { model: model.name })
+				: t("composer.blocked.tooManyReferences", {
+						model: model.name,
+						count: model.capabilities.maxReferenceImages,
+					});
 		}
 		return null;
 	};
@@ -102,17 +109,19 @@ export function Composer(props: Props) {
 		offered.some((m) => chosen.includes(m.id) && ready.has(m.providerId));
 	const error =
 		props.error ??
-		upload.error?.message ??
-		(overReferenceLimit
-			? "No selected model accepts this many reference images. Remove some or pick another model."
-			: null);
+		(upload.error ? explain(upload.error) : null) ??
+		(overReferenceLimit ? t("composer.tooManyReferences") : null);
 	const control = "rounded-md border border-line bg-bg px-2 py-1.5 text-sm";
 
 	return (
 		<div className="border-t border-line bg-panel">
 			<div className="mx-auto flex max-w-5xl flex-col gap-3 px-6 py-4">
 				{models.some((m) => m.media === "video") && (
-					<div className="flex gap-1" role="tablist" aria-label="Output">
+					<div
+						className="flex gap-1"
+						role="tablist"
+						aria-label={t("composer.output")}
+					>
 						{(["image", "video"] as const).map((kind) => (
 							<button
 								key={kind}
@@ -126,13 +135,13 @@ export function Composer(props: Props) {
 										: "text-dim hover:text-ink"
 								}`}
 							>
-								{kind === "image" ? "Images" : "Video"}
+								{kind === "image" ? t("composer.images") : t("composer.video")}
 							</button>
 						))}
 					</div>
 				)}
 				<fieldset className="flex flex-wrap items-center gap-1.5">
-					<legend className="sr-only">Models</legend>
+					<legend className="sr-only">{t("composer.models")}</legend>
 					{offered.map((model) => {
 						const reason = blocked(model);
 						const on = chosen.includes(model.id) && !reason;
@@ -142,7 +151,7 @@ export function Composer(props: Props) {
 								type="button"
 								aria-pressed={on}
 								disabled={reason !== null}
-								title={reason ? `${model.name} ${reason}` : model.id}
+								title={reason ?? model.id}
 								onClick={() =>
 									setChosen(
 										on
@@ -166,23 +175,26 @@ export function Composer(props: Props) {
 							href={href.settings}
 							className="px-2 text-sm text-accent underline"
 						>
-							Add API keys
+							{t("composer.addKeys")}
 						</a>
 					)}
 				</fieldset>
 
 				{references.length > 0 && (
-					<ul className="flex flex-wrap gap-2" aria-label="Reference images">
+					<ul
+						className="flex flex-wrap gap-2"
+						aria-label={t("composer.referenceImages")}
+					>
 						{references.map((id) => (
 							<li key={id} className="relative">
 								<img
 									src={assetUrl(id)}
-									alt="Reference"
+									alt={t("common.reference")}
 									className="size-16 rounded-md border border-line object-cover"
 								/>
 								<button
 									type="button"
-									aria-label="Remove reference"
+									aria-label={t("composer.removeReference")}
 									onClick={() =>
 										setReferences(references.filter((r) => r !== id))
 									}
@@ -212,24 +224,26 @@ export function Composer(props: Props) {
 					placeholder={
 						references.length > 0
 							? media === "video"
-								? "Describe how the image should move…"
-								: "Describe the change you want…"
-							: `Describe the ${media} you want…`
+								? t("composer.placeholder.motion")
+								: t("composer.placeholder.change")
+							: media === "video"
+								? t("composer.placeholder.video")
+								: t("composer.placeholder.image")
 					}
-					aria-label="Prompt"
+					aria-label={t("composer.prompt")}
 					className="w-full resize-none rounded-md border border-line bg-bg px-3 py-2 leading-relaxed"
 				/>
 
 				<div className="flex flex-wrap items-center gap-2">
 					<label className="flex items-center gap-2 text-sm text-dim">
-						Ratio
+						{t("composer.ratio")}
 						<select
 							value={ratios.includes(aspectRatio) ? aspectRatio : ""}
 							onChange={(event) => setAspectRatio(event.target.value)}
 							disabled={ratios.length === 0}
 							className={control}
 						>
-							<option value="">Default</option>
+							<option value="">{t("composer.ratioDefault")}</option>
 							{ratios.map((ratio) => (
 								<option key={ratio}>{ratio}</option>
 							))}
@@ -237,7 +251,7 @@ export function Composer(props: Props) {
 					</label>
 					{durations.length > 0 && (
 						<label className="flex items-center gap-2 text-sm text-dim">
-							Length
+							{t("composer.length")}
 							<select
 								value={
 									seconds != null && durations.includes(seconds) ? seconds : ""
@@ -249,10 +263,10 @@ export function Composer(props: Props) {
 								}
 								className={control}
 							>
-								<option value="">Shortest</option>
+								<option value="">{t("composer.lengthShortest")}</option>
 								{durations.map((d) => (
 									<option key={d} value={d}>
-										{d}s
+										{t("format.seconds", { seconds: d })}
 									</option>
 								))}
 							</select>
@@ -262,7 +276,9 @@ export function Composer(props: Props) {
 						className="flex items-center gap-2 text-sm text-dim"
 						hidden={maxCount === 1 && media === "video"}
 					>
-						{media === "video" ? "Videos" : "Images"}
+						{media === "video"
+							? t("composer.videoCount")
+							: t("composer.imageCount")}
 						<select
 							value={Math.min(count, maxCount)}
 							onChange={(event) => setCount(Number(event.target.value))}
@@ -290,7 +306,9 @@ export function Composer(props: Props) {
 						disabled={upload.isPending}
 						className={`${control} text-dim hover:text-ink`}
 					>
-						{upload.isPending ? "Uploading…" : "Add reference image"}
+						{upload.isPending
+							? t("composer.uploading")
+							: t("composer.addReference")}
 					</button>
 					<span className="ml-auto text-sm text-danger" role="alert">
 						{error}
@@ -302,8 +320,8 @@ export function Composer(props: Props) {
 						className="rounded-md bg-accent px-5 py-2 text-sm font-medium text-accent-ink disabled:opacity-40"
 					>
 						{selected.length > 1
-							? `Compare ${selected.length} models`
-							: "Generate"}
+							? t("composer.compare", { count: selected.length })
+							: t("composer.generate")}
 					</button>
 				</div>
 			</div>

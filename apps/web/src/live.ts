@@ -9,13 +9,17 @@ import type { SessionDetail } from "./api";
 
 // Latest progress message per running job. Kept outside the query cache
 // because it changes often and is never fetched.
-const progress = new Map<string, string>();
+export type JobProgress = Omit<
+	Extract<EngineEvent, { type: "job.progress" }>,
+	"type" | "jobId"
+>;
+const progress = new Map<string, JobProgress>();
 const watchers = new Set<() => void>();
 const notify = () => {
 	for (const watcher of watchers) watcher();
 };
 
-export function useProgress(jobId: string): string | undefined {
+export function useProgress(jobId: string): JobProgress | undefined {
 	return useSyncExternalStore(
 		(watcher) => {
 			watchers.add(watcher);
@@ -103,12 +107,9 @@ export function useLiveJobs(): void {
 		source.addEventListener("job.progress", (message) => {
 			const event = JSON.parse(message.data) as EngineEvent;
 			if (event.type !== "job.progress") return;
-			const text =
-				event.message ??
-				(event.fraction == null
-					? undefined
-					: `${Math.round(event.fraction * 100)}%`);
-			if (text) progress.set(event.jobId, text);
+			const { type: _, jobId, ...update } = event;
+			// Keep what an update leaves out, e.g. the stage when only the fraction moves.
+			progress.set(jobId, { ...progress.get(jobId), ...update });
 			notify();
 		});
 		return () => source.close();

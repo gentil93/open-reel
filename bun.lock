@@ -17,6 +17,7 @@
         "@fontsource/big-shoulders-display": "5.1.0",
         "@fontsource/ibm-plex-mono": "5.1.0",
         "@fontsource/inter-tight": "5.1.0",
+        "@open-reel/i18n": "workspace:*",
         "gsap": "3.12.5",
       },
       "devDependencies": {
@@ -28,6 +29,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@open-reel/core": "workspace:*",
+        "@open-reel/i18n": "workspace:*",
         "@tanstack/react-query": "^5.0.0",
         "react": "^19.0.0",
         "react-dom": "^19.0.0",
@@ -62,6 +64,10 @@
       "devDependencies": {
         "drizzle-kit": "^0.31.11",
       },
+    },
+    "packages/i18n": {
+      "name": "@open-reel/i18n",
+      "version": "0.0.0",
     },
     "packages/providers": {
       "name": "@open-reel/providers",
@@ -186,6 +192,8 @@
     "@napi-rs/wasm-runtime": ["@napi-rs/wasm-runtime@1.2.6", "", { "dependencies": { "@tybys/wasm-util": "^0.10.3" }, "peerDependencies": { "@emnapi/core": "^1.7.1 || 2.0.0-beta.2", "@emnapi/runtime": "^1.7.1 || 2.0.0-beta.2" } }, "sha512-mRyDmEw9/fCDXCGfL1sbgIw/GUK0PVxRW4YwgPN61F3LQ+fSyoBFarJVzgGyhF6kRzEQZ0FejDqm4WLXSeqQmw=="],
 
     "@open-reel/core": ["@open-reel/core@workspace:packages/core"],
+
+    "@open-reel/i18n": ["@open-reel/i18n@workspace:packages/i18n"],
 
     "@open-reel/providers": ["@open-reel/providers@workspace:packages/providers"],
 

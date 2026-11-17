@@ -1,8 +1,12 @@
 import "./styles.css";
+import { createTranslator, matchLanguage } from "@open-reel/i18n";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { LINKS } from "./config";
 import { develop, loadImage } from "./develop";
+import { LANGUAGES } from "./languages";
+import en from "./locales/en.json";
+import ptBR from "./locales/pt-BR.json";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -14,6 +18,18 @@ const $$ = <T extends Element = HTMLElement>(
 	selector: string,
 	root: ParentNode = document,
 ) => [...root.querySelectorAll<T>(selector)];
+
+// The page was rendered in one language; the script speaks the same one.
+const CATALOGS: Record<string, Record<string, string>> = { en, "pt-BR": ptBR };
+const language = matchLanguage(
+	[document.documentElement.lang],
+	LANGUAGES.map((l) => l.code),
+	"en",
+);
+const { t } = createTranslator(language, en, CATALOGS[language]);
+type Key = Parameters<typeof t>[0];
+/** Where the site's root is, relative to this page. */
+const root = document.documentElement.dataset.root ?? "./";
 
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 if (!reduceMotion) document.documentElement.classList.add("motion");
@@ -41,9 +57,11 @@ for (const button of $$<HTMLAnchorElement>("[data-download]")) {
 	if (LINKS.releases) {
 		button.href = LINKS.releases;
 		if (button.dataset.os != null)
-			button.textContent = `Download for ${visitorSystem()}`;
+			button.textContent = t("runtime.downloadFor", {
+				system: visitorSystem(),
+			});
 	} else if (button.dataset.os != null) {
-		button.textContent = "Desktop app coming soon";
+		button.textContent = t("runtime.comingSoon");
 	}
 }
 if (!LINKS.releases)
@@ -52,22 +70,22 @@ if (!LINKS.releases)
 /* ---------- film strips ---------- */
 
 const REEL = [
-	["ramen", "ramen shop · tokyo night"],
-	["fisherman", "fisherman · rain · 35mm"],
-	["whale", "whale · clouds · desert"],
-	["astronaut", "astronaut · sunflowers"],
-	["cabin", "cabin · snow · dusk"],
-	["dancer", "dancer · mid-jump"],
-	["camera", "film camera · window light"],
-	["reel", "film reel · light"],
-	["dew", "dewdrop · city"],
+	"ramen",
+	"fisherman",
+	"whale",
+	"astronaut",
+	"cabin",
+	"dancer",
+	"camera",
+	"reel",
+	"dew",
 ] as const;
 
 const tracks = $$(".track");
 for (const track of tracks) {
 	const frames = REEL.map(
-		([name, caption], i) =>
-			`<figure class="frame"><img src="shots/${name}.webp" alt="" loading="lazy"><figcaption>${String(i * 3 + 12).padStart(3, "0")}A · ${caption}</figcaption></figure>`,
+		(name, i) =>
+			`<figure class="frame"><img src="${root}shots/${name}.webp" alt="" loading="lazy"><figcaption>${String(i * 3 + 12).padStart(3, "0")}A · ${t(`reel.${name}` as Key)}</figcaption></figure>`,
 	).join("");
 	// Twice over, so the loop has no seam.
 	track.innerHTML = frames + frames;

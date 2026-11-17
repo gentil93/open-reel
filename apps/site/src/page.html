@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="{{lang}}" data-root="{{root}}">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<title>{{meta.title}}</title>
+		<meta
+			name="description"
+			content="{{meta.description}}"
+		/>
+		<meta name="theme-color" content="#0d0b09" />
+		<meta property="og:title" content="open·reel" />
+		<meta property="og:description" content="{{meta.ogDescription}}" />
+		<meta property="og:locale" content="{{ogLocale}}" />
+		{{alternates}}
+		<meta property="og:image" content="{{root}}shots/ramen.webp" />
+		<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%230d0b09' stroke='%23f0a63a' stroke-width='3'/%3E%3Ccircle cx='16' cy='16' r='4' fill='%23f0a63a'/%3E%3C/svg%3E" />
+		<script type="module" src="{{root}}src/main.ts"></script>
+	</head>
+	<body>
+		<div class="grain" aria-hidden="true"></div>
+		<a class="skip" href="#main">{{nav.skip}}</a>
+
+		<header class="nav gutter">
+			<a class="logo" href="#top" aria-label="{{nav.home}}">open<span>·</span>reel</a>
+			<nav class="nav-links" aria-label="{{nav.sections}}">
+				<a href="#compare">{{nav.compare}}</a>
+				<a href="#local">{{nav.local}}</a>
+				<a href="#gallery">{{nav.gallery}}</a>
+				<a href="#get" data-link="repository">GitHub</a>
+			</nav>
+			<a class="btn btn-ghost" href="#get" data-download>{{nav.download}}</a>
+		</header>
+
+		<main id="main">
+			<section class="hero gutter" id="top">
+				<div class="spot" aria-hidden="true"></div>
+				<p class="eyebrow"><i aria-hidden="true"></i>{{hero.eyebrow}}</p>
+				<h1>
+					{{hero.title.html}}
+				</h1>
+				<p class="lede">
+					{{hero.lede.html}}
+				</p>
+				<div class="ctas">
+					<a class="btn btn-amber" href="#get" data-download data-os>{{cta.download}}</a>
+					<a class="btn btn-ghost" href="#compare">{{hero.demo}}</a>
+				</div>
+				<p class="meta">{{hero.platforms}}</p>
+			</section>
+
+			<section class="strips" aria-label="{{strips.label}}">
+				<div class="strip"><div class="track" data-direction="-1"></div></div>
+				<div class="strip"><div class="track" data-direction="1"></div></div>
+			</section>
+
+			<section class="section gutter" id="compare">
+				<p class="kicker">{{compare.kicker}}</p>
+				<h2>{{compare.title}}</h2>
+				<p class="prompt">
+					<span class="typed">a red fox in a snowy forest at dawn, wildlife photograph</span><span class="caret" aria-hidden="true"></span>
+				</p>
+				<div class="pair">
+					<figure class="shot">
+						<canvas width="640" height="640" data-develop="{{root}}shots/fox-turbo.webp" role="img" aria-label="{{compare.alt|model=SDXL Turbo}}"></canvas>
+						<figcaption><b>SDXL Turbo</b><span class="t" data-seconds="5.2">5.2s</span><span class="free">{{compare.cost}}</span></figcaption>
+					</figure>
+					<figure class="shot">
+						<canvas width="640" height="640" data-develop="{{root}}shots/fox-flux.webp" role="img" aria-label="{{compare.alt|model=FLUX.1 schnell}}"></canvas>
+						<figcaption><b>FLUX.1 schnell</b><span class="t" data-seconds="13.0">13.0s</span><span class="free">{{compare.cost}}</span></figcaption>
+					</figure>
+				</div>
+			</section>
+
+			<section class="section gutter local" id="local">
+				<div class="local-copy">
+					<p class="kicker">{{local.kicker}}</p>
+					<h2>{{local.title}}</h2>
+					<p>
+						{{local.body}}
+					</p>
+				</div>
+				<section class="spec" aria-label="{{local.cardLabel}}">
+					<div class="spec-row"><span>{{local.gpu}}</span><b data-type>NVIDIA GeForce RTX 4070 SUPER</b></div>
+					<div class="spec-row"><span>{{local.memory}}</span><b><span class="vram"><i></i></span> 12 GB</b></div>
+					<div class="spec-row"><span>{{local.engine}}</span><b data-type>stable-diffusion.cpp · CUDA</b></div>
+					<ul class="picks">
+						<li><span>FLUX.1 schnell</span><em>{{local.fits4}}</em></li>
+						<li><span>Z-Image Turbo</span><em>{{local.fits8}}</em></li>
+						<li><span>SDXL Turbo</span><em>{{local.fits16}}</em></li>
+						<li class="slow"><span>{{local.flux8}}</span><em>{{local.slower}}</em></li>
+					</ul>
+				</section>
+			</section>
+
+			<section class="section gutter" id="gallery">
+				<p class="kicker">{{gallery.kicker}}</p>
+				<h2>{{gallery.title}}</h2>
+				<p class="note">{{gallery.note}}</p>
+				<div class="sheet">
+					<figure><img src="{{root}}shots/fisherman.webp" alt="{{shot.fisherman.alt}}" width="768" height="1024" loading="lazy" /><figcaption>012A · {{shot.fisherman.caption}}</figcaption></figure>
+					<figure><img src="{{root}}shots/astronaut.webp" alt="{{shot.astronaut.alt}}" width="768" height="1024" loading="lazy" /><figcaption>015A · {{shot.astronaut.caption}}</figcaption></figure>
+					<figure><img src="{{root}}shots/dancer.webp" alt="{{shot.dancer.alt}}" width="768" height="1024" loading="lazy" /><figcaption>018A · {{shot.dancer.caption}}</figcaption></figure>
+					<figure><img src="{{root}}shots/camera.webp" alt="{{shot.camera.alt}}" width="768" height="768" loading="lazy" /><figcaption>021A · {{shot.camera.caption}}</figcaption></figure>
+					<figure><img src="{{root}}shots/dew.webp" alt="{{shot.dew.alt}}" width="768" height="768" loading="lazy" /><figcaption>024A · {{shot.dew.caption}}</figcaption></figure>
+					<figure><img src="{{root}}shots/cabin.webp" alt="{{shot.cabin.alt}}" width="1024" height="640" loading="lazy" /><figcaption>027A · {{shot.cabin.caption}}</figcaption></figure>
+					<figure><img src="{{root}}shots/whale.webp" alt="{{shot.whale.alt}}" width="1024" height="640" loading="lazy" /><figcaption>030A · {{shot.whale.caption}}</figcaption></figure>
+					<figure><img src="{{root}}shots/ramen.webp" alt="{{shot.ramen.alt}}" width="1024" height="640" loading="lazy" /><figcaption>033A · {{shot.ramen.caption}}</figcaption></figure>
+				</div>
+			</section>
+
+			<section class="section gutter" id="steps">
+				<p class="kicker">{{steps.kicker}}</p>
+				<h2>{{steps.title}}</h2>
+				<ol class="steps">
+					<li><b>1</b><h3>{{steps.one.title}}</h3><p>{{steps.one.body}}</p></li>
+					<li><b>2</b><h3>{{steps.two.title}}</h3><p>{{steps.two.body}}</p></li>
+					<li><b>3</b><h3>{{steps.three.title}}</h3><p>{{steps.three.body}}</p></li>
+				</ol>
+			</section>
+
+			<section class="section gutter services">
+				<p class="kicker">{{services.kicker}}</p>
+				<h2>{{services.title}}</h2>
+				<p class="note">{{services.note}}</p>
+				<ul class="providers">
+					<li>fal</li><li>OpenAI</li><li>Google Gemini</li><li>Replicate</li><li>OpenRouter</li>
+				</ul>
+			</section>
+
+			<section class="end gutter" id="get">
+				<h2>{{end.title}}</h2>
+				<div class="ctas">
+					<a class="btn btn-amber" href="#get" data-download data-os>{{cta.download}}</a>
+					<a class="btn btn-ghost" href="#get" data-link="repository">{{end.source}}</a>
+				</div>
+				<p class="meta" data-coming hidden>{{end.coming}}</p>
+			</section>
+		</main>
+
+		<footer class="footer gutter">
+			<span class="logo">open<span>·</span>reel</span>
+			<span>{{footer.license}}</span>
+			<nav class="languages" aria-label="{{footer.languages}}">{{languageLinks}}</nav>
+		</footer>
+	</body>
+</html>

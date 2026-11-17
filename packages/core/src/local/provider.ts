@@ -270,7 +270,7 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 			)),
 		];
 
-		yield { type: "progress", message: "Loading the model" };
+		yield { type: "progress", message: "Loading the model", stage: "loading" };
 		const child = this.spawn(argv);
 		// A killed process may not close its output; stop reading on abort.
 		const aborted = new Promise<never>((_, reject) => {
@@ -296,18 +296,31 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 				// The bar redraws many times a second; report whole percents.
 				if (fraction != null && Math.floor(fraction * 100) !== last) {
 					last = Math.floor(fraction * 100);
-					yield { type: "progress", fraction, message: "Generating" };
+					yield {
+						type: "progress",
+						fraction,
+						message: "Generating",
+						stage: "generating",
+					};
 				}
 			}
 			const code = await Promise.race([child.exited, aborted]);
 			if (code !== 0) {
 				const reason = tail.filter((l) => /error|fail/i.test(l)).at(-1);
-				yield {
-					type: "failed",
-					error: reason
-						? `The engine stopped: ${reason.replace(/^\[\w\]\s*/, "")}`
-						: `The engine stopped with code ${code}`,
-				};
+				const detail = reason?.replace(/^\[\w\]\s*/, "");
+				yield detail
+					? {
+							type: "failed",
+							error: `The engine stopped: ${detail}`,
+							code: "engineStopped",
+							params: { reason: detail },
+						}
+					: {
+							type: "failed",
+							error: `The engine stopped with code ${code}`,
+							code: "engineExitCode",
+							params: { code },
+						};
 				return;
 			}
 			const data = await Bun.file(output)
@@ -315,7 +328,11 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 				.catch(() => null);
 			const mime = data && sniffMime(data);
 			if (!data || !mime) {
-				yield { type: "failed", error: "The engine produced no result" };
+				yield {
+					type: "failed",
+					error: "The engine produced no result",
+					code: "engineNoResult",
+				};
 				return;
 			}
 			yield { type: "completed", outputs: [{ data, mime }], costUsd: 0 };

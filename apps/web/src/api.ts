@@ -11,11 +11,26 @@ import type {
 
 export type SessionDetail = Session & { turns: TurnView[] };
 
+/** An error from the server, with the code that lets the interface translate it. */
+export class ApiError extends Error {
+	constructor(
+		message: string,
+		readonly code?: string,
+		readonly params?: Record<string, string | number>,
+	) {
+		super(message);
+	}
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
 	const response = await fetch(path, init);
 	if (!response.ok) {
 		const body = await response.json().catch(() => null);
-		throw new Error(body?.error ?? `Request failed (HTTP ${response.status})`);
+		throw new ApiError(
+			body?.error ?? `Request failed (HTTP ${response.status})`,
+			typeof body?.code === "string" ? body.code : undefined,
+			body?.params ?? undefined,
+		);
 	}
 	// 202 and 204 carry no body.
 	return response.status === 200 || response.status === 201

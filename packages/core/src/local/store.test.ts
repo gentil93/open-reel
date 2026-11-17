@@ -587,6 +587,10 @@ test("refuses a model that does not fit on the disk", async () => {
 		catalog: [model("huge", [variant("full", 1, [huge])])],
 	});
 	expect(store.install("huge")).rejects.toThrow("Not enough disk space");
+	const refusal = await store.install("huge").catch((error) => error);
+	expect(refusal.code).toBe("notEnoughDisk");
+	// The model, plus the engine it would bring.
+	expect(refusal.params.neededBytes).toBeGreaterThanOrEqual(1e18);
 	await store.idle();
 	expect(requests).toHaveLength(0);
 });

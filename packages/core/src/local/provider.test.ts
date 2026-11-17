@@ -292,9 +292,19 @@ describe("running", () => {
 			),
 		);
 		expect(events).toEqual([
-			{ type: "progress", message: "Loading the model" },
-			{ type: "progress", fraction: 0.25, message: "Generating" },
-			{ type: "progress", fraction: 1, message: "Generating" },
+			{ type: "progress", message: "Loading the model", stage: "loading" },
+			{
+				type: "progress",
+				fraction: 0.25,
+				message: "Generating",
+				stage: "generating",
+			},
+			{
+				type: "progress",
+				fraction: 1,
+				message: "Generating",
+				stage: "generating",
+			},
 			{
 				type: "completed",
 				outputs: [{ data: PNG, mime: "image/png" }],
@@ -320,16 +330,21 @@ describe("running", () => {
 		expect(events.at(-1)).toEqual({
 			type: "failed",
 			error: "The engine stopped: failed to load model: out of memory",
+			code: "engineStopped",
+			params: { reason: "failed to load model: out of memory" },
 		});
 		const silent = await run(provider(fake([], 3, null)));
 		expect(silent.at(-1)).toEqual({
 			type: "failed",
 			error: "The engine stopped with code 3",
+			code: "engineExitCode",
+			params: { code: 3 },
 		});
 		const empty = await run(provider(fake([], 0, null)));
 		expect(empty.at(-1)).toEqual({
 			type: "failed",
 			error: "The engine produced no result",
+			code: "engineNoResult",
 		});
 	});
 

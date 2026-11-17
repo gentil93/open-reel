@@ -2,6 +2,7 @@ import type { GenerationParams } from "@open-reel/core/types";
 import { useEffect, useRef } from "react";
 import { assetUrl } from "./api";
 import { usd } from "./format";
+import { useI18n } from "./i18n";
 
 export interface LightboxItem {
 	assetId: string;
@@ -19,6 +20,8 @@ interface Props {
 }
 
 export function Lightbox({ item, onClose, onUseAsReference }: Props) {
+	const i18n = useI18n();
+	const { t } = i18n;
 	const ref = useRef<HTMLDialogElement>(null);
 	useEffect(() => {
 		ref.current?.showModal();
@@ -26,14 +29,15 @@ export function Lightbox({ item, onClose, onUseAsReference }: Props) {
 
 	const video = item.mime.startsWith("video/");
 	const facts = [
-		["Model", item.modelName],
-		["Ratio", item.params?.aspectRatio],
+		[t("lightbox.model"), item.modelName],
+		[t("lightbox.ratio"), item.params?.aspectRatio],
 		[
-			"Length",
-			item.params?.durationSeconds && `${item.params.durationSeconds}s`,
+			t("lightbox.length"),
+			item.params?.durationSeconds &&
+				t("format.seconds", { seconds: item.params.durationSeconds }),
 		],
-		["Seed", item.params?.seed],
-		["Cost", item.costUsd == null ? null : usd(item.costUsd)],
+		[t("lightbox.seed"), item.params?.seed],
+		[t("lightbox.cost"), item.costUsd == null ? null : usd(i18n, item.costUsd)],
 	].filter(([, value]) => value != null);
 
 	return (
@@ -58,7 +62,7 @@ export function Lightbox({ item, onClose, onUseAsReference }: Props) {
 				) : (
 					<img
 						src={assetUrl(item.assetId)}
-						alt={item.prompt ?? "Generated image"}
+						alt={item.prompt ?? t("common.generatedImage")}
 						className="min-h-0 min-w-0 flex-1 bg-black object-contain"
 					/>
 				)}
@@ -83,7 +87,7 @@ export function Lightbox({ item, onClose, onUseAsReference }: Props) {
 								onClick={() => onUseAsReference(item.assetId)}
 								className="rounded-md bg-accent px-3 py-2 font-medium text-accent-ink"
 							>
-								Use as reference
+								{t("common.useAsReference")}
 							</button>
 						)}
 						<a
@@ -91,14 +95,14 @@ export function Lightbox({ item, onClose, onUseAsReference }: Props) {
 							download={`open-reel-${item.assetId}`}
 							className="rounded-md border border-line px-3 py-2 text-center hover:border-dim"
 						>
-							Download
+							{t("lightbox.download")}
 						</a>
 						<button
 							type="button"
 							onClick={onClose}
 							className="rounded-md px-3 py-2 text-dim hover:text-ink"
 						>
-							Close
+							{t("common.close")}
 						</button>
 					</div>
 				</div>

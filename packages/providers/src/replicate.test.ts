@@ -57,8 +57,8 @@ test("submits to the model's endpoint and polls the prediction to its outputs", 
 	const restored = JSON.parse(JSON.stringify(handle));
 
 	expect(await collect(replicate.events(restored, ctx()))).toEqual([
-		{ type: "progress", message: "Starting" },
-		{ type: "progress", message: "Generating" },
+		{ type: "progress", message: "Starting", stage: "starting" },
+		{ type: "progress", message: "Generating", stage: "generating" },
 		{
 			type: "completed",
 			outputs: [

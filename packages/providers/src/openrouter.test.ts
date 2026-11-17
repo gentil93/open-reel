@@ -38,7 +38,7 @@ test("an image is generated in one request, made when the job is followed", asyn
 	expect(openrouter.isResumable(handle)).toBe(false);
 
 	expect(await collect(openrouter.events(handle, ctx()))).toEqual([
-		{ type: "progress", message: "Generating" },
+		{ type: "progress", message: "Generating", stage: "generating" },
 		{
 			type: "completed",
 			outputs: [{ data: PNG, mime: "image/webp" }],
@@ -124,8 +124,8 @@ test("a video is queued, polled, and downloaded through the API with the key", a
 	const restored = JSON.parse(JSON.stringify(handle));
 
 	expect(await collect(openrouter.events(restored, ctx()))).toEqual([
-		{ type: "progress", message: "In queue" },
-		{ type: "progress", message: "Generating" },
+		{ type: "progress", message: "In queue", stage: "queued" },
+		{ type: "progress", message: "Generating", stage: "generating" },
 		{
 			type: "completed",
 			outputs: [

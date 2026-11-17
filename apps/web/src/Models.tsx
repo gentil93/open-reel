@@ -7,12 +7,14 @@ import type {
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { api, demoUrl } from "./api";
-import { bytes, remaining } from "./format";
+import { remaining } from "./format";
+import { type I18n, useI18n } from "./i18n";
 import { useModelProgress } from "./live";
 
 type Demo = LocalModelStatus["demos"][number] & { src: string };
 
 function DemoViewer({ demo, onClose }: { demo: Demo; onClose(): void }) {
+	const { t } = useI18n();
 	const ref = useRef<HTMLDialogElement>(null);
 	useEffect(() => {
 		ref.current?.showModal();
@@ -27,7 +29,7 @@ function DemoViewer({ demo, onClose }: { demo: Demo; onClose(): void }) {
 		>
 			<img
 				src={demo.src}
-				alt={demo.caption ?? "A sample from the model"}
+				alt={demo.caption ?? t("models.demo.sample")}
 				className="max-h-[86vh] max-w-full object-contain"
 			/>
 			<div className="flex items-center justify-between gap-4 p-3 text-sm">
@@ -37,7 +39,7 @@ function DemoViewer({ demo, onClose }: { demo: Demo; onClose(): void }) {
 					onClick={onClose}
 					className="rounded-md px-3 py-1 text-dim hover:text-ink"
 				>
-					Close
+					{t("common.close")}
 				</button>
 			</div>
 		</dialog>
@@ -46,6 +48,7 @@ function DemoViewer({ demo, onClose }: { demo: Demo; onClose(): void }) {
 
 /** What the model's authors show it can do. */
 function Demos({ model }: { model: LocalModelStatus }) {
+	const { t } = useI18n();
 	const [index, setIndex] = useState(0);
 	const [open, setOpen] = useState(false);
 	const [failed, setFailed] = useState<number[]>([]);
@@ -57,7 +60,7 @@ function Demos({ model }: { model: LocalModelStatus }) {
 	if (!demo) {
 		return (
 			<div className="flex aspect-video items-center justify-center bg-bg text-sm text-dim">
-				No demo available
+				{t("models.demo.none")}
 			</div>
 		);
 	}
@@ -66,8 +69,7 @@ function Demos({ model }: { model: LocalModelStatus }) {
 			<div className="relative aspect-video overflow-hidden bg-black">
 				{failed.includes(index) ? (
 					<div className="flex h-full items-center justify-center px-6 text-center text-sm text-dim">
-						The demo could not be loaded. It is downloaded from the model's
-						page, so it needs a connection the first time.
+						{t("models.demo.failed")}
 					</div>
 				) : demo.media === "video" ? (
 					// biome-ignore lint/a11y/useMediaCaption: demo reels come without a transcript
@@ -84,13 +86,18 @@ function Demos({ model }: { model: LocalModelStatus }) {
 					<button
 						type="button"
 						onClick={() => setOpen(true)}
-						aria-label={`Enlarge: ${demo.caption ?? "sample"}`}
+						aria-label={t("models.demo.enlarge", {
+							caption: demo.caption ?? t("models.demo.sampleShort"),
+						})}
 						className="developing block h-full w-full cursor-zoom-in"
 					>
 						<img
 							key={demo.src}
 							src={demo.src}
-							alt={demo.caption ?? `A sample from ${model.name}`}
+							alt={
+								demo.caption ??
+								t("models.demo.sampleFrom", { model: model.name })
+							}
 							loading="lazy"
 							onError={() => setFailed((current) => [...current, index])}
 							className="h-full w-full object-cover"
@@ -104,7 +111,10 @@ function Demos({ model }: { model: LocalModelStatus }) {
 								key={other.src}
 								type="button"
 								onClick={() => setIndex(i)}
-								aria-label={`Demo ${i + 1} of ${demos.length}`}
+								aria-label={t("models.demo.position", {
+									index: i + 1,
+									total: demos.length,
+								})}
 								aria-pressed={i === index}
 								className={`h-6 min-w-6 rounded bg-black/70 px-1.5 font-mono text-xs ${
 									i === index ? "text-white" : "text-white/50 hover:text-white"
@@ -118,7 +128,7 @@ function Demos({ model }: { model: LocalModelStatus }) {
 			</div>
 			{demo.caption && (
 				<p className="px-4 pt-2 text-xs text-dim">
-					{demo.media === "video" && "Video · "}
+					{demo.media === "video" && `${t("models.demo.video")} · `}
 					{demo.caption}
 				</p>
 			)}
@@ -130,6 +140,8 @@ function Demos({ model }: { model: LocalModelStatus }) {
 }
 
 function Progress({ model }: { model: LocalModelStatus }) {
+	const i18n = useI18n();
+	const { t, bytes } = i18n;
 	const live = useModelProgress(model.id);
 	const received = Math.max(live?.receivedBytes ?? 0, model.receivedBytes);
 	const state = live?.state ?? model.state;
@@ -137,13 +149,16 @@ function Progress({ model }: { model: LocalModelStatus }) {
 	const percent = Math.min(100, (received / model.size) * 100);
 	const detail =
 		state === "queued"
-			? "Waiting for another download to finish"
+			? t("models.progress.queued")
 			: state === "verifying"
-				? "Checking the downloaded file"
+				? t("models.progress.verifying")
 				: [
-						`${bytes(received)} of ${bytes(model.size)}`,
-						speed > 0 && `${bytes(speed)}/s`,
-						speed > 0 && remaining((model.size - received) / speed),
+						t("models.progress.received", {
+							received: bytes(received),
+							total: bytes(model.size),
+						}),
+						speed > 0 && t("models.progress.speed", { speed: bytes(speed) }),
+						speed > 0 && remaining(i18n, (model.size - received) / speed),
 					]
 						.filter(Boolean)
 						.join(" · ");
@@ -151,7 +166,7 @@ function Progress({ model }: { model: LocalModelStatus }) {
 		<div>
 			<div
 				role="progressbar"
-				aria-label={`Downloading ${model.name}`}
+				aria-label={t("models.progress.label", { model: model.name })}
 				aria-valuemin={0}
 				aria-valuemax={100}
 				aria-valuenow={Math.round(percent)}
@@ -169,12 +184,18 @@ function Progress({ model }: { model: LocalModelStatus }) {
 	);
 }
 
-const FIT_TEXT: Record<Fit, string> = {
-	gpu: "runs on your graphics card",
-	offload: "runs on your graphics card, slower: it does not fit in its memory",
-	cpu: "runs on the processor: expect minutes per image",
-	none: "does not fit in this computer's memory",
-};
+function fitText(t: I18n["t"], fit: Fit): string {
+	switch (fit) {
+		case "gpu":
+			return t("models.fit.gpu");
+		case "offload":
+			return t("models.fit.offload");
+		case "cpu":
+			return t("models.fit.cpu");
+		case "none":
+			return t("models.fit.none");
+	}
+}
 
 function ModelCard({
 	model,
@@ -185,6 +206,7 @@ function ModelCard({
 	engine: LocalEngineStatus | undefined;
 	freeBytes: number;
 }) {
+	const { t, bytes, explain } = useI18n();
 	const install = useMutation({
 		mutationFn: (variant?: string) => api.installModel(model.id, variant),
 	});
@@ -209,16 +231,21 @@ function ModelCard({
 
 	const note = installed
 		? model.reclaimableBytes < model.size
-			? `on disk · deleting frees ${bytes(model.reclaimableBytes)}, the rest is shared with other models`
-			: "on disk"
+			? t("models.note.installedShared", {
+					size: bytes(model.reclaimableBytes),
+				})
+			: t("models.note.installed")
 		: [
 				shared > 0
-					? `${bytes(toDownload)} to download · ${bytes(shared)} is already on disk, shared with another model`
+					? t("models.note.sharedDownload", {
+							size: bytes(toDownload),
+							shared: bytes(shared),
+						})
 					: partial > 0
-						? `${bytes(toDownload)} left to download`
-						: "to download",
+						? t("models.note.leftToDownload", { size: bytes(toDownload) })
+						: t("models.note.toDownload"),
 				engineToFetch > 0 &&
-					`includes the engine (${bytes(engineToFetch)}), downloaded once`,
+					t("models.note.withEngine", { size: bytes(engineToFetch) }),
 			]
 				.filter(Boolean)
 				.join(" · ");
@@ -233,7 +260,11 @@ function ModelCard({
 						<span
 							className={`font-mono text-xs ${installed ? "text-accent" : "text-dim"}`}
 						>
-							{installed ? "installed" : model.media}
+							{installed
+								? t("models.installed")
+								: model.media === "video"
+									? t("models.media.video")
+									: t("models.media.image")}
 						</span>
 					</div>
 					<p className="mt-0.5 text-xs text-dim">
@@ -244,7 +275,7 @@ function ModelCard({
 							rel="noreferrer"
 							className="underline hover:text-ink"
 						>
-							model page
+							{t("models.page")}
 						</a>
 					</p>
 				</div>
@@ -261,16 +292,14 @@ function ModelCard({
 							<span
 								className={variant.fit === "gpu" ? "text-dim" : "text-danger"}
 							>
-								· {FIT_TEXT[variant.fit]}
+								· {fitText(t, variant.fit)}
 							</span>
 						</p>
 						<details className="mt-1 text-xs text-dim">
 							<summary className="cursor-pointer hover:text-ink">
-								{variant.files.length === 1
-									? "1 file"
-									: `${variant.files.length} files`}
+								{t("models.files", { count: variant.files.length })}
 								{model.variants.length > 1 &&
-									` · ${model.variants.length} versions`}
+									` · ${t("models.versions", { count: model.variants.length })}`}
 							</summary>
 							<ul className="mt-2 flex flex-col gap-1 font-mono">
 								{variant.files.map((file) => (
@@ -280,7 +309,7 @@ function ModelCard({
 										</span>
 										<span className="shrink-0">
 											{bytes(file.size)}
-											{file.present && " · on disk"}
+											{file.present && ` · ${t("models.onDisk")}`}
 										</span>
 									</li>
 								))}
@@ -294,9 +323,9 @@ function ModelCard({
 										>
 											<span>
 												<span className="text-ink">{other.label}</span> ·{" "}
-												{bytes(other.size)} · {FIT_TEXT[other.fit]}
+												{bytes(other.size)} · {fitText(t, other.fit)}
 												{other.id === model.variant &&
-													(installed ? " · installed" : " · recommended")}
+													` · ${installed ? t("models.variantInstalled") : t("models.recommended")}`}
 											</span>
 											{!installed && !active && others.includes(other) && (
 												<button
@@ -305,7 +334,7 @@ function ModelCard({
 													disabled={install.isPending}
 													className="rounded border border-line px-2 py-0.5 hover:border-dim hover:text-ink"
 												>
-													Install this version
+													{t("models.installVersion")}
 												</button>
 											)}
 										</li>
@@ -315,28 +344,31 @@ function ModelCard({
 						</details>
 					</div>
 				) : (
-					<p className="text-sm text-danger">
-						No version of this model runs on this computer: it needs more memory
-						than it has.
-					</p>
+					<p className="text-sm text-danger">{t("models.noVersion")}</p>
 				)}
 
 				{installed && !model.ready && !active && (
-					<p className="text-sm text-danger">
-						Its engine is not installed, so it cannot run yet.
-					</p>
+					<p className="text-sm text-danger">{t("models.engineMissing")}</p>
 				)}
 				{active && <Progress model={model} />}
 				{model.error && !active && (
 					<p className="text-sm text-danger">
-						The install stopped: {model.error}
+						{t("models.installStopped", {
+							error: explain({
+								message: model.error,
+								code: model.errorCode,
+								params: model.errorParams,
+							}),
+						})}
 					</p>
 				)}
-				{error && <p className="text-sm text-danger">{error.message}</p>}
+				{error && <p className="text-sm text-danger">{explain(error)}</p>}
 				{variant && !installed && !active && !fits && (
 					<p className="text-sm text-danger">
-						Not enough free space: {bytes(toDownload)} needed,{" "}
-						{bytes(freeBytes)} free.
+						{t("models.notEnoughSpace", {
+							needed: bytes(toDownload),
+							free: bytes(freeBytes),
+						})}
 					</p>
 				)}
 
@@ -348,7 +380,7 @@ function ModelCard({
 							disabled={install.isPending}
 							className="rounded-md bg-accent px-4 py-2 font-medium text-accent-ink disabled:opacity-40"
 						>
-							Install the engine
+							{t("models.installEngine")}
 						</button>
 					)}
 					{variant && !installed && !active && (
@@ -358,7 +390,7 @@ function ModelCard({
 							disabled={!fits || install.isPending}
 							className="rounded-md bg-accent px-4 py-2 font-medium text-accent-ink disabled:opacity-40"
 						>
-							{partial > 0 ? "Resume download" : "Install"}
+							{partial > 0 ? t("models.resume") : t("models.install")}
 						</button>
 					)}
 					{active && (
@@ -368,7 +400,9 @@ function ModelCard({
 							disabled={cancel.isPending}
 							className="rounded-md border border-line px-4 py-2 hover:border-dim"
 						>
-							{model.state === "queued" ? "Cancel" : "Pause"}
+							{model.state === "queued"
+								? t("common.cancel")
+								: t("models.pause")}
 						</button>
 					)}
 					{(installed || partial > 0) && !active && (
@@ -377,13 +411,19 @@ function ModelCard({
 							disabled={remove.isPending}
 							onClick={() => {
 								const question = installed
-									? `Delete ${model.name}? This frees ${bytes(model.reclaimableBytes)}.`
-									: `Discard the ${bytes(partial)} downloaded for ${model.name}?`;
+									? t("models.deleteConfirm", {
+											model: model.name,
+											size: bytes(model.reclaimableBytes),
+										})
+									: t("models.discardConfirm", {
+											model: model.name,
+											size: bytes(partial),
+										});
 								if (window.confirm(question)) remove.mutate();
 							}}
 							className="rounded-md border border-line px-4 py-2 text-dim hover:text-danger"
 						>
-							{installed ? "Delete" : "Discard"}
+							{installed ? t("models.delete") : t("models.discard")}
 						</button>
 					)}
 				</div>
@@ -392,16 +432,19 @@ function ModelCard({
 	);
 }
 
-const BACKEND_NAMES: Record<LocalEngineStatus["backend"], string> = {
+const BACKEND_NAMES: Record<
+	Exclude<LocalEngineStatus["backend"], "cpu">,
+	string
+> = {
 	cuda: "CUDA",
 	rocm: "ROCm",
 	metal: "Metal",
 	vulkan: "Vulkan",
-	cpu: "the processor",
 };
 
 /** What open-reel found on this computer, and what it will run models with. */
 function Machine({ view }: { view: LocalModelsView }) {
+	const { t, bytes } = useI18n();
 	const { hardware, engines } = view;
 	const gpu = hardware.gpus.toSorted(
 		(a, b) => b.memoryBytes - a.memoryBytes,
@@ -410,36 +453,42 @@ function Machine({ view }: { view: LocalModelsView }) {
 	return (
 		<dl className="mt-6 grid gap-x-10 gap-y-4 sm:grid-cols-2">
 			<div>
-				<dt className={label}>This computer</dt>
+				<dt className={label}>{t("models.machine.computer")}</dt>
 				<dd className="mt-1 text-sm">
 					{gpu
 						? `${gpu.name} · ${bytes(gpu.memoryBytes)}`
-						: "No supported graphics card"}
+						: t("models.machine.noGpu")}
 					<span className="text-dim">
 						{" "}
-						· {bytes(hardware.memoryBytes)} of memory
+						·{" "}
+						{t("models.machine.memory", { size: bytes(hardware.memoryBytes) })}
 						{hardware.wsl && " · WSL"}
 					</span>
 				</dd>
 			</div>
 			<div>
-				<dt className={label}>Engine</dt>
+				<dt className={label}>{t("models.machine.engine")}</dt>
 				<dd className="mt-1 text-sm">
 					{engines.length === 0 ? (
-						<span className="text-danger">
-							No engine runs on this system yet.
-						</span>
+						<span className="text-danger">{t("models.machine.noEngine")}</span>
 					) : (
 						engines.map((engine) => (
 							<span key={engine.engine}>
-								{engine.name} · {BACKEND_NAMES[engine.backend]}
-								{engine.throughWindows && " (as a Windows program)"}
+								{engine.name} ·{" "}
+								{engine.backend === "cpu"
+									? t("models.machine.cpu")
+									: BACKEND_NAMES[engine.backend]}
+								{engine.throughWindows && ` ${t("models.machine.windows")}`}
 								<span className="text-dim">
 									{" "}
 									·{" "}
 									{engine.installed
-										? `installed, ${bytes(engine.size)}`
-										: `${bytes(engine.size)}, downloaded with the first model`}
+										? t("models.machine.engineInstalled", {
+												size: bytes(engine.size),
+											})
+										: t("models.machine.engineLater", {
+												size: bytes(engine.size),
+											})}
 								</span>
 							</span>
 						))
@@ -451,6 +500,7 @@ function Machine({ view }: { view: LocalModelsView }) {
 }
 
 export function Models() {
+	const { t, bytes, explain } = useI18n();
 	const view = useQuery({
 		queryKey: ["local-models"],
 		queryFn: api.localModels,
@@ -459,38 +509,35 @@ export function Models() {
 	return (
 		<div className="min-h-0 flex-1 overflow-y-auto p-6">
 			<div className="mx-auto max-w-5xl">
-				<h1 className="text-xl font-semibold">Local models</h1>
+				<h1 className="text-xl font-semibold">{t("models.title")}</h1>
 				<p className="mt-2 max-w-2xl text-sm leading-relaxed text-dim">
-					Models you download are kept on this computer. Each file is checked
-					after downloading, and a file two models share is stored once.
-				</p>
-				<p className="mt-4 max-w-2xl rounded-md border border-line bg-panel px-4 py-3 text-sm leading-relaxed">
-					Generating with installed models is not available yet. For now you can
-					download them and manage the space they take.
+					{t("models.intro")}
 				</p>
 				{view.error && (
-					<p className="mt-6 text-sm text-danger">{view.error.message}</p>
+					<p className="mt-6 text-sm text-danger">{explain(view.error)}</p>
 				)}
 				{view.data && <Machine view={view.data} />}
 				{disk && (
 					<dl className="mt-6 flex flex-wrap gap-x-10 gap-y-3">
 						<div>
 							<dt className="font-mono text-[11px] uppercase tracking-wider text-dim">
-								Used by models and engines
+								{t("models.disk.used")}
 							</dt>
 							<dd className="font-mono text-lg">
-								{disk.usedBytes > 0 ? bytes(disk.usedBytes) : "Nothing yet"}
+								{disk.usedBytes > 0
+									? bytes(disk.usedBytes)
+									: t("models.disk.nothing")}
 							</dd>
 						</div>
 						<div>
 							<dt className="font-mono text-[11px] uppercase tracking-wider text-dim">
-								Free on disk
+								{t("models.disk.free")}
 							</dt>
 							<dd className="font-mono text-lg">{bytes(disk.freeBytes)}</dd>
 						</div>
 						<div className="min-w-0">
 							<dt className="font-mono text-[11px] uppercase tracking-wider text-dim">
-								Stored in
+								{t("models.disk.path")}
 							</dt>
 							<dd className="truncate pt-1 font-mono text-sm" title={disk.path}>
 								{disk.path}

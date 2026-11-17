@@ -258,7 +258,9 @@ export class ReplicateProvider implements ProviderAdapter<ReplicateHandle> {
 			}
 			yield {
 				type: "progress",
-				message: prediction.status === "starting" ? "Starting" : "Generating",
+				...(prediction.status === "starting"
+					? { message: "Starting", stage: "starting" as const }
+					: { message: "Generating", stage: "generating" as const }),
 			};
 			await sleep(this.pollMs, ctx.signal);
 		}

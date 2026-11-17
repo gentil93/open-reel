@@ -9,7 +9,12 @@ import {
 	statfs,
 } from "node:fs/promises";
 import { join } from "node:path";
-import { NotFoundError, ValidationError } from "../errors";
+import {
+	CodedError,
+	describeError,
+	NotFoundError,
+	ValidationError,
+} from "../errors";
 import { sniffMime } from "../mime";
 import type {
 	EngineBuild,
@@ -207,7 +212,7 @@ export class LocalModelStore {
 	private hardware: Promise<Hardware> | null = null;
 	private listeners = new Set<LocalModelListener>();
 	private installs = new Map<string, Install>();
-	private errors = new Map<string, string>();
+	private errors = new Map<string, ReturnType<typeof describeError>>();
 	private demos = new Map<string, Promise<string>>();
 	/** One download at a time: they all compete for the same connection. */
 	private queue: Promise<void> = Promise.resolve();
@@ -244,7 +249,15 @@ export class LocalModelStore {
 
 	private spec(id: string): LocalModelSpec {
 		const model = this.catalog.find((m) => m.id === id);
-		if (!model) throw new NotFoundError(`Unknown local model: ${id}`);
+		if (!model) {
+			throw new NotFoundError(
+				`Unknown local model: ${id}`,
+				"unknownLocalModel",
+				{
+					model: id,
+				},
+			);
+		}
 		return model;
 	}
 
@@ -425,7 +438,11 @@ export class LocalModelStore {
 				reclaimableBytes:
 					sum(mine.map(held)) +
 					(freesEngine && build ? (engineSizes.get(build.id) ?? 0) : 0),
-				...(error && { error }),
+				...(error && {
+					error: error.message,
+					...(error.code && { errorCode: error.code }),
+					...(error.params && { errorParams: error.params }),
+				}),
 			};
 		});
 
@@ -481,11 +498,21 @@ export class LocalModelStore {
 		const model = this.spec(id);
 		const disk = await this.onDisk();
 		const variant = (await this.installedVariants(disk.complete)).get(id);
-		if (!variant) throw new ValidationError(`${model.name} is not installed`);
+		if (!variant) {
+			throw new ValidationError(
+				`${model.name} is not installed`,
+				"notInstalled",
+				{
+					model: model.name,
+				},
+			);
+		}
 		const choice = this.chooser(await this.machine())(variant.engine);
 		if (!choice || !(await this.installedBuilds()).has(choice.build.id)) {
 			throw new ValidationError(
 				`The engine for ${model.name} is not installed. Install the model again.`,
+				"engineMissing",
+				{ model: model.name },
 			);
 		}
 		const dir = this.engineDir(choice.build.id);
@@ -526,16 +553,30 @@ export class LocalModelStore {
 			if (!variant) throw new Error(`${model.name} has no variant installed`);
 		} else if (variantId) {
 			variant = model.variants.find((v) => v.id === variantId);
-			if (!variant) throw new NotFoundError(`Unknown variant: ${variantId}`);
+			if (!variant) {
+				throw new NotFoundError(
+					`Unknown variant: ${variantId}`,
+					"unknownVariant",
+					{
+						variant: variantId,
+					},
+				);
+			}
 			if (fitOf(variant, hardware, choose(variant.engine)) === "none") {
 				throw new ValidationError(
 					`${model.name} (${variant.label}) does not run on this machine`,
+					"variantDoesNotRun",
+					{ model: model.name, variant: variant.label },
 				);
 			}
 		} else {
 			variant = chooseVariant(model.variants, hardware, choose)?.variant;
 			if (!variant) {
-				throw new ValidationError(`${model.name} does not run on this machine`);
+				throw new ValidationError(
+					`${model.name} does not run on this machine`,
+					"modelDoesNotRun",
+					{ model: model.name },
+				);
 			}
 		}
 		const build = choose(variant.engine)?.build as EngineBuild;
@@ -571,6 +612,8 @@ export class LocalModelStore {
 		if (pending > view.disk.freeBytes) {
 			throw new ValidationError(
 				`Not enough disk space: ${formatBytes(pending)} needed, ${formatBytes(view.disk.freeBytes)} free`,
+				"notEnoughDisk",
+				{ neededBytes: pending, freeBytes: view.disk.freeBytes },
 			);
 		}
 
@@ -606,10 +649,7 @@ export class LocalModelStore {
 				);
 			} catch (error) {
 				if (!install.controller.signal.aborted) {
-					this.errors.set(
-						id,
-						error instanceof Error ? error.message : String(error),
-					);
+					this.errors.set(id, describeError(error));
 				}
 			} finally {
 				this.installs.delete(id);
@@ -633,7 +673,14 @@ export class LocalModelStore {
 		try {
 			for (const file of build.files) {
 				install.controller.signal.throwIfAborted();
-				await extractZip(this.blob(file.sha256), tmp);
+				await extractZip(this.blob(file.sha256), tmp).catch(
+					(error: unknown) => {
+						throw new CodedError(
+							error instanceof Error ? error.message : String(error),
+							"engineUnpackFailed",
+						);
+					},
+				);
 			}
 			await chmod(join(tmp, ...build.executable.split(/[\\/]/)), 0o755);
 			await rename(tmp, dir);
@@ -693,8 +740,10 @@ export class LocalModelStore {
 				signal,
 			});
 			if (!response.ok || !response.body) {
-				throw new Error(
+				throw new CodedError(
 					`Could not download ${file.name} (HTTP ${response.status})`,
+					"downloadFailed",
+					{ file: file.name, status: response.status },
 				);
 			}
 			// A server that ignores the range sends the file from the start.
@@ -704,7 +753,11 @@ export class LocalModelStore {
 			try {
 				for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
 					if (install.current.bytes + chunk.byteLength > file.size) {
-						throw new Error(`${file.name} is larger than expected`);
+						throw new CodedError(
+							`${file.name} is larger than expected`,
+							"downloadTooLarge",
+							{ file: file.name },
+						);
 					}
 					await out.write(chunk);
 					install.current.bytes += chunk.byteLength;
@@ -716,7 +769,11 @@ export class LocalModelStore {
 			}
 			signal.throwIfAborted();
 			if (install.current.bytes !== file.size) {
-				throw new Error(`The download of ${file.name} was cut short`);
+				throw new CodedError(
+					`The download of ${file.name} was cut short`,
+					"downloadCutShort",
+					{ file: file.name },
+				);
 			}
 		}
 
@@ -730,7 +787,11 @@ export class LocalModelStore {
 		if (hasher.digest("hex") !== file.sha256) {
 			// Nothing of a file that fails the check is worth resuming.
 			await rm(part, { force: true });
-			throw new Error(`${file.name} did not match its expected hash`);
+			throw new CodedError(
+				`${file.name} did not match its expected hash`,
+				"hashMismatch",
+				{ file: file.name },
+			);
 		}
 		await rename(part, path);
 		install.current = null;

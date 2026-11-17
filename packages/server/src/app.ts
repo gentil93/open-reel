@@ -109,12 +109,13 @@ export function createApp(options: AppOptions): Hono {
 	});
 
 	app.onError((error, c) => {
-		if (error instanceof ValidationError) {
-			return c.json({ error: error.message }, 400);
-		}
-		if (error instanceof NotFoundError) {
-			return c.json({ error: error.message }, 404);
-		}
+		// The code and its values let the interface say it in the reader's language.
+		const body = (e: ValidationError | NotFoundError) => ({
+			error: e.message,
+			...(e.code && { code: e.code, params: e.params }),
+		});
+		if (error instanceof ValidationError) return c.json(body(error), 400);
+		if (error instanceof NotFoundError) return c.json(body(error), 404);
 		console.error(error);
 		return c.json({ error: "Internal error" }, 500);
 	});

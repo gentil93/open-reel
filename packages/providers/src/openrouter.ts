@@ -231,7 +231,7 @@ export class OpenRouterProvider implements ProviderAdapter<OpenRouterHandle> {
 		body: Record<string, unknown>,
 		ctx: ProviderContext,
 	): AsyncIterable<ProviderEvent> {
-		yield { type: "progress", message: "Generating" };
+		yield { type: "progress", message: "Generating", stage: "generating" };
 		const response = await this.post("images", body, ctx);
 		if (!response.ok) {
 			yield { type: "failed", error: await errorMessage(response) };
@@ -319,7 +319,9 @@ export class OpenRouterProvider implements ProviderAdapter<OpenRouterHandle> {
 			}
 			yield {
 				type: "progress",
-				message: job.status === "pending" ? "In queue" : "Generating",
+				...(job.status === "pending"
+					? { message: "In queue", stage: "queued" as const }
+					: { message: "Generating", stage: "generating" as const }),
 			};
 			await sleep(this.pollMs, ctx.signal);
 		}

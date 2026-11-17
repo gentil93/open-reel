@@ -708,3 +708,18 @@ h2 {
 		animation: none;
 	}
 }
+
+.languages {
+	display: flex;
+	gap: 14px;
+}
+
+.languages a {
+	color: var(--dim);
+	text-decoration: none;
+}
+
+.languages a:hover,
+.languages a[aria-current="page"] {
+	color: var(--fg);
+}

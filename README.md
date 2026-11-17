@@ -48,6 +48,20 @@ never returned by the API.
 The server listens on `127.0.0.1` only and refuses requests that do not come
 from its own page, so other websites you visit cannot use your keys.
 
+## Translate
+
+open-reel speaks English and Brazilian Portuguese, and welcomes more languages.
+Each language is one JSON file per part of the project:
+
+- the app: `apps/web/src/locales/<language>.json`
+- the site: `apps/site/src/locales/<language>.json`
+
+Copy `en.json`, translate the values (keep words in `{braces}` as they are),
+and add the language to the list next to the catalogs (`apps/web/src/i18n.tsx`
+and `apps/site/src/languages.ts`). Anything you leave out shows in English, so a
+partial translation is welcome too. `bun test` checks that every translation
+matches the English catalog.
+
 ## Develop
 
 ```sh

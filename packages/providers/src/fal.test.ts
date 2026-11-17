@@ -55,8 +55,13 @@ test("submits to the model endpoint and follows the queue to the images", async 
 	const restored = JSON.parse(JSON.stringify(handle));
 
 	expect(await collect(fal.events(restored, ctx()))).toEqual([
-		{ type: "progress", message: "In queue (position 2)" },
-		{ type: "progress", message: "Generating" },
+		{
+			type: "progress",
+			message: "In queue (position 2)",
+			stage: "queued",
+			position: 2,
+		},
+		{ type: "progress", message: "Generating", stage: "generating" },
 		{
 			type: "completed",
 			outputs: [{ url: "https://v3.fal.media/a.png", mime: "image/png" }],

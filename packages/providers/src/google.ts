@@ -102,7 +102,7 @@ export class GoogleProvider implements ProviderAdapter<GoogleHandle> {
 		handle: GoogleHandle,
 		ctx: ProviderContext,
 	): AsyncIterable<ProviderEvent> {
-		yield { type: "progress", message: "Generating" };
+		yield { type: "progress", message: "Generating", stage: "generating" };
 		const response = await this.fetch(
 			`${API}/${handle.model}:generateContent`,
 			{

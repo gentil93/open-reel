@@ -5,6 +5,7 @@ import {
 	sqliteTable,
 	text,
 } from "drizzle-orm/sqlite-core";
+import type { ErrorParams } from "../errors";
 import type { AssetKind, GenerationParams, JobStatus } from "../types";
 
 export const sessions = sqliteTable(
@@ -53,6 +54,8 @@ export const jobs = sqliteTable(
 		status: text("status").$type<JobStatus>().notNull(),
 		handle: text("handle", { mode: "json" }).$type<unknown>(),
 		error: text("error"),
+		errorCode: text("error_code"),
+		errorParams: text("error_params", { mode: "json" }).$type<ErrorParams>(),
 		costUsd: real("cost_usd"),
 		createdAt: integer("created_at").notNull(),
 		startedAt: integer("started_at"),

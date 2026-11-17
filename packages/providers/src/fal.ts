@@ -335,10 +335,13 @@ export class FalProvider implements ProviderAdapter<FalHandle> {
 			}
 			yield {
 				type: "progress",
-				message:
-					status.status === "IN_QUEUE"
-						? `In queue (position ${status.queue_position ?? 0})`
-						: "Generating",
+				...(status.status === "IN_QUEUE"
+					? {
+							message: `In queue (position ${status.queue_position ?? 0})`,
+							stage: "queued" as const,
+							position: status.queue_position ?? 0,
+						}
+					: { message: "Generating", stage: "generating" as const }),
 			};
 			await sleep(this.pollMs, ctx.signal);
 		}

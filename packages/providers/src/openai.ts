@@ -77,7 +77,7 @@ export class OpenAIProvider implements ProviderAdapter<OpenAIHandle> {
 		handle: OpenAIHandle,
 		ctx: ProviderContext,
 	): AsyncIterable<ProviderEvent> {
-		yield { type: "progress", message: "Generating" };
+		yield { type: "progress", message: "Generating", stage: "generating" };
 		const response = await this.fetch(`${API}/${handle.path}`, {
 			method: "POST",
 			headers: {

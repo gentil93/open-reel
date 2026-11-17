@@ -1,6 +1,10 @@
 import { z } from "zod";
+import type { ErrorParams } from "./errors";
 
 export type Media = "image" | "video";
+
+/** Where a job is, in words every provider can say the same way. */
+export type ProgressStage = "queued" | "starting" | "loading" | "generating";
 export type Operation = "generate" | "edit";
 
 /** Who an operation runs for. Local installs use a single fixed user. */
@@ -99,6 +103,9 @@ export interface Job {
 	/** Provider-side reference used to re-attach after a restart. */
 	handle: unknown | null;
 	error: string | null;
+	/** Lets the interface say `error` in the reader's language. */
+	errorCode: string | null;
+	errorParams: ErrorParams | null;
 	costUsd: number | null;
 	createdAt: number;
 	startedAt: number | null;
@@ -154,6 +161,8 @@ export type EngineEvent =
 			jobId: string;
 			fraction?: number;
 			message?: string;
+			stage?: ProgressStage;
+			position?: number;
 	  };
 
 export type GpuVendor = "nvidia" | "amd" | "apple" | "intel";
@@ -324,6 +333,9 @@ export interface LocalModelStatus
 	demos: Omit<LocalModelDemo, "url">[];
 	/** Why the last install stopped, if it failed. */
 	error?: string;
+	/** Lets the interface say `error` in the reader's language. */
+	errorCode?: string;
+	errorParams?: ErrorParams;
 }
 
 /** The build of an engine this machine would run. */

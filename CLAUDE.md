@@ -20,3 +20,18 @@ bun test && bun run typecheck && bun run lint
 ```
 
 `bun run format` fixes formatting and import order.
+
+## Translations
+
+Every text a person reads in the app or on the site comes from a catalog, never
+from code:
+
+- `apps/web/src/locales/` for the app, `apps/site/src/locales/` for the site,
+  one JSON file per language.
+- English (`en.json`) is the source and has every key. Other languages may lag
+  behind: a missing key falls back to English.
+- When you add or change an English message, update the other languages you
+  can. A translation must use the same `{placeholders}` as English; the tests
+  check it.
+- Format numbers, sizes, money and dates with the translator (`number`,
+  `bytes`, `date`), never by hand.

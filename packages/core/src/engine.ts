@@ -1,5 +1,6 @@
 import type { AssetStore } from "./assets";
 import type { JobPatch, Repository } from "./db/repository";
+import { CodedError, describeError } from "./errors";
 import { newId } from "./ids";
 import type { KeyStore } from "./keys";
 import { sniffMime } from "./mime";
@@ -84,6 +85,8 @@ export class JobEngine {
 				await this.update(job.id, {
 					status: "failed",
 					error: "Interrupted by a restart",
+					errorCode: "interrupted",
+					errorParams: null,
 					finishedAt: Date.now(),
 				});
 			}
@@ -158,13 +161,21 @@ export class JobEngine {
 		try {
 			const model = registry.model(job.modelId);
 			if (!adapter || !model) {
-				throw new Error(`Model is not available: ${job.modelId}`);
+				throw new CodedError(
+					`Model is not available: ${job.modelId}`,
+					"modelUnavailable",
+					{ model: job.modelId },
+				);
 			}
 			const apiKey =
 				(await keys.get(ctx, adapter.id)) ??
 				(adapter.keyEnv ? process.env[adapter.keyEnv] : undefined);
 			if (adapter.requiresKey && !apiKey) {
-				throw new Error(`No API key configured for ${adapter.name}`);
+				throw new CodedError(
+					`No API key configured for ${adapter.name}`,
+					"noApiKey",
+					{ provider: adapter.name },
+				);
 			}
 			pctx = { apiKey, signal: controller.signal };
 
@@ -189,9 +200,11 @@ export class JobEngine {
 						jobId,
 						fraction: event.fraction,
 						message: event.message,
+						stage: event.stage,
+						position: event.position,
 					});
 				} else if (event.type === "failed") {
-					throw new Error(event.error);
+					throw new CodedError(event.error, event.code, event.params);
 				} else {
 					for (const output of event.outputs) {
 						await this.storeOutput(ctx, job, output, controller.signal);
@@ -199,6 +212,8 @@ export class JobEngine {
 					await this.update(jobId, {
 						status: "succeeded",
 						error: null,
+						errorCode: null,
+						errorParams: null,
 						finishedAt: Date.now(),
 						costUsd:
 							event.costUsd ??
@@ -207,7 +222,7 @@ export class JobEngine {
 					return;
 				}
 			}
-			throw new Error("The provider ended without a result");
+			throw new CodedError("The provider ended without a result", "noResult");
 		} catch (error) {
 			if (controller.signal.aborted) {
 				if (handle != null) {
@@ -224,9 +239,12 @@ export class JobEngine {
 					finishedAt: Date.now(),
 				});
 			} else {
+				const { message, code, params } = describeError(error);
 				await this.update(jobId, {
 					status: "failed",
-					error: error instanceof Error ? error.message : String(error),
+					error: message,
+					errorCode: code,
+					errorParams: params,
 					finishedAt: Date.now(),
 				});
 			}
@@ -262,19 +280,27 @@ export class JobEngine {
 		if ("url" in output) {
 			// A provider's response must not be able to make us read local files.
 			if (!output.url.startsWith("https://")) {
-				throw new Error("The provider returned a result URL that is not HTTPS");
+				throw new CodedError(
+					"The provider returned a result URL that is not HTTPS",
+					"resultNotHttps",
+				);
 			}
 			const response = await fetch(output.url, {
 				headers: output.headers,
 				signal,
 			});
 			if (!response.ok) {
-				throw new Error(
+				throw new CodedError(
 					`Could not download the result (HTTP ${response.status})`,
+					"resultDownloadFailed",
+					{ status: response.status },
 				);
 			}
 			if (Number(response.headers.get("content-length")) > MAX_OUTPUT_BYTES) {
-				throw new Error("The result is too large to store");
+				throw new CodedError(
+					"The result is too large to store",
+					"resultTooLarge",
+				);
 			}
 			data = await response.bytes();
 			mime ??= response.headers.get("content-type")?.split(";")[0];
@@ -282,7 +308,10 @@ export class JobEngine {
 			data = output.data;
 		}
 		if (data.byteLength > MAX_OUTPUT_BYTES) {
-			throw new Error("The result is too large to store");
+			throw new CodedError(
+				"The result is too large to store",
+				"resultTooLarge",
+			);
 		}
 		const stored = await this.deps.assets.put(ctx, data);
 		await this.deps.repo.createAsset({
