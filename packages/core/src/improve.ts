@@ -1,6 +1,6 @@
 import { CodedError } from "./errors";
 import { cleanTranslation } from "./translate";
-import type { ModelSpec } from "./types";
+import type { ModelSpec, Settings } from "./types";
 
 /**
  * A language model that answers one message, given instructions: one on this
@@ -71,6 +71,9 @@ export function promptStyle(
  */
 const QUOTED =
 	/["“«„][^"“”«»„]+["”»“]|‘[^‘’]+’|「[^「」]+」|『[^『』]+』|(?<![\p{L}\p{N}])'[^'\n]+'(?![\p{L}\p{N}])/u;
+
+/** Whether `text` has words in quotes, meant to be shown in the picture. */
+export const hasQuotedText = (text: string) => QUOTED.test(text);
 
 /**
  * What a language model is told, to make a short idea into a good prompt.
@@ -177,4 +180,25 @@ export async function improvePrompt(
 		);
 	}
 	return text;
+}
+
+/**
+ * Which language model writes a fuller prompt: the one on this computer, a
+ * service with the person's key, or none that can be used now. Automatic
+ * takes the one on this computer when it is installed (free, and good at
+ * it), else the service chosen for translation.
+ */
+export function writerChoice(
+	settings: Settings,
+	localReady: boolean,
+	/** Whether a service has a key to be reached with. */
+	usable: (service: "openai" | "google" | "openrouter") => boolean = () => true,
+): "local" | "openai" | "google" | "openrouter" | null {
+	const { improveWith, translateWith } = settings;
+	if (improveWith === "local") return localReady ? "local" : null;
+	if (improveWith !== "auto" && usable(improveWith)) return improveWith;
+	// Automatic, or a chosen service whose key is gone: what is free first.
+	if (localReady) return "local";
+	if (translateWith === "off" || translateWith === "local") return null;
+	return usable(translateWith) ? translateWith : null;
 }

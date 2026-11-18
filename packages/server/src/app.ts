@@ -1,7 +1,9 @@
 import {
 	CodedError,
 	type ErrorCode,
+	IMPROVE_WITH,
 	isDemoSize,
+	isImproveWith,
 	isTranslateWith,
 	type JobEngine,
 	LOCAL_USER,
@@ -354,10 +356,18 @@ export function createApp(options: AppOptions): Hono {
 				`translateWith must be one of ${TRANSLATE_WITH.join(", ")}`,
 			);
 		}
+		if (body.improveWith !== undefined && !isImproveWith(body.improveWith)) {
+			throw new ValidationError(
+				`improveWith must be one of ${IMPROVE_WITH.join(", ")}`,
+			);
+		}
 		return c.json(
 			await options.settings.set(user(c), {
 				...(isTranslateWith(body.translateWith) && {
 					translateWith: body.translateWith,
+				}),
+				...(isImproveWith(body.improveWith) && {
+					improveWith: body.improveWith,
 				}),
 			}),
 		);

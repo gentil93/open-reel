@@ -530,3 +530,22 @@ test("a coded failure is a bad gateway only when a service failed", async () => 
 		);
 	}
 });
+
+test("settings keep what improves prompts, and refuse what is not a choice", async () => {
+	const { runtime } = await setup();
+	const app = createApp(runtime);
+	const put = (body: unknown) =>
+		app.request("http://localhost:4096/api/settings", {
+			method: "PUT",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify(body),
+		});
+	expect((await put({ improveWith: "owl" })).status).toBe(400);
+	const saved = await put({ improveWith: "openai" });
+	expect(await saved.json()).toMatchObject({ improveWith: "openai" });
+	const read = await app.request("http://localhost:4096/api/settings");
+	expect(await read.json()).toMatchObject({
+		translateWith: "local",
+		improveWith: "openai",
+	});
+});

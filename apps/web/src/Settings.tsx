@@ -1,4 +1,9 @@
-import type { ProviderStatus, TranslateWith } from "@open-reel/core/types";
+import type {
+	Settings as Choices,
+	ImproveWith,
+	ProviderStatus,
+	TranslateWith,
+} from "@open-reel/core/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { type AgentPolicy, api } from "./api";
@@ -107,28 +112,39 @@ function Translation() {
 		queryFn: api.providers,
 	});
 	const choose = useMutation({
-		mutationFn: (translateWith: TranslateWith) =>
-			api.saveSettings({ translateWith }),
+		mutationFn: (change: Partial<Choices>) => api.saveSettings(change),
 		onSuccess: (saved) => client.setQueryData(["settings"], saved),
 	});
 	if (!model) return null;
 	const chosen = settings.data?.translateWith ?? "local";
 	const hasKey = (provider: string) =>
 		providers.data?.some((p) => p.id === provider && p.hasKey) ?? false;
+	const local = {
+		value: "local",
+		label: t("settings.translateLocal"),
+		usable: model.ready,
+	} as const;
+	const clouds = (["openai", "google", "openrouter"] as const).map((value) => ({
+		value,
+		label: t("settings.translateCloud", {
+			provider: providers.data?.find((p) => p.id === value)?.name ?? value,
+		}),
+		usable: hasKey(value),
+	}));
 	const options: { value: TranslateWith; label: string; usable: boolean }[] = [
-		{
-			value: "local",
-			label: t("settings.translateLocal"),
-			usable: model.ready,
-		},
-		...(["openai", "google", "openrouter"] as const).map((value) => ({
-			value,
-			label: t("settings.translateCloud", {
-				provider: providers.data?.find((p) => p.id === value)?.name ?? value,
-			}),
-			usable: hasKey(value),
-		})),
+		local,
+		...clouds,
 		{ value: "off", label: t("settings.translateOff"), usable: true },
+	];
+	const improveChosen = settings.data?.improveWith ?? "auto";
+	const improveOptions: {
+		value: ImproveWith;
+		label: string;
+		usable: boolean;
+	}[] = [
+		{ value: "auto", label: t("settings.improveAuto"), usable: true },
+		local,
+		...clouds,
 	];
 	const busy = ["queued", "downloading", "verifying"].includes(
 		live?.state ?? model.state,
@@ -159,7 +175,7 @@ function Translation() {
 								value={option.value}
 								checked={chosen === option.value}
 								disabled={!option.usable || choose.isPending}
-								onChange={() => choose.mutate(option.value)}
+								onChange={() => choose.mutate({ translateWith: option.value })}
 							/>
 							{option.label}
 							{!option.usable && (
@@ -172,10 +188,40 @@ function Translation() {
 						</label>
 					))}
 				</div>
-				{choose.error && (
-					<p className="mt-2 text-sm text-danger">{explain(choose.error)}</p>
-				)}
 			</fieldset>
+			<fieldset className="mt-4">
+				<legend className="text-sm font-medium">
+					{t("settings.improveWith")}
+				</legend>
+				<div className="mt-2 flex flex-col gap-1.5">
+					{improveOptions.map((option) => (
+						<label
+							key={option.value}
+							className={`flex items-center gap-2 text-sm ${option.usable ? "" : "text-dim"}`}
+						>
+							<input
+								type="radio"
+								name="improve-with"
+								value={option.value}
+								checked={improveChosen === option.value}
+								disabled={!option.usable || choose.isPending}
+								onChange={() => choose.mutate({ improveWith: option.value })}
+							/>
+							{option.label}
+							{!option.usable && (
+								<span className="text-xs">
+									{option.value === "local"
+										? t("settings.translateLocalMissing")
+										: t("settings.translateNoKey")}
+								</span>
+							)}
+						</label>
+					))}
+				</div>
+			</fieldset>
+			{choose.error && (
+				<p className="mt-2 text-sm text-danger">{explain(choose.error)}</p>
+			)}
 			<div className="mt-4 rounded-lg border border-line bg-panel p-4">
 				<div className="flex items-baseline justify-between gap-4">
 					<h3 className="font-medium">{model.name}</h3>

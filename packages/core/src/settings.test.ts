@@ -22,17 +22,29 @@ const bia = { userId: "bia" };
 describe("settings", () => {
 	test("translate on this computer until a person chooses otherwise", async () => {
 		const { settings } = await store();
-		expect(await settings.get(ana)).toEqual({ translateWith: "local" });
+		expect(await settings.get(ana)).toEqual({
+			translateWith: "local",
+			improveWith: "auto",
+		});
 	});
 
 	test("are kept per person, and survive a restart", async () => {
 		const { settings, path } = await store();
 		expect(await settings.set(ana, { translateWith: "openai" })).toEqual({
 			translateWith: "openai",
+			improveWith: "auto",
 		});
-		expect(await settings.get(bia)).toEqual({ translateWith: "local" });
+		expect(await settings.set(ana, { improveWith: "local" })).toEqual({
+			translateWith: "openai",
+			improveWith: "local",
+		});
+		expect(await settings.get(bia)).toEqual({
+			translateWith: "local",
+			improveWith: "auto",
+		});
 		expect(await new FileSettingsStore(path).get(ana)).toEqual({
 			translateWith: "openai",
+			improveWith: "local",
 		});
 	});
 
@@ -40,14 +52,18 @@ describe("settings", () => {
 		const { path } = await store();
 		await writeFile(
 			path,
-			JSON.stringify({ ana: { translateWith: "carrier pigeon" } }),
+			JSON.stringify({
+				ana: { translateWith: "carrier pigeon", improveWith: "owl" },
+			}),
 		);
 		expect(await new FileSettingsStore(path).get(ana)).toEqual({
 			translateWith: "local",
+			improveWith: "auto",
 		});
 		await writeFile(path, "not json");
 		expect(await new FileSettingsStore(path).get(ana)).toEqual({
 			translateWith: "local",
+			improveWith: "auto",
 		});
 	});
 
@@ -57,7 +73,7 @@ describe("settings", () => {
 			settings.set(ana, { translateWith: "google" }),
 			settings.set(bia, { translateWith: "off" }),
 		]);
-		expect(await settings.get(ana)).toEqual({ translateWith: "google" });
-		expect(await settings.get(bia)).toEqual({ translateWith: "off" });
+		expect((await settings.get(ana)).translateWith).toBe("google");
+		expect((await settings.get(bia)).translateWith).toBe("off");
 	});
 });

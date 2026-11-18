@@ -5,6 +5,7 @@ import {
 	improvePrompt,
 	type LanguageModel,
 	promptStyle,
+	writerChoice,
 } from "./improve";
 import type { ModelSpec } from "./types";
 
@@ -252,5 +253,44 @@ describe("improving a prompt", () => {
 			signal(),
 		).catch((e) => e);
 		expect(error.code).toBe("noApiKey");
+	});
+});
+
+describe("what writes a fuller prompt", () => {
+	test("automatic: this computer when installed, else the translation service", () => {
+		const auto = (translateWith: "local" | "openai" | "off") =>
+			[true, false].map((ready) =>
+				writerChoice({ improveWith: "auto", translateWith }, ready),
+			);
+		expect(auto("openai")).toEqual(["local", "openai"]);
+		expect(auto("local")).toEqual(["local", null]);
+		// Translation turned off does not turn improving off.
+		expect(auto("off")).toEqual(["local", null]);
+	});
+
+	test("a chosen one is used whatever translates", () => {
+		expect(
+			writerChoice({ improveWith: "google", translateWith: "local" }, true),
+		).toBe("google");
+		expect(
+			writerChoice({ improveWith: "local", translateWith: "openai" }, false),
+		).toBeNull();
+		expect(
+			writerChoice({ improveWith: "local", translateWith: "openai" }, true),
+		).toBe("local");
+	});
+
+	test("a chosen service whose key is gone gives way to what works", () => {
+		const noKeys = () => false;
+		const google = { improveWith: "google", translateWith: "local" } as const;
+		expect(writerChoice(google, true, noKeys)).toBe("local");
+		expect(writerChoice(google, false, noKeys)).toBeNull();
+		expect(
+			writerChoice(
+				{ improveWith: "google", translateWith: "openai" },
+				false,
+				(service) => service === "openai",
+			),
+		).toBe("openai");
 	});
 });

@@ -426,6 +426,8 @@
 	"settings.agentsRestart": "Reinicie o Claude Desktop para a mudança valer.",
 	"settings.agentsUnreadable": "Não foi possível ler o arquivo de configurações do Claude Desktop, então o open-reel não vai mexer nele. Corrija ou apague o arquivo e volte aqui.",
 	"settings.agentsUpdate": "Salvar estes limites",
+	"settings.improveAuto": "Automático: este computador se tiver o tradutor, senão o serviço de tradução, se houver um",
+	"settings.improveWith": "Melhorar prompts com",
 	"settings.keyConfigured": "chave configurada",
 	"settings.keyLabel": "Chave de API do {provider}",
 	"settings.language": "Idioma",

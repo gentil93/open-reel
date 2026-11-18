@@ -23,6 +23,7 @@ import {
 	SqliteRepository,
 	type UserContext,
 	ValidationError,
+	writerChoice,
 } from "@open-reel/core";
 import {
 	builtinEngines,
@@ -213,13 +214,19 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 		if (translateWith === "local") return translatorReady ? translator : null;
 		return cloudFor(ctx, translateWith);
 	};
-	// A short writing task: the model on this computer when it is installed
-	// (free, and good at it), else the service chosen for translation.
 	const writerFor = async (ctx: UserContext): Promise<LanguageModel | null> => {
-		if (translatorReady) return translator;
-		const { translateWith } = await settings.get(ctx);
-		if (translateWith === "off" || translateWith === "local") return null;
-		return cloudFor(ctx, translateWith);
+		const services = ["openai", "google", "openrouter"] as const;
+		const reachable = new Set<CloudTranslatorId>();
+		for (const service of services) {
+			if (await cloudFor(ctx, service)) reachable.add(service);
+		}
+		const choice = writerChoice(
+			await settings.get(ctx),
+			translatorReady,
+			(service) => reachable.has(service),
+		);
+		if (choice === "local") return translator;
+		return choice ? cloudFor(ctx, choice) : null;
 	};
 	const engine = new JobEngine({
 		repo,

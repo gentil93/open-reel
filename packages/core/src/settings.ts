@@ -1,9 +1,17 @@
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { isTranslateWith, type Settings, type UserContext } from "./types";
+import {
+	isImproveWith,
+	isTranslateWith,
+	type Settings,
+	type UserContext,
+} from "./types";
 
 /** Nothing is spent until asked: the model on this computer, if installed. */
-export const DEFAULT_SETTINGS: Settings = { translateWith: "local" };
+export const DEFAULT_SETTINGS: Settings = {
+	translateWith: "local",
+	improveWith: "auto",
+};
 
 export interface SettingsStore {
 	get(ctx: UserContext): Promise<Settings>;
@@ -31,6 +39,9 @@ export class FileSettingsStore implements SettingsStore {
 			translateWith: isTranslateWith(mine.translateWith)
 				? mine.translateWith
 				: DEFAULT_SETTINGS.translateWith,
+			improveWith: isImproveWith(mine.improveWith)
+				? mine.improveWith
+				: DEFAULT_SETTINGS.improveWith,
 		};
 	}
 

@@ -568,7 +568,26 @@ export function isTranslateWith(value: unknown): value is TranslateWith {
 	return (TRANSLATE_WITH as readonly unknown[]).includes(value);
 }
 
+/**
+ * What writes a fuller prompt from a short idea: "auto" takes the model on
+ * this computer when it is installed (free), else the service chosen for
+ * translation; or one of them, always.
+ */
+export const IMPROVE_WITH = [
+	"auto",
+	"local",
+	"openai",
+	"google",
+	"openrouter",
+] as const;
+export type ImproveWith = (typeof IMPROVE_WITH)[number];
+
+export function isImproveWith(value: unknown): value is ImproveWith {
+	return (IMPROVE_WITH as readonly unknown[]).includes(value);
+}
+
 /** Choices a person makes that the server acts on. */
 export interface Settings {
 	translateWith: TranslateWith;
+	improveWith: ImproveWith;
 }
