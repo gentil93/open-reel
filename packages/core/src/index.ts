@@ -1,4 +1,5 @@
 export * from "./assets";
+export * from "./chat";
 export * from "./db/repository";
 export * from "./engine";
 export * from "./errors";

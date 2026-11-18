@@ -107,6 +107,7 @@
 	"errors.interrupted": "Interrompido porque o open-reel foi fechado.",
 	"errors.jobNotFound": "Essa geração não existe mais.",
 	"errors.jobNotRetryable": "Só dá para tentar de novo uma geração que falhou ou foi cancelada.",
+	"errors.localAssistantUnavailable": "O assistente deste computador roda no app do Windows. Aqui, escolha um serviço com a sua chave em Configurações.",
 	"errors.maskWithoutReference": "Para marcar uma área é preciso uma imagem de referência.",
 	"errors.modelDoesNotRun": "O {model} não roda neste computador.",
 	"errors.modelUnavailable": "O {model} não está mais disponível.",

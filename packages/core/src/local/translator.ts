@@ -1,5 +1,15 @@
 import { mkdir, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import {
+	type ChatMessage,
+	type ChatModel,
+	type ChatReply,
+	openAiMessages,
+	openAiReply,
+	openAiTools,
+	type ToolSpec,
+} from "../chat";
+import { CodedError } from "../errors";
 import type { LanguageModel, ReplyOptions } from "../improve";
 import { TRANSLATE_INSTRUCTIONS, type Translator } from "../translate";
 import {
@@ -27,6 +37,13 @@ const POLL_MS = 250;
 /** Enough for a long prompt; a translation is about as long as its prompt. */
 const MAX_TOKENS = 512;
 const CONTEXT = 2048;
+/**
+ * The kept server also holds the assistant's conversations, with the
+ * tools' descriptions and several turns.
+ */
+const SERVER_CONTEXT = 8192;
+/** Enough for an assistant's turn: some words and a few tool calls. */
+const CHAT_MAX_TOKENS = 1024;
 
 /** Runs a program to its end, giving its output. */
 export type RunOnce = (
@@ -106,7 +123,10 @@ interface Server {
 	exited: Promise<number>;
 }
 
-export class LocalTranslator implements Translator, LanguageModel {
+export class LocalTranslator implements Translator, LanguageModel, ChatModel {
+	/** The small model reads words only. */
+	readonly vision = false;
+
 	private store: LocalModelStore;
 	private model: string;
 	private spawn: Spawn;
@@ -164,12 +184,66 @@ export class LocalTranslator implements Translator, LanguageModel {
 			: this.served(runtime, message, signal);
 	}
 
+	/**
+	 * The assistant's next turn, through the kept server. Under WSL the
+	 * server cannot be reached, and a one-off run cannot call tools.
+	 */
+	async chat(
+		instructions: string,
+		messages: ChatMessage[],
+		tools: ToolSpec[],
+		signal: AbortSignal,
+	): Promise<ChatReply> {
+		const runtime = await this.store.runtime(this.model);
+		if (runtime.throughWindows) {
+			throw new CodedError(
+				"The assistant on this computer runs only in the Windows app, not under WSL",
+				"localAssistantUnavailable",
+			);
+		}
+		return openAiReply(
+			await this.completion(
+				runtime,
+				{
+					messages: openAiMessages(instructions, messages, false),
+					...(tools.length > 0 && { tools: openAiTools(tools) }),
+					temperature: 0.3,
+					max_tokens: CHAT_MAX_TOKENS,
+				},
+				signal,
+			),
+		);
+	}
+
 	/** Through the server, started if it is not running. */
 	private async served(
 		runtime: LocalRuntime,
 		message: Message,
 		signal: AbortSignal,
 	): Promise<string> {
+		const body = (await this.completion(
+			runtime,
+			{
+				messages: [
+					{ role: "system", content: message.instructions },
+					{ role: "user", content: message.text },
+				],
+				temperature: message.temperature,
+				max_tokens: MAX_TOKENS,
+			},
+			signal,
+		)) as { choices?: { message?: { content?: string } }[] };
+		const text = body.choices?.[0]?.message?.content;
+		if (typeof text !== "string") throw new Error("No answer came back");
+		return text;
+	}
+
+	/** One chat completion by the server, started if it is not running. */
+	private async completion(
+		runtime: LocalRuntime,
+		request: Record<string, unknown>,
+		signal: AbortSignal,
+	): Promise<unknown> {
 		clearTimeout(this.idle);
 		this.inFlight++;
 		try {
@@ -178,25 +252,13 @@ export class LocalTranslator implements Translator, LanguageModel {
 			const response = await this.fetch(`${server.url}/v1/chat/completions`, {
 				method: "POST",
 				headers: { "content-type": "application/json" },
-				body: JSON.stringify({
-					messages: [
-						{ role: "system", content: message.instructions },
-						{ role: "user", content: message.text },
-					],
-					temperature: message.temperature,
-					max_tokens: MAX_TOKENS,
-				}),
+				body: JSON.stringify(request),
 				signal,
 			});
 			if (!response.ok) {
 				throw new Error(`The language model refused (HTTP ${response.status})`);
 			}
-			const body = (await response.json()) as {
-				choices?: { message?: { content?: string } }[];
-			};
-			const text = body.choices?.[0]?.message?.content;
-			if (typeof text !== "string") throw new Error("No answer came back");
-			return text;
+			return await response.json();
 		} finally {
 			this.inFlight--;
 			// Unloaded once nothing has used it for a while.
@@ -247,7 +309,7 @@ export class LocalTranslator implements Translator, LanguageModel {
 			"--port",
 			String(port),
 			"-c",
-			String(CONTEXT),
+			String(SERVER_CONTEXT),
 			"-np",
 			"1",
 		]);

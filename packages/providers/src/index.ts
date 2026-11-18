@@ -6,6 +6,7 @@ import { OpenRouterProvider } from "./openrouter";
 import { withProfiles } from "./profiles";
 import { ReplicateProvider } from "./replicate";
 
+export { CloudChatModel, geminiContents, geminiReply } from "./chat-models";
 export { builtinEngines } from "./engines";
 export { FalProvider } from "./fal";
 export { GoogleProvider } from "./google";

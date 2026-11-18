@@ -107,6 +107,7 @@
 	"errors.interrupted": "Stopped because open-reel was closed.",
 	"errors.jobNotFound": "That generation no longer exists.",
 	"errors.jobNotRetryable": "Only a generation that failed or was canceled can be tried again.",
+	"errors.localAssistantUnavailable": "The assistant on this computer runs in the Windows app. Here, choose a service with your key in Settings.",
 	"errors.maskWithoutReference": "Marking an area needs a reference image.",
 	"errors.modelDoesNotRun": "{model} does not run on this computer.",
 	"errors.modelUnavailable": "{model} is not available any more.",

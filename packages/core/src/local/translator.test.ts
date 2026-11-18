@@ -97,7 +97,7 @@ describe("the local translator", () => {
 			"--port",
 			"4321",
 			"-c",
-			"2048",
+			"8192",
 			"-np",
 			"1",
 		]);
@@ -188,6 +188,42 @@ describe("the local translator", () => {
 		});
 		const args = runs[0] ?? [];
 		expect(args[args.indexOf("--temp") + 1]).toBe("0.7");
+	});
+
+	test("holds a conversation with tools through the kept server", async () => {
+		const { store } = await setup(false);
+		const server = fakeServer("Making it.");
+		const brain = new LocalTranslator({
+			store,
+			model: "qwen",
+			spawn: server.spawn,
+			fetch: server.fetch,
+			freePort: async () => 4321,
+		});
+		const reply = await brain.chat(
+			"Be brief.",
+			[{ role: "user", content: [{ type: "text", text: "a fox" }] }],
+			[{ name: "generate", description: "Makes", parameters: {} }],
+			new AbortController().signal,
+		);
+		expect(reply).toEqual({ text: "Making it.", toolCalls: [] });
+		expect(server.asked[0]).toMatchObject({
+			messages: [
+				{ role: "system", content: "Be brief." },
+				{ role: "user", content: [{ type: "text", text: "a fox" }] },
+			],
+			tools: [{ type: "function", function: { name: "generate" } }],
+		});
+		brain.stop();
+	});
+
+	test("under WSL cannot hold a conversation, and says so", async () => {
+		const { store } = await setup(true);
+		const brain = new LocalTranslator({ store, model: "qwen" });
+		const error = await brain
+			.chat("x", [], [], new AbortController().signal)
+			.catch((e) => e);
+		expect(error.code).toBe("localAssistantUnavailable");
 	});
 
 	test("says why when the model stops", async () => {

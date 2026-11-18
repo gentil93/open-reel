@@ -34,6 +34,7 @@ export const ERROR_CODES = [
 	"modelsMoving",
 	"noApiKey",
 	"noLanguageModel",
+	"localAssistantUnavailable",
 	"improveFailed",
 	"noModel",
 	"needsPicture",
