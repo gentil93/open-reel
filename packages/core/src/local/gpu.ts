@@ -99,12 +99,31 @@ export class GpuLock {
 		this.pollMs = options.pollMs ?? POLL_MS;
 	}
 
-	/** Follows the models folder elsewhere; only while nothing is held. */
+	/**
+	 * Follows the models folder elsewhere. What this process holds is written
+	 * there from the next beat; its file in the old folder goes stale.
+	 */
 	moveTo(root: string): void {
-		if (this.holds.size > 0) {
-			throw new Error("The GPU is in use; it cannot move to another folder");
-		}
 		this.dir = join(root, "gpu");
+		if (this.holds.size > 0) {
+			try {
+				this.publish();
+			} catch {
+				// The next beat tries again.
+			}
+		}
+	}
+
+	/** Whether any open-reel, this one included, holds or waits for the GPU. */
+	inUse(): boolean {
+		if (this.holds.size > 0) return true;
+		try {
+			mkdirSync(this.dir, { recursive: true });
+			const view = this.look(this.now(), false);
+			return view.others > 0 || view.waiters.length > 0;
+		} catch {
+			return false;
+		}
 	}
 
 	/** Bytes this process has reserved. */

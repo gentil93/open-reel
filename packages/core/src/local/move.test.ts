@@ -1,8 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import {
+	mkdir,
+	mkdtemp,
+	readdir,
+	rm,
+	symlink,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Moved, moveBack, moveInto, treeSize } from "./move";
+import { cleanUp, type Mirror, mirrorInto, treeSize, undo } from "./move";
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -16,9 +23,14 @@ async function folder(): Promise<string> {
 }
 
 const read = (path: string) => Bun.file(path).text();
+const empty = (): Mirror => ({ made: [], old: [] });
+const options = (report: (bytes: number) => void = () => {}) => ({
+	report,
+	keep: (path: string) => !path.endsWith(".json"),
+});
 
 describe("moving models", () => {
-	test("moves a folder with everything below it, telling the bytes", async () => {
+	test("mirrors a folder, leaving the old one whole until cleaned up", async () => {
 		const root = await folder();
 		await mkdir(join(root, "from", "sub"), { recursive: true });
 		await writeFile(join(root, "from", "a"), "aaaa");
@@ -26,63 +38,108 @@ describe("moving models", () => {
 		expect(await treeSize(join(root, "from"))).toBe(6);
 
 		let bytes = 0;
-		const moved: Moved[] = [];
-		await moveInto(
+		const mirror = empty();
+		await mirrorInto(
 			join(root, "from"),
 			join(root, "to"),
-			(n) => {
+			mirror,
+			options((n) => {
 				bytes += n;
-			},
-			moved,
+			}),
 		);
 		expect(bytes).toBe(6);
 		expect(await read(join(root, "to", "sub", "b"))).toBe("bb");
+		// Nothing of the old folder is gone yet.
+		expect(await read(join(root, "from", "sub", "b"))).toBe("bb");
+
+		await cleanUp(mirror, root);
 		expect(await readdir(root)).toEqual(["to"]);
-		expect(moved).toHaveLength(1);
+		expect(await read(join(root, "to", "a"))).toBe("aaaa");
 	});
 
-	test("merges into a folder already there, keeping its files", async () => {
-		const root = await folder();
-		await mkdir(join(root, "from"));
-		await mkdir(join(root, "to"));
-		await writeFile(join(root, "from", "same"), "new");
-		await writeFile(join(root, "from", "only-here"), "x");
-		await writeFile(join(root, "to", "same"), "old");
-		await moveInto(join(root, "from"), join(root, "to"), () => {}, []);
-		// Model files are named by their hash: the one there is the same file.
-		expect(await read(join(root, "to", "same"))).toBe("old");
-		expect(await read(join(root, "to", "only-here"))).toBe("x");
-		expect(await readdir(root)).toEqual(["to"]);
-	});
-
-	test("puts back what moved when told to", async () => {
+	test("undo leaves the old folder as it was", async () => {
 		const root = await folder();
 		await mkdir(join(root, "from"));
 		await writeFile(join(root, "from", "a"), "a");
-		const moved: Moved[] = [];
-		await moveInto(join(root, "from"), join(root, "to"), () => {}, moved);
-		await moveBack(moved);
+		const mirror = empty();
+		await mirrorInto(join(root, "from"), join(root, "to"), mirror, options());
+		expect(await undo(mirror)).toEqual([]);
 		expect(await read(join(root, "from", "a"))).toBe("a");
-		expect(await readdir(root)).toEqual(["from"]);
+		expect(await readdir(join(root, "to"))).toEqual([]);
 	});
 
-	test("makes the folders the new place needs", async () => {
+	test("merges into a folder there, keeping its model files", async () => {
 		const root = await folder();
-		await writeFile(join(root, "a"), "a");
-		await moveInto(
-			join(root, "a"),
-			join(root, "new", "deep", "a"),
-			() => {},
-			[],
-		);
-		expect(await read(join(root, "new", "deep", "a"))).toBe("a");
+		await mkdir(join(root, "from"));
+		await mkdir(join(root, "to"));
+		await writeFile(join(root, "from", "hash"), "new");
+		await writeFile(join(root, "from", "marker.json"), "mine");
+		await writeFile(join(root, "to", "hash"), "old");
+		await writeFile(join(root, "to", "marker.json"), "theirs");
+		await writeFile(join(root, "to", "other"), "x");
+		const mirror = empty();
+		await mirrorInto(join(root, "from"), join(root, "to"), mirror, options());
+		// Named by its hash: the one there is the same file.
+		expect(await read(join(root, "to", "hash"))).toBe("old");
+		// A marker says what this folder holds: it replaces the one there.
+		expect(await read(join(root, "to", "marker.json"))).toBe("mine");
+		// Undo deletes only what it made: the folder that was there stays.
+		await undo(mirror);
+		expect((await readdir(join(root, "to"))).sort()).toEqual([
+			"hash",
+			"marker.json",
+			"other",
+		]);
+		expect(await read(join(root, "from", "hash"))).toBe("new");
 	});
 
-	test("something that is not there is nothing to move", async () => {
+	test("refuses the same folder under another name, deleting nothing", async () => {
 		const root = await folder();
-		const moved: Moved[] = [];
-		await moveInto(join(root, "none"), join(root, "to"), () => {}, moved);
-		expect(moved).toEqual([]);
-		expect(await readdir(root)).toEqual([]);
+		await mkdir(join(root, "models"));
+		await writeFile(join(root, "models", "a"), "a");
+		await symlink(join(root, "models"), join(root, "alias"));
+		const mirror = empty();
+		await expect(
+			mirrorInto(join(root, "models"), join(root, "alias"), mirror, options()),
+		).rejects.toThrow("itself");
+		await cleanUp(mirror, root);
+		expect(await read(join(root, "models", "a"))).toBe("a");
+	});
+
+	test("a folder made whole shows only once all its files are there", async () => {
+		const root = await folder();
+		await mkdir(join(root, "engines", "build"), { recursive: true });
+		await writeFile(join(root, "engines", "build", "run"), "program");
+		const mirror = empty();
+		await mirrorInto(join(root, "engines"), join(root, "new"), mirror, {
+			...options(),
+			whole: (path) => path.endsWith("build"),
+		});
+		expect(await read(join(root, "new", "build", "run"))).toBe("program");
+		// Nothing half made is left aside.
+		expect(await readdir(join(root, "new"))).toEqual(["build"]);
+		await cleanUp(mirror, root);
+		expect(await readdir(root)).toEqual(["new"]);
+	});
+
+	test("files that only matter for a moment stay behind", async () => {
+		const root = await folder();
+		await mkdir(join(root, "from"));
+		await writeFile(join(root, "from", "a"), "a");
+		await writeFile(join(root, "from", "a.lock"), "someone");
+		await writeFile(join(root, "from", ".clock-1"), "");
+		await mirrorInto(join(root, "from"), join(root, "to"), empty(), options());
+		expect(await readdir(join(root, "to"))).toEqual(["a"]);
+	});
+
+	test("cleaning up leaves a folder something new was written to", async () => {
+		const root = await folder();
+		await mkdir(join(root, "from"));
+		await writeFile(join(root, "from", "a"), "a");
+		const mirror = empty();
+		await mirrorInto(join(root, "from"), join(root, "to"), mirror, options());
+		await writeFile(join(root, "from", "new"), "written meanwhile");
+		await cleanUp(mirror, root);
+		expect(await readdir(join(root, "from"))).toEqual(["new"]);
 	});
 });

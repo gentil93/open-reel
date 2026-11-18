@@ -1,4 +1,10 @@
-import { readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+	readFileSync,
+	renameSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 
 /**
@@ -37,14 +43,90 @@ function folderNow(dir: string): number {
 	}
 }
 
-/** Whether another open-reel, alive, holds `lock`. */
-export function isLocked(lock: string, staleMs = LOCK_STALE_MS): boolean {
+/** Whether `path` was written within `staleMs`, on the folder's clock. */
+function fresh(path: string, staleMs: number): boolean {
 	try {
-		const { mtimeMs } = statSync(lock);
-		return folderNow(dirname(lock)) - mtimeMs <= staleMs;
+		const { mtimeMs } = statSync(path);
+		return folderNow(dirname(path)) - mtimeMs <= staleMs;
 	} catch {
 		return false;
 	}
+}
+
+/** Whether another open-reel, alive, holds `lock`. */
+export function isLocked(lock: string, staleMs = LOCK_STALE_MS): boolean {
+	return fresh(lock, staleMs);
+}
+
+/**
+ * Takes `lock` if it is free, or left by an open-reel that died. A stale
+ * lock is first renamed to a name of its own: of two taking it over at once,
+ * only one renames it, so neither removes a lock the other just took.
+ */
+function take(lock: string, owner: string, staleMs: number): boolean {
+	try {
+		writeFileSync(lock, owner, { flag: "wx" });
+		return true;
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+	}
+	if (fresh(lock, staleMs)) return false;
+	const aside = `${lock}.${crypto.randomUUID()}.stale`;
+	try {
+		renameSync(lock, aside);
+	} catch {
+		return false; // Another took it over first.
+	}
+	// Renewed between the look and the rename: put it back.
+	if (fresh(aside, staleMs)) {
+		try {
+			renameSync(aside, lock);
+		} catch {
+			rmSync(aside, { force: true });
+		}
+		return false;
+	}
+	rmSync(aside, { force: true });
+	try {
+		writeFileSync(lock, owner, { flag: "wx" });
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/** Keeps `lock` alive while held; stops once another holds it. */
+function keepAlive(lock: string, owner: string, everyMs: number): () => void {
+	const heartbeat = setInterval(() => {
+		try {
+			if (readFileSync(lock, "utf8") === owner) writeFileSync(lock, owner);
+		} catch {
+			// Unreachable for now; the next beat tries again.
+		}
+	}, everyMs);
+	heartbeat.unref?.();
+	return () => {
+		clearInterval(heartbeat);
+		try {
+			// Only our own: a lock taken for dead may have been taken over.
+			if (readFileSync(lock, "utf8") === owner) rmSync(lock);
+		} catch {
+			// Already gone.
+		}
+	};
+}
+
+/**
+ * Takes `lock` now, or returns null when another open-reel holds it. The
+ * returned function lets it go.
+ */
+export function tryFileLock(
+	lock: string,
+	options: Pick<FileLockOptions, "staleMs" | "heartbeatMs"> = {},
+): (() => void) | null {
+	const owner = crypto.randomUUID();
+	if (!take(lock, owner, options.staleMs ?? LOCK_STALE_MS)) return null;
+	return keepAlive(lock, owner, options.heartbeatMs ?? HEARTBEAT_MS);
 }
 
 /**
@@ -61,37 +143,14 @@ export async function withFileLock<T>(
 	const staleMs = options.staleMs ?? LOCK_STALE_MS;
 	for (;;) {
 		signal.throwIfAborted();
-		try {
-			writeFileSync(lock, owner, { flag: "wx" });
-			break;
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-		}
-		if (!isLocked(lock, staleMs)) {
-			// Left by an open-reel that died: take it over.
-			rmSync(lock, { force: true });
-			continue;
-		}
+		if (take(lock, owner, staleMs)) break;
 		await options.onWait?.();
 		await Bun.sleep(options.pollMs ?? POLL_MS);
 	}
-	const heartbeat = setInterval(() => {
-		try {
-			writeFileSync(lock, owner);
-		} catch {
-			// Unreachable for now; the next beat tries again.
-		}
-	}, options.heartbeatMs ?? HEARTBEAT_MS);
-	heartbeat.unref?.();
+	const release = keepAlive(lock, owner, options.heartbeatMs ?? HEARTBEAT_MS);
 	try {
 		return await fn();
 	} finally {
-		clearInterval(heartbeat);
-		try {
-			// Only our own: a lock taken for dead may have been taken over.
-			if (readFileSync(lock, "utf8") === owner) rmSync(lock);
-		} catch {
-			// Already gone.
-		}
+		release();
 	}
 }

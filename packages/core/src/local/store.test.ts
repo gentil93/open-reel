@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readdir, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -13,6 +13,7 @@ import {
 	NotFoundError,
 	ValidationError,
 } from "../index";
+import { GpuLock } from "./gpu";
 import { picture, zip } from "./testing";
 
 const dirs: string[] = [];
@@ -888,6 +889,69 @@ test("moving the models is refused while they are in use, or without a place to 
 		code: "modelsBusy",
 	});
 	held.value.release();
+
+	// Another open-reel on the folder holds the GPU.
+	const other = new GpuLock({ root, capacity: async () => 2 ** 34 });
+	const theirs = other.acquire(1, new AbortController().signal);
+	let taken = await theirs.next();
+	while (!taken.done) taken = await theirs.next();
+	await expect(movable.relocate(target)).rejects.toMatchObject({
+		code: "modelsBusy",
+	});
+	taken.value.release();
+	other.close();
+});
+
+test("the same folder under another name is not moved, and nothing is lost", async () => {
+	const { store: installer, root } = await setup();
+	await installer.install("a");
+	await installer.idle();
+	// Never written: nothing moves.
+	const locationFile = join(root, "..", `${crypto.randomUUID()}.json`);
+	const store = new LocalModelStore({
+		root,
+		catalog: CATALOG,
+		engines: ENGINES,
+		hardware: async () => machine(24),
+		locationFile,
+	});
+	const alias = `${root}-alias`;
+	await symlink(root, alias);
+	dirs.push(alias);
+	await store.relocate(alias);
+	await store.idle();
+	expect((await store.list()).models.find((m) => m.id === "a")?.ready).toBe(
+		true,
+	);
+	expect(await Bun.file(locationFile).exists()).toBe(false);
+});
+
+test("while another open-reel moves the models, nothing installs, runs or is removed", async () => {
+	const { store, root } = await setup();
+	await store.install("b");
+	await store.idle();
+	// Another open-reel is moving the folder.
+	await Bun.write(join(root, "moving.lock"), "other");
+	await expect(store.install("a")).rejects.toMatchObject({
+		code: "modelsMoving",
+	});
+	await expect(store.runtime("b")).rejects.toMatchObject({
+		code: "modelsMoving",
+	});
+	await expect(store.remove("b")).rejects.toMatchObject({
+		code: "modelsMoving",
+	});
+});
+
+test("a model another open-reel is installing keeps the files it shares", async () => {
+	const { store, root, blobs } = await setup();
+	await store.install("a");
+	await store.idle();
+	// Another open-reel is installing b, which shares a's encoder.
+	await Bun.write(join(root, "installed", "b.lock"), "other");
+	await store.remove("a");
+	const encoder = new Bun.CryptoHasher("sha256").update(ENCODER).digest("hex");
+	expect(await blobs()).toContain(encoder);
 });
 
 test("removing a model leaves a file another open-reel is downloading", async () => {

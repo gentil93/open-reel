@@ -193,6 +193,13 @@ export class WarmEngines {
 		this.held = 0;
 	}
 
+	/** Unloads the model and resolves once its engine has exited. */
+	async stopAndWait(): Promise<void> {
+		const running = this.running;
+		this.stop();
+		await running?.exited;
+	}
+
 	/**
 	 * Runs one job on the server for `key`, starting it with `argv` if needed;
 	 * the model takes `bytes` of the GPU's memory. Throws if the server cannot

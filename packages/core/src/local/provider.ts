@@ -665,9 +665,10 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 	}
 
 	/** Unloads a model kept loaded between pictures, unless a job uses it. */
-	unloadIdle(): void {
+	async unloadIdle(): Promise<void> {
 		if (this.warm === false) return;
-		if (this.warm.unused) this.warm.stop();
+		// Windows lets go of the files only once the engine has exited.
+		if (this.warm.unused) await this.warm.stopAndWait();
 	}
 
 	/** Unloads the model, so no engine outlives open-reel. */

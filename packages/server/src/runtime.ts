@@ -137,7 +137,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 		models,
 		moveModels: async (path) => {
 			// A loaded model holds its files open, and Windows cannot move them.
-			local.unloadIdle();
+			await local.unloadIdle();
 			await models.relocate(path);
 		},
 		start: () => engine.start(),
