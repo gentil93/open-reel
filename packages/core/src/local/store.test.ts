@@ -2,8 +2,10 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { deflateSync } from "node:zlib";
 import {
 	type Hardware,
+	isDemoSize,
 	type LocalEngineSpec,
 	type LocalModelEvent,
 	type LocalModelSpec,
@@ -24,6 +26,32 @@ const bytes = (text: string) => new TextEncoder().encode(text);
 const sha256 = (data: Uint8Array) =>
 	new Bun.CryptoHasher("sha256").update(data).digest("hex");
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]);
+
+/** A real, flat grey PNG picture of the given size. */
+function picture(width: number, height: number): Uint8Array<ArrayBuffer> {
+	const chunk = (type: string, data: Uint8Array) => {
+		const body = new Uint8Array([...bytes(type), ...data]);
+		const out = new DataView(new ArrayBuffer(12 + data.byteLength));
+		out.setUint32(0, data.byteLength);
+		new Uint8Array(out.buffer).set(body, 4);
+		out.setUint32(8 + data.byteLength, Bun.hash.crc32(body));
+		return new Uint8Array(out.buffer);
+	};
+	const header = new DataView(new ArrayBuffer(13));
+	header.setUint32(0, width);
+	header.setUint32(4, height);
+	header.setUint8(8, 8); // bits per channel
+	header.setUint8(9, 2); // RGB
+	const rows = new Uint8Array((1 + width * 3) * height).fill(128);
+	for (let y = 0; y < height; y++) rows[y * (1 + width * 3)] = 0;
+	return new Uint8Array([
+		...PNG.subarray(0, 8),
+		...chunk("IHDR", new Uint8Array(header.buffer)),
+		...chunk("IDAT", deflateSync(rows)),
+		...chunk("IEND", new Uint8Array()),
+	]);
+}
+const BIG_PNG = picture(3000, 1500);
 
 const UNET_A = bytes("weights of model a");
 const UNET_A_SMALL = bytes("model a, quantized");
@@ -188,6 +216,7 @@ const HOSTED = {
 	[url("encoder.safetensors")]: ENCODER,
 	[url("engine.zip")]: ENGINE,
 	[url("demo.png")]: PNG,
+	[url("big.png")]: BIG_PNG,
 	[url("page.html")]: bytes("<script>alert(1)</script>"),
 };
 
@@ -665,6 +694,48 @@ test("a demo is fetched once, kept, and served as what its bytes are", async () 
 	expect(store.demo("a", 1)).rejects.toThrow("not an image or a video");
 	expect(store.demo("a", 2)).rejects.toBeInstanceOf(NotFoundError);
 	expect(store.demo("a", -1)).rejects.toBeInstanceOf(NotFoundError);
+});
+
+test("a demo picture is served smaller, and as it came when it cannot be read", async () => {
+	const demos: LocalModelSpec["demos"] = [
+		{ url: url("big.png"), media: "image" },
+		{ url: url("demo.png"), media: "image" },
+	];
+	const { store, root, requests } = await setup({
+		catalog: [model("p", [variant("full", 4, [ENCODER_FILE])], demos)],
+	});
+	const [card, again] = await Promise.all([
+		store.demo("p", 0, "card"),
+		store.demo("p", 0, "card"),
+	]);
+	expect(card.mime).toBe("image/webp");
+	expect(await new Bun.Image(card.blob).metadata()).toMatchObject({
+		width: 960,
+		height: 480,
+		format: "webp",
+	});
+	expect(await again.blob.bytes()).toEqual(await card.blob.bytes());
+	const large = await store.demo("p", 0, "large");
+	expect(await new Bun.Image(large.blob).metadata()).toMatchObject({
+		width: 2560,
+		height: 1280,
+	});
+	const original = await store.demo("p", 0);
+	expect(await original.blob.bytes()).toEqual(BIG_PNG);
+	// Downloaded once, made smaller once per size, kept.
+	expect(requests).toHaveLength(1);
+	expect((await readdir(join(root, "demos"))).sort()).toHaveLength(3);
+
+	// Only a PNG signature: served as it came, nothing broken left behind.
+	const broken = await store.demo("p", 1, "card");
+	expect(broken.mime).toBe("image/png");
+	expect(await broken.blob.bytes()).toEqual(PNG);
+	expect(await readdir(join(root, "demos"))).toHaveLength(4);
+
+	// Only sizes of its own: not names every object inherits.
+	expect(isDemoSize("card")).toBe(true);
+	expect(isDemoSize("constructor")).toBe(false);
+	expect(isDemoSize("__proto__")).toBe(false);
 });
 
 test("leftover temporary folders are not taken for engines", async () => {

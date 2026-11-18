@@ -210,6 +210,7 @@ function Reveal(props: {
 			src={props.src}
 			alt={props.alt}
 			loading="lazy"
+			decoding="async"
 			className={`focus-in h-full w-full object-cover ${focused ? "focused" : ""} ${props.className ?? ""}`}
 		/>
 	) : (

@@ -1,4 +1,5 @@
 import {
+	isDemoSize,
 	type JobEngine,
 	LOCAL_USER,
 	type LocalModelStore,
@@ -226,7 +227,9 @@ export function createApp(options: AppOptions): Hono {
 	app.get("/api/local-models/:id/demos/:index", async (c) => {
 		const index = Number(c.req.param("index"));
 		if (!Number.isInteger(index)) throw new NotFoundError("Demo not found");
-		const demo = await models.demo(c.req.param("id"), index);
+		const size = c.req.query("size") ?? "original";
+		if (!isDemoSize(size)) throw new ValidationError("Unknown demo size");
+		const demo = await models.demo(c.req.param("id"), index, size);
 		return serveFile(c, demo.blob, demo.mime);
 	});
 

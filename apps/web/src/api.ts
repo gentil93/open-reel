@@ -94,5 +94,12 @@ export const assetUrl = (id: string) => `/api/assets/${id}`;
 /** A running job's latest picture; `version` changes the address per picture. */
 export const previewUrl = (jobId: string, version: number) =>
 	`/api/jobs/${jobId}/preview?v=${version}`;
-export const demoUrl = (modelId: string, index: number) =>
-	`/api/local-models/${modelId}/demos/${index}`;
+/**
+ * A model's demo. Pictures come smaller than their authors made them: a card
+ * asks for "card", an enlarged view for "large". Videos ignore the size.
+ */
+export const demoUrl = (
+	modelId: string,
+	index: number,
+	size: "card" | "large" = "card",
+) => `/api/local-models/${modelId}/demos/${index}?size=${size}`;

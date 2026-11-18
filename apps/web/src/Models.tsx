@@ -22,11 +22,13 @@ import {
 	sortLocal,
 } from "./recommend";
 
-type Demo = LocalModelStatus["demos"][number] & { src: string };
+type Demo = LocalModelStatus["demos"][number] & { src: string; large: string };
 
 function DemoViewer({ demo, onClose }: { demo: Demo; onClose(): void }) {
 	const { t } = useI18n();
 	const ref = useRef<HTMLDialogElement>(null);
+	// If the large picture fails, the card's one is better than nothing.
+	const [src, setSrc] = useState(demo.large);
 	useEffect(() => {
 		ref.current?.showModal();
 	}, []);
@@ -39,8 +41,10 @@ function DemoViewer({ demo, onClose }: { demo: Demo; onClose(): void }) {
 			className="m-auto max-h-[94vh] max-w-[96vw] rounded-lg border border-line bg-panel p-0 text-ink"
 		>
 			<img
-				src={demo.src}
+				src={src}
 				alt={demo.caption ?? t("models.demo.sample")}
+				decoding="async"
+				onError={() => setSrc(demo.src)}
 				className="max-h-[86vh] max-w-full object-contain"
 			/>
 			<div className="flex items-center justify-between gap-4 p-3 text-sm">
@@ -63,9 +67,12 @@ function Demos({ model }: { model: LocalModelStatus }) {
 	const [index, setIndex] = useState(0);
 	const [open, setOpen] = useState(false);
 	const [failed, setFailed] = useState<number[]>([]);
+	// The shimmer repaints every frame: it stops once the picture is in.
+	const [loaded, setLoaded] = useState<number[]>([]);
 	const demos: Demo[] = model.demos.map((demo, i) => ({
 		...demo,
-		src: demoUrl(model.id, i),
+		src: demoUrl(model.id, i, "card"),
+		large: demoUrl(model.id, i, "large"),
 	}));
 	const demo = demos[index];
 	if (!demo) {
@@ -100,7 +107,9 @@ function Demos({ model }: { model: LocalModelStatus }) {
 						aria-label={t("models.demo.enlarge", {
 							caption: demo.caption ?? t("models.demo.sampleShort"),
 						})}
-						className="developing block h-full w-full cursor-zoom-in"
+						className={`block h-full w-full cursor-zoom-in ${
+							loaded.includes(index) ? "" : "developing"
+						}`}
 					>
 						<img
 							key={demo.src}
@@ -110,6 +119,8 @@ function Demos({ model }: { model: LocalModelStatus }) {
 								t("models.demo.sampleFrom", { model: model.name })
 							}
 							loading="lazy"
+							decoding="async"
+							onLoad={() => setLoaded((current) => [...current, index])}
 							onError={() => setFailed((current) => [...current, index])}
 							className="h-full w-full object-cover"
 						/>

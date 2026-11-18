@@ -199,6 +199,39 @@ function assertCatalog(
 	}
 }
 
+/** The sizes a demo picture is served at, besides the one its authors made. */
+export type DemoSize = "original" | "card" | "large";
+
+/** Longest side, in pixels: a card is ~400 CSS pixels wide on a 2x screen. */
+const DEMO_SIDES: Record<Exclude<DemoSize, "original">, number> = {
+	card: 960,
+	large: 2560,
+};
+
+export const isDemoSize = (value: string): value is DemoSize =>
+	value === "original" || Object.hasOwn(DEMO_SIDES, value);
+
+/** Writes a smaller WebP copy of a demo picture; false if it cannot. */
+async function shrinkDemo(
+	from: string,
+	to: string,
+	side: number,
+): Promise<boolean> {
+	const data = await new Bun.Image(Bun.file(from))
+		.resize(side, side, { fit: "inside", withoutEnlargement: true })
+		.webp({ quality: 82 })
+		.bytes();
+	const tmp = `${to}.${crypto.randomUUID()}.tmp`;
+	try {
+		await Bun.write(tmp, data);
+		await rename(tmp, to);
+	} catch (error) {
+		await rm(tmp, { force: true });
+		throw error;
+	}
+	return true;
+}
+
 const sizeOf = (path: string) =>
 	stat(path).then(
 		(info) => info.size,
@@ -238,6 +271,7 @@ const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
  *   <root>/installed/<id>        marks a model as installed, naming its variant
  *   <root>/engines/<build>/      an extracted engine build
  *   <root>/demos/<sha256(url)>   a downloaded demo
+ *   <root>/demos/<sha256(url)>.<size>.webp   a demo picture made smaller
  */
 /** The part of the GPU's memory local models may plan on using together. */
 const GPU_SHARE = 0.9;
@@ -257,7 +291,9 @@ export class LocalModelStore {
 	private listeners = new Set<LocalModelListener>();
 	private installs = new Map<string, Install>();
 	private errors = new Map<string, ReturnType<typeof describeError>>();
-	private demos = new Map<string, Promise<string>>();
+	private demos = new Map<string, Promise<unknown>>();
+	/** Demo pictures, at a size, that could not be made smaller. */
+	private unshrinkable = new Set<string>();
 	/** One download at a time: they all compete for the same connection. */
 	private queue: Promise<void> = Promise.resolve();
 	/** Shares the GPU's memory between jobs, with other open-reels too. */
@@ -984,26 +1020,58 @@ export class LocalModelStore {
 		}
 	}
 
-	/** A model's demo, downloaded on first use and kept. */
-	async demo(id: string, index: number): Promise<{ blob: Blob; mime: string }> {
+	/**
+	 * A model's demo, downloaded on first use and kept. A demo picture can be
+	 * asked for at a smaller size: authors publish some at over 100
+	 * megapixels, which browsers take seconds to decode for a small card.
+	 */
+	async demo(
+		id: string,
+		index: number,
+		size: DemoSize = "original",
+	): Promise<{ blob: Blob; mime: string }> {
 		const demo = this.spec(id).demos[index];
 		if (!demo) throw new NotFoundError("Demo not found");
 		const name = new Bun.CryptoHasher("sha256").update(demo.url).digest("hex");
 		const path = join(this.root, "demos", name);
 		if (!(await Bun.file(path).exists())) {
-			let pending = this.demos.get(name);
-			if (!pending) {
-				pending = this.fetchDemo(demo.url, path).finally(() =>
-					this.demos.delete(name),
-				);
-				this.demos.set(name, pending);
-			}
-			await pending;
+			await this.once(name, () => this.fetchDemo(demo.url, path));
 		}
 		const blob = Bun.file(path);
 		const mime = sniffMime(await blob.slice(0, 32).bytes());
 		if (!mime) throw new Error("The stored demo is not an image or a video");
-		return { blob, mime };
+		// A GIF may move, which a smaller WebP would lose.
+		const key = `${name}.${size}`;
+		if (
+			size === "original" ||
+			!mime.startsWith("image/") ||
+			mime === "image/gif" ||
+			this.unshrinkable.has(key)
+		) {
+			return { blob, mime };
+		}
+		const smaller = `${path}.${size}.webp`;
+		if (!(await Bun.file(smaller).exists())) {
+			const made = await this.once(key, () =>
+				shrinkDemo(path, smaller, DEMO_SIDES[size]),
+			).catch(() => false);
+			// A picture Bun cannot read is served as it came, without trying again.
+			if (!made) {
+				this.unshrinkable.add(key);
+				return { blob, mime };
+			}
+		}
+		return { blob: Bun.file(smaller), mime: "image/webp" };
+	}
+
+	/** Runs `work` once for every caller asking for `key` at the same time. */
+	private once<T>(key: string, work: () => Promise<T>): Promise<T> {
+		let pending = this.demos.get(key) as Promise<T> | undefined;
+		if (!pending) {
+			pending = work().finally(() => this.demos.delete(key));
+			this.demos.set(key, pending);
+		}
+		return pending;
 	}
 
 	private async fetchDemo(url: string, path: string): Promise<string> {
