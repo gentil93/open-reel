@@ -1,0 +1,625 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, resolve } from "node:path";
+import type { JobView, ModelSpec } from "@open-reel/core/types";
+import { z } from "zod";
+import type { Reel } from "./reel";
+import { done, isLocal, money, type SpendGuard, TERMINAL } from "./spend";
+
+/**
+ * The tools an agent uses to make and find pictures and videos with
+ * open-reel, whatever it talks through: an agent outside over MCP, or the
+ * assistant inside the app. On this computer's models by default, on paid
+ * ones only when the person allowed it, and never installing models.
+ */
+
+export interface ToolImage {
+	/** Base64. */
+	data: string;
+	mimeType: string;
+}
+
+export interface ToolResult {
+	text: string;
+	/** Small previews, for an agent that can look at pictures. */
+	images: ToolImage[];
+	/** The call could not do what was asked; `text` says why. */
+	isError?: boolean;
+}
+
+export interface ToolContext {
+	/** The agent gave up on the call. */
+	signal: AbortSignal;
+	/** Says the call is alive, for agents that give up on a silent one. */
+	progress(message: string): Promise<void>;
+}
+
+export interface Tool<Shape extends z.ZodRawShape = z.ZodRawShape> {
+	name: string;
+	title: string;
+	description: string;
+	/** Its arguments, each a zod schema. */
+	input: Shape;
+	/** Only looks; changes nothing and spends nothing. */
+	readOnly?: boolean;
+	run(
+		args: z.infer<z.ZodObject<Shape>>,
+		context: ToolContext,
+	): Promise<ToolResult>;
+}
+
+export interface ToolsOptions {
+	/**
+	 * Whether models that cost money (cloud models, on the person's own
+	 * keys) may be used. Off, only models on this computer are.
+	 */
+	allowPaid: boolean;
+	/** Keeps paid use within the limit; shared by all calls it covers. */
+	spend: SpendGuard;
+	/**
+	 * Whether the agent may name files on this computer: pictures to start
+	 * from, and where to save results. Only for agents the person runs
+	 * themselves; the assistant inside the app works with ids alone.
+	 */
+	files: boolean;
+	/** How long a generation is waited for before it is left running. */
+	waitMs?: number;
+	pollMs?: number;
+}
+
+/** What an agent is told about open-reel before it calls anything. */
+export const TOOLS_INSTRUCTIONS =
+	"open-reel makes pictures and videos with the models its user installed (local, free) and, when allowed, with paid cloud models on the user's own keys. Call list_models first to see what can be used. Pass returned picture ids (ast_…) back as reference_images to iterate on a result. Models can only be installed by the user, in the open-reel app.";
+
+/** Pictures shown to the agent are made this small: enough to judge them. */
+const PREVIEW_SIDE = 1024;
+/** At most this many pictures are shown in one answer. */
+const MAX_PREVIEWS = 8;
+/** What open-reel's ids look like; anything else is not sent to it. */
+export const ID = /^[a-z]+_[A-Za-z0-9]+$/;
+export const ASSET_ID = /^ast_[A-Za-z0-9]+$/;
+
+const text = (value: string): ToolResult => ({ text: value, images: [] });
+const failure = (value: string): ToolResult => ({
+	...text(value),
+	isError: true,
+});
+
+/** Keeps the arguments' types while the list holds tools of any shape. */
+/**
+ * Keeps the arguments' types while the list holds tools of any shape, and
+ * checks the arguments: a language model's call may not match the schema.
+ */
+const tool = <Shape extends z.ZodRawShape>(definition: Tool<Shape>): Tool => {
+	const schema = z.object(definition.input);
+	return {
+		...(definition as unknown as Tool),
+		async run(args, context) {
+			const checked = schema.safeParse(args ?? {});
+			if (!checked.success) {
+				return failure(
+					`The arguments do not fit ${definition.name}: ${z.prettifyError(checked.error)}`,
+				);
+			}
+			return definition.run(checked.data, context);
+		},
+	};
+};
+
+/** What a model can do, in a few words an agent can choose by. */
+function describe(model: ModelSpec): string {
+	const caps = model.capabilities;
+	const can = [
+		model.operations.includes("generate") && "makes from words",
+		caps.maxReferenceImages > 0 &&
+			caps.upscale == null &&
+			(caps.strength != null
+				? "redraws a given picture (strength)"
+				: `follows up to ${caps.maxReferenceImages} given picture(s)`),
+		caps.mask != null && "redraws only a masked part",
+		caps.upscale != null && `upscales a picture ${caps.upscale}x`,
+	].filter(Boolean);
+	const cost = isLocal(model)
+		? "free, runs on this computer"
+		: model.pricing?.usdPerOutput != null
+			? `about $${model.pricing.usdPerOutput} per ${model.media}`
+			: model.pricing?.usdPerSecond != null
+				? `about $${model.pricing.usdPerSecond} per second`
+				: "paid, price unknown";
+	const shapes = caps.aspectRatios.length
+		? `; ratios ${caps.aspectRatios.join(", ")}`
+		: "";
+	const lengths = caps.durations?.length
+		? `; lengths ${caps.durations.join(", ")} s`
+		: "";
+	return `- ${model.id} — ${model.name} (${model.media}): ${can.join(", ")}; ${cost}${shapes}${lengths}`;
+}
+
+/**
+ * The model used when the agent names none: the best free picture model on
+ * this computer that can take `references` pictures, the faster of equals.
+ * The first listed is not the best.
+ */
+export function bestLocalModel(
+	models: ModelSpec[],
+	references: number,
+): ModelSpec | undefined {
+	return models
+		.filter(
+			(m) =>
+				isLocal(m) &&
+				m.media === "image" &&
+				m.capabilities.upscale == null &&
+				(references > 0
+					? m.capabilities.maxReferenceImages >= references
+					: m.operations.includes("generate")),
+		)
+		.toSorted(
+			(a, b) =>
+				(b.profile?.quality ?? 0) - (a.profile?.quality ?? 0) ||
+				(b.profile?.speed ?? 0) - (a.profile?.speed ?? 0),
+		)[0];
+}
+
+export function createTools(reel: Reel, options: ToolsOptions): Tool[] {
+	const waitMs = options.waitMs ?? 15 * 60_000;
+	const pollMs = options.pollMs ?? 1000;
+	const { spend } = options;
+	const pictures = options.files
+		? "Picture ids (ast_…) or image file paths"
+		: "Picture ids (ast_…)";
+
+	/** Models the agent may use now: ready, and paid only when allowed. */
+	async function usable(): Promise<ModelSpec[]> {
+		const [models, providers] = await Promise.all([
+			reel.models(),
+			reel.providers(),
+		]);
+		const ready = new Set(
+			providers.filter((p) => p.hasKey || !p.requiresKey).map((p) => p.id),
+		);
+		return models.filter(
+			(m) => ready.has(m.providerId) && (options.allowPaid || isLocal(m)),
+		);
+	}
+
+	/** Why some references cannot be used here: paths where only ids are. */
+	function notIds(given: string[]): ToolResult | null {
+		if (options.files) return null;
+		const named = given.filter((r) => !ASSET_ID.test(r));
+		return named.length > 0
+			? failure(`Pictures are given by id (ast_…), not ${named.join(", ")}.`)
+			: null;
+	}
+
+	/** Picture ids as they are, files read and uploaded where allowed. */
+	async function references(given: string[]): Promise<string[]> {
+		const ids: string[] = [];
+		for (const item of given) {
+			if (ASSET_ID.test(item)) {
+				ids.push(item);
+				continue;
+			}
+			// The one place files are read: refused here, whatever calls it.
+			if (!options.files) throw new Error(`Not a picture id: ${item}`);
+			const data = new Uint8Array(await readFile(resolve(item)));
+			ids.push((await reel.upload(data)).id);
+		}
+		return ids;
+	}
+
+	/** A smaller copy of a picture to show the agent, or null if it cannot. */
+	async function preview(data: Uint8Array) {
+		try {
+			const size = await new Bun.Image(data).metadata();
+			const small = await new Bun.Image(data)
+				.resize(PREVIEW_SIDE, PREVIEW_SIDE, {
+					fit: "inside",
+					withoutEnlargement: true,
+				})
+				.webp({ quality: 85 })
+				.bytes();
+			return {
+				size,
+				image: {
+					data: Buffer.from(small).toString("base64"),
+					mimeType: "image/webp",
+				},
+			};
+		} catch {
+			return null;
+		}
+	}
+
+	/** Says how a turn's jobs stand, with previews of what they made. */
+	async function report(
+		jobs: JobView[],
+		models: ModelSpec[],
+		images: ToolImage[],
+	): Promise<string[]> {
+		const lines: string[] = [];
+		for (const job of jobs) {
+			const name =
+				models.find((m) => m.id === job.modelId)?.name ?? job.modelId;
+			const seconds =
+				job.startedAt && job.finishedAt
+					? ` in ${((job.finishedAt - job.startedAt) / 1000).toFixed(1)} s`
+					: "";
+			const paid = job.costUsd ? `, $${job.costUsd.toFixed(3)}` : "";
+			if (job.status !== "succeeded") {
+				lines.push(
+					`- ${name}: ${job.status}${job.error ? `: ${job.error}` : ""}`,
+				);
+				continue;
+			}
+			const made: string[] = [];
+			for (const asset of job.assets) {
+				const shown =
+					asset.mime.startsWith("image/") && images.length < MAX_PREVIEWS
+						? await preview((await reel.asset(asset.id)).data)
+						: null;
+				if (shown) {
+					images.push(shown.image);
+					made.push(`${asset.id} (${shown.size.width}x${shown.size.height})`);
+				} else {
+					made.push(`${asset.id} (${asset.mime})`);
+				}
+			}
+			lines.push(`- ${name}: done${seconds}${paid}. ${made.join(", ")}`);
+		}
+		return lines;
+	}
+
+	/** Makes a turn, waits for it, and says what came of it. */
+	async function run(
+		input: {
+			prompt: string;
+			modelIds: string[];
+			references: string[];
+			sessionId?: string;
+			aspectRatio?: string;
+			count?: number;
+			seed?: number;
+			durationSeconds?: number;
+			strength?: number;
+			wait: boolean;
+		},
+		models: ModelSpec[],
+		context: ToolContext,
+	): Promise<ToolResult> {
+		const named = notIds(input.references);
+		if (named) return named;
+		const chosen = input.modelIds.map(
+			(id) => models.find((m) => m.id === id) as ModelSpec,
+		);
+		// Held from now, before anything can wait: a call made meanwhile sees it.
+		const pending = `pending-${crypto.randomUUID()}`;
+		const held = spend.hold(
+			pending,
+			chosen,
+			input.count ?? 1,
+			input.durationSeconds,
+		);
+		if (!held.ok) return failure(held.reason);
+
+		let session: { id: string };
+		let turn: Awaited<ReturnType<Reel["createTurn"]>>["turn"];
+		try {
+			const ids = await references(input.references);
+			({ session, turn } = await reel.createTurn({
+				prompt: input.prompt,
+				modelIds: input.modelIds,
+				referenceAssetIds: ids,
+				...(input.sessionId && { sessionId: input.sessionId }),
+				...(input.aspectRatio && { aspectRatio: input.aspectRatio }),
+				...(input.count != null && { count: input.count }),
+				...(input.seed != null && { seed: input.seed }),
+				...(input.durationSeconds != null && {
+					durationSeconds: input.durationSeconds,
+				}),
+				...(input.strength != null && { strength: input.strength }),
+			}));
+		} catch (error) {
+			spend.release(pending);
+			throw error;
+		}
+		spend.rename(pending, turn.id);
+
+		let jobs: JobView[] = turn.jobs;
+		const started = Date.now();
+		let stopped = false;
+		try {
+			while (input.wait && !done(jobs)) {
+				if (Date.now() - started > waitMs || context.signal.aborted) {
+					stopped = true;
+					break;
+				}
+				await Bun.sleep(pollMs);
+				const detail = await reel.session(session.id);
+				const current = detail.turns.find((t) => t.id === turn.id);
+				if (current) {
+					jobs = current.jobs;
+					spend.settle(current);
+				}
+				const finished = jobs.filter((j) => TERMINAL.includes(j.status));
+				await context.progress(`${finished.length} of ${jobs.length} done`);
+			}
+		} catch (error) {
+			if (!context.signal.aborted) throw error;
+			stopped = true;
+		}
+		spend.settle({ ...turn, jobs });
+
+		const images: ToolImage[] = [];
+		const lines = [
+			`Session ${session.id}, turn ${turn.id} (the user can open it at ${reel.sessionUrl(session.id)}).`,
+			...(await report(jobs, models, images)),
+		];
+		if (!done(jobs)) {
+			lines.push(
+				stopped
+					? `Stopped waiting; it goes on. Call job_status with session ${session.id} later.`
+					: `Started. Call job_status with session ${session.id} for the results.`,
+			);
+		}
+		const limit = spend.limitUsd;
+		if (limit != null && spend.committed() > 0) {
+			lines.push(
+				`Spent or held so far: ${money(spend.committed())} of ${money(limit)}.`,
+			);
+		}
+		return { text: lines.join("\n"), images };
+	}
+
+	const tools: Tool[] = [
+		tool({
+			name: "list_models",
+			title: "List models",
+			description:
+				"Lists the models that can be used now, with what each can do (make from words, redraw or follow given pictures, redraw a masked part, upscale), its cost, and the ratios and video lengths it accepts. Local models are free and run on the user's computer. Only installed models are listed; the user installs more in the open-reel app.",
+			input: {
+				media: z
+					.enum(["image", "video"])
+					.optional()
+					.describe("Only models that make this."),
+			},
+			readOnly: true,
+			async run({ media }) {
+				const models = (await usable()).filter(
+					(m) => media == null || m.media === media,
+				);
+				if (models.length === 0) {
+					return text(
+						options.allowPaid
+							? "No model can be used now. The user can install local models, or add an API key, in the open-reel app."
+							: "No local model is installed. The user can install one from Local models in the open-reel app. (Paid models are off for this connection.)",
+					);
+				}
+				const limit = spend.limitUsd;
+				const note = options.allowPaid
+					? limit != null
+						? `Paid models are allowed, up to ${money(limit)} in all (${money(spend.left() ?? 0)} left).`
+						: "Paid models are allowed, without a limit."
+					: "Only local models are allowed for this connection.";
+				return text([...models.map(describe), "", note].join("\n"));
+			},
+		}),
+		tool({
+			name: "generate",
+			title: "Make pictures or videos",
+			description: `Makes pictures or videos from a prompt, waits for them, and returns small previews with their ids. Give several models to compare them on the same prompt. Give reference_images to redraw, edit or animate a picture: ${options.files ? "ids from earlier results (ast_…) or paths of image files" : "ids from earlier results (ast_…)"}. Pass session_id to keep iterating in the same session. Without models, the best free local model that fits is used.`,
+			input: {
+				prompt: z.string().min(1).describe("What to make, or what to change."),
+				models: z
+					.array(z.string())
+					.optional()
+					.describe("Model ids from list_models; several compare them."),
+				reference_images: z
+					.array(z.string())
+					.optional()
+					.describe(`${pictures} to start from.`),
+				strength: z
+					.number()
+					.min(0.05)
+					.max(1)
+					.optional()
+					.describe(
+						"For models that redraw a picture: how much it changes, 0.05 to 1.",
+					),
+				aspect_ratio: z.string().optional().describe('Such as "16:9".'),
+				count: z.number().int().min(1).max(8).optional(),
+				seed: z.number().int().nonnegative().optional(),
+				duration_seconds: z
+					.number()
+					.int()
+					.optional()
+					.describe("Video length, for video models."),
+				session_id: z.string().regex(ID).optional(),
+				wait: z
+					.boolean()
+					.optional()
+					.describe(
+						"Wait for the results (default). False returns at once; use job_status later.",
+					),
+			},
+			async run(args, context) {
+				const models = await usable();
+				const given = args.reference_images ?? [];
+				const named = notIds(given);
+				if (named) return named;
+				let ids = args.models ?? [];
+				if (ids.length === 0) {
+					const fit = bestLocalModel(models, given.length);
+					if (!fit) {
+						return failure(
+							given.length > 0
+								? "No installed local model can start from a picture. Name one with models, or the user can install one in the open-reel app."
+								: "No local model is installed. The user can install one from Local models in the open-reel app.",
+						);
+					}
+					ids = [fit.id];
+				}
+				// Checked before any file is read or uploaded.
+				const unknown = ids.filter((id) => !models.some((m) => m.id === id));
+				if (unknown.length > 0) {
+					return failure(
+						`Cannot use ${unknown.join(", ")}: not installed, without a key, or paid while paid models are off. Call list_models for what can be used.`,
+					);
+				}
+				return run(
+					{
+						prompt: args.prompt,
+						modelIds: ids,
+						references: given,
+						sessionId: args.session_id,
+						aspectRatio: args.aspect_ratio,
+						count: args.count,
+						seed: args.seed,
+						durationSeconds: args.duration_seconds,
+						strength: args.strength,
+						wait: args.wait ?? true,
+					},
+					models,
+					context,
+				);
+			},
+		}),
+		tool({
+			name: "upscale",
+			title: "Upscale a picture",
+			description: `Makes a picture larger and sharper with an installed upscaler, free and local when one is. Give a ${options.files ? "picture id (ast_…) or an image file path" : "picture id (ast_…)"}.`,
+			input: {
+				image: z
+					.string()
+					.describe(
+						options.files
+							? "A picture id (ast_…) or an image file path."
+							: "A picture id (ast_…).",
+					),
+				session_id: z.string().regex(ID).optional(),
+			},
+			async run(args, context) {
+				const models = await usable();
+				const upscalers = models.filter((m) => m.capabilities.upscale != null);
+				// A free one on this computer first.
+				const upscaler = upscalers.find(isLocal) ?? upscalers[0];
+				if (!upscaler) {
+					return failure(
+						"No upscaler is installed. The user can install Real-ESRGAN from Local models in the open-reel app.",
+					);
+				}
+				return run(
+					{
+						prompt: `Upscale ×${upscaler.capabilities.upscale}`,
+						modelIds: [upscaler.id],
+						references: [args.image],
+						sessionId: args.session_id,
+						wait: true,
+					},
+					models,
+					context,
+				);
+			},
+		}),
+		tool({
+			name: "job_status",
+			title: "Check a session",
+			description:
+				"Says how a session's latest turn, and any turn still running, stand, with previews of what is done. For generations started with wait set to false, or that took too long.",
+			input: { session_id: z.string().regex(ID) },
+			readOnly: true,
+			async run({ session_id }) {
+				const [detail, models] = await Promise.all([
+					reel.session(session_id),
+					reel.models(),
+				]);
+				const latest = detail.turns.at(-1);
+				if (!latest) return text("The session has nothing in it yet.");
+				const shown = detail.turns.filter((t) => t === latest || !done(t.jobs));
+				const images: ToolImage[] = [];
+				const lines: string[] = [];
+				for (const turn of shown) {
+					spend.settle(turn);
+					lines.push(`Turn ${turn.id}: "${turn.prompt}"`);
+					lines.push(...(await report(turn.jobs, models, images)));
+				}
+				return { text: lines.join("\n"), images };
+			},
+		}),
+		tool({
+			name: "search_gallery",
+			title: "Search the gallery",
+			description: `Finds pictures and videos made before, newest first, by words in their prompts. Returns ids to use with get_image${options.files ? ", save_image," : ""} or as reference_images.`,
+			input: {
+				query: z.string().optional(),
+				limit: z.number().int().min(1).max(50).optional(),
+			},
+			readOnly: true,
+			async run({ query, limit }) {
+				const items = await reel.gallery({ query, limit: limit ?? 20 });
+				if (items.length === 0) return text("Nothing found.");
+				return text(
+					items
+						.map(
+							(item) =>
+								`- ${item.id} — ${item.mime} — ${item.modelId ?? "uploaded"} — ${new Date(item.createdAt).toISOString()} — "${item.prompt ?? ""}"`,
+						)
+						.join("\n"),
+				);
+			},
+		}),
+		tool({
+			name: "get_image",
+			title: "Look at a picture",
+			description: "Shows a picture by its id, made small enough to look at.",
+			input: { asset_id: z.string().regex(ASSET_ID) },
+			readOnly: true,
+			async run({ asset_id }) {
+				const { data, mime } = await reel.asset(asset_id);
+				const shown = mime.startsWith("image/") ? await preview(data) : null;
+				if (!shown) {
+					return text(
+						`${asset_id} is a ${mime} that cannot be shown${options.files ? "; save_image saves it" : ""}.`,
+					);
+				}
+				return {
+					text: `${asset_id}: ${shown.size.width}x${shown.size.height} ${mime}`,
+					images: [shown.image],
+				};
+			},
+		}),
+	];
+
+	if (options.files) {
+		tools.push(
+			tool({
+				name: "save_image",
+				title: "Save a picture or video",
+				description:
+					"Writes a picture or video, at full size, to a file. The path must be absolute; an existing file is kept unless overwrite is true.",
+				input: {
+					asset_id: z.string().regex(ASSET_ID),
+					path: z.string().describe("Absolute path of the file to write."),
+					overwrite: z.boolean().optional(),
+				},
+				async run({ asset_id, path, overwrite }) {
+					if (!isAbsolute(path)) return failure("The path must be absolute.");
+					const { data, mime } = await reel.asset(asset_id);
+					await mkdir(dirname(path), { recursive: true });
+					try {
+						// Created only if nothing is there, a link included, unless asked.
+						await writeFile(path, data, { flag: overwrite ? "w" : "wx" });
+					} catch (error) {
+						if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+						return failure(
+							`${path} exists; pass overwrite true to replace it.`,
+						);
+					}
+					return text(
+						`Saved ${asset_id} (${mime}, ${data.byteLength} bytes) to ${path}`,
+					);
+				},
+			}),
+		);
+	}
+	return tools;
+}

@@ -88,6 +88,7 @@
       "dependencies": {
         "@modelcontextprotocol/sdk": "1.32.2",
         "@open-reel/core": "workspace:*",
+        "@open-reel/tools": "workspace:*",
         "zod": "^4.0.0",
       },
       "devDependencies": {
@@ -112,6 +113,14 @@
         "@open-reel/core": "workspace:*",
         "@open-reel/providers": "workspace:*",
         "hono": "^4.0.0",
+      },
+    },
+    "packages/tools": {
+      "name": "@open-reel/tools",
+      "version": "0.0.0",
+      "dependencies": {
+        "@open-reel/core": "workspace:*",
+        "zod": "^4.0.0",
       },
     },
   },
@@ -239,6 +248,8 @@
     "@open-reel/server": ["@open-reel/server@workspace:packages/server"],
 
     "@open-reel/site": ["@open-reel/site@workspace:apps/site"],
+
+    "@open-reel/tools": ["@open-reel/tools@workspace:packages/tools"],
 
     "@open-reel/web": ["@open-reel/web@workspace:apps/web"],
 

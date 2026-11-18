@@ -7,8 +7,7 @@ import type {
 	Session,
 	TurnView,
 } from "@open-reel/core/types";
-
-export type SessionDetail = Session & { turns: TurnView[] };
+import type { Reel, SessionDetail } from "@open-reel/tools";
 
 /** An error the open-reel server answered with. */
 export class ServerError extends Error {
@@ -24,7 +23,7 @@ export class ServerError extends Error {
 export type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 
 /** Talks to a running open-reel server, over its HTTP API. */
-export class OpenReelClient {
+export class OpenReelClient implements Reel {
 	constructor(
 		readonly baseUrl: string,
 		// The global one: inside these parameters, `fetch` names this one.
