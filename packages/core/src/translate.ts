@@ -43,7 +43,7 @@ export function sameWords(a: string, b: string): boolean {
 export function cleanTranslation(reply: string): string {
 	let text = reply.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
 	text = text.replace(/^(english|translation|prompt)\s*:\s*/i, "").trim();
-	const quoted = text.match(/^["“'](.*)["”']$/s);
-	if (quoted?.[1] && !/["“”]/.test(quoted[1])) text = quoted[1].trim();
+	const quoted = text.match(/^["“'«](.*)["”'»]$/s);
+	if (quoted?.[1] && !/["“”«»]/.test(quoted[1])) text = quoted[1].trim();
 	return text;
 }

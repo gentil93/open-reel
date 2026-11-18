@@ -7,7 +7,9 @@ import {
 	FileSettingsStore,
 	FsAssetStore,
 	type Hardware,
+	improvePrompt,
 	JobEngine,
+	type LanguageModel,
 	type LocalEngineSpec,
 	type LocalModelSpec,
 	LocalModelStore,
@@ -15,15 +17,19 @@ import {
 	LocalTranslator,
 	type ProviderAdapter,
 	ProviderRegistry,
+	promptStyle,
 	ReelService,
 	type SettingsStore,
 	SqliteRepository,
+	type UserContext,
+	ValidationError,
 } from "@open-reel/core";
 import {
 	builtinEngines,
 	builtinLocalModels,
 	builtinProviders,
 	CloudTranslator,
+	type CloudTranslatorId,
 } from "@open-reel/providers";
 
 export interface Runtime {
@@ -33,11 +39,27 @@ export interface Runtime {
 	settings: SettingsStore;
 	/** Whether the prompt translator on this computer is installed. */
 	translatorReady(): boolean;
+	/** A richer prompt for a short idea, written for the models named. */
+	improvePrompt(
+		ctx: UserContext,
+		request: ImproveRequest,
+		signal: AbortSignal,
+	): Promise<string>;
 	/** Starts moving the local models to another folder. */
 	moveModels(path: string): Promise<void>;
 	/** Resumes jobs left unfinished by a previous process. */
 	start(): Promise<void>;
 	close(): void;
+}
+
+export interface ImproveRequest {
+	prompt: string;
+	/** The models the prompt is for; unknown ones are left out. */
+	modelIds: string[];
+	/** The person is changing a picture they gave. */
+	editing: boolean;
+	/** The language the person reads, e.g. "pt-BR", to write the prompt in. */
+	language?: string;
 }
 
 /** Another open-reel process is already using the data directory. */
@@ -167,23 +189,37 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 	);
 	// One per service and key, so the jobs of a turn share a translation.
 	const clouds = new Map<string, CloudTranslator>();
+	const cloudFor = async (
+		ctx: UserContext,
+		service: CloudTranslatorId,
+	): Promise<CloudTranslator | null> => {
+		const adapter = registry.adapter(service);
+		const key =
+			(await keys.get(ctx, service)) ??
+			(adapter?.keyEnv ? process.env[adapter.keyEnv] : undefined);
+		if (!key) return null;
+		const id = `${service}:${key}`;
+		let cloud = clouds.get(id);
+		if (!cloud) {
+			cloud = new CloudTranslator(service, key, options.fetch);
+			clouds.set(id, cloud);
+		}
+		return cloud;
+	};
 	const translatorFor = async (userId: string) => {
 		const ctx = { userId };
 		const { translateWith } = await settings.get(ctx);
 		if (translateWith === "off") return null;
 		if (translateWith === "local") return translatorReady ? translator : null;
-		const adapter = registry.adapter(translateWith);
-		const key =
-			(await keys.get(ctx, translateWith)) ??
-			(adapter?.keyEnv ? process.env[adapter.keyEnv] : undefined);
-		if (!key) return null;
-		const id = `${translateWith}:${key}`;
-		let cloud = clouds.get(id);
-		if (!cloud) {
-			cloud = new CloudTranslator(translateWith, key, options.fetch);
-			clouds.set(id, cloud);
-		}
-		return cloud;
+		return cloudFor(ctx, translateWith);
+	};
+	// A short writing task: the model on this computer when it is installed
+	// (free, and good at it), else the service chosen for translation.
+	const writerFor = async (ctx: UserContext): Promise<LanguageModel | null> => {
+		if (translatorReady) return translator;
+		const { translateWith } = await settings.get(ctx);
+		if (translateWith === "off" || translateWith === "local") return null;
+		return cloudFor(ctx, translateWith);
 	};
 	const engine = new JobEngine({
 		repo,
@@ -199,6 +235,23 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 		models,
 		settings,
 		translatorReady: () => translatorReady,
+		improvePrompt: async (ctx, request, signal) => {
+			const writer = await writerFor(ctx);
+			if (!writer) {
+				throw new ValidationError(
+					"No language model to write with: install the one for this computer or add a key",
+					"noLanguageModel",
+				);
+			}
+			const byId = new Map(service.listModels().map((m) => [m.id, m]));
+			const models = request.modelIds.flatMap((id) => byId.get(id) ?? []);
+			return improvePrompt(
+				writer,
+				request.prompt,
+				promptStyle(models, request.editing, request.language),
+				signal,
+			);
+		},
 		moveModels: (path) => models.relocate(path),
 		start: () => engine.start(),
 		close: () => {

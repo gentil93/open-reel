@@ -447,3 +447,56 @@ test("a model's demo is served from this origin, and never as a page", async () 
 	expect(part.status).toBe(206);
 	expect(part.headers.get("content-range")).toBe("bytes 0-3/9");
 });
+
+test("a prompt is improved by the language model, and refused without one", async () => {
+	const { post, runtime } = await setup();
+	// Nothing installed and no key: there is nothing to write with.
+	const none = await post("/api/prompts/improve", {
+		prompt: "a fox",
+		modelIds: ["fake/alpha"],
+	});
+	expect(none.status).toBe(400);
+	expect(((await none.json()) as { code: string }).code).toBe(
+		"noLanguageModel",
+	);
+
+	const asked: unknown[] = [];
+	const app = createApp({
+		...runtime,
+		improvePrompt: async (_ctx, request) => {
+			asked.push(request);
+			return "a red fox curled up in fresh snow";
+		},
+	});
+	const improve = (body: unknown) =>
+		app.request("http://localhost:4096/api/prompts/improve", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify(body),
+		});
+	const answer = await improve({
+		prompt: "a fox",
+		modelIds: ["fake/alpha"],
+		editing: true,
+		language: "pt-BR",
+	});
+	expect(await answer.json()).toEqual({
+		prompt: "a red fox curled up in fresh snow",
+	});
+	expect(asked).toEqual([
+		{
+			prompt: "a fox",
+			modelIds: ["fake/alpha"],
+			editing: true,
+			language: "pt-BR",
+		},
+	]);
+	for (const bad of [
+		{ prompt: " ", modelIds: [] },
+		{ prompt: "a fox", modelIds: "fake/alpha" },
+		{ prompt: "x".repeat(1001), modelIds: [] },
+		{ prompt: "a fox", modelIds: [], language: "<script>" },
+	]) {
+		expect((await improve(bad)).status).toBe(400);
+	}
+});

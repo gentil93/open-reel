@@ -33,6 +33,8 @@ export const ERROR_CODES = [
 	"modelsMoveLeftCopies",
 	"modelsMoving",
 	"noApiKey",
+	"noLanguageModel",
+	"improveFailed",
 	"noModel",
 	"needsPicture",
 	"claudeConfigUnreadable",

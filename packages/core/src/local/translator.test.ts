@@ -145,6 +145,51 @@ describe("the local translator", () => {
 		expect(await readdir(scratch)).toEqual([]);
 	});
 
+	test("answers other instructions too, with the variety asked for", async () => {
+		const { store } = await setup(false);
+		const server = fakeServer("a richer prompt");
+		const writer = new LocalTranslator({
+			store,
+			model: "qwen",
+			spawn: server.spawn,
+			fetch: server.fetch,
+			freePort: async () => 4321,
+		});
+		expect(
+			await writer.reply("Improve it.", "a fox", new AbortController().signal, {
+				temperature: 0.7,
+			}),
+		).toBe("a richer prompt");
+		expect(server.asked[0]).toMatchObject({
+			messages: [
+				{ role: "system", content: "Improve it." },
+				{ role: "user", content: "a fox" },
+			],
+			temperature: 0.7,
+		});
+		writer.stop();
+	});
+
+	test("under WSL passes the variety to the one-off run", async () => {
+		const { store } = await setup(true);
+		const runs: string[][] = [];
+		const run: RunOnce = async (argv) => {
+			runs.push(argv);
+			return { code: 0, stdout: "a richer prompt [end of text]", stderr: "" };
+		};
+		const writer = new LocalTranslator({
+			store,
+			model: "qwen",
+			run,
+			windowsPath: async (path) => path,
+		});
+		await writer.reply("Improve it.", "a fox", new AbortController().signal, {
+			temperature: 0.7,
+		});
+		const args = runs[0] ?? [];
+		expect(args[args.indexOf("--temp") + 1]).toBe("0.7");
+	});
+
 	test("says why when the model stops", async () => {
 		const { store } = await setup(true);
 		const translator = new LocalTranslator({

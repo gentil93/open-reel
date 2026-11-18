@@ -1,4 +1,5 @@
 import {
+	CodedError,
 	isDemoSize,
 	isTranslateWith,
 	type JobEngine,
@@ -15,6 +16,7 @@ import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
 import type { Agents } from "./agents";
+import type { ImproveRequest } from "./runtime";
 
 export interface AppOptions {
 	service: ReelService;
@@ -30,7 +32,19 @@ export interface AppOptions {
 	resolveUser?: (c: Context) => UserContext;
 	/** Connects AI agents to this installation; absent where it cannot. */
 	agents?: Agents;
+	/** A richer prompt for a short idea; absent where no model can write. */
+	improvePrompt?: (
+		ctx: UserContext,
+		request: ImproveRequest,
+		signal: AbortSignal,
+	) => Promise<string>;
 }
+
+/**
+ * The longest idea a person may ask to improve: with the instructions and
+ * the answer, it must fit the local language model's context.
+ */
+const MAX_IDEA_LENGTH = 1000;
 
 const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -121,12 +135,16 @@ export function createApp(options: AppOptions): Hono {
 
 	app.onError((error, c) => {
 		// The code and its values let the interface say it in the reader's language.
-		const body = (e: ValidationError | NotFoundError) => ({
+		const body = (e: CodedError) => ({
 			error: e.message,
 			...(e.code && { code: e.code, params: e.params }),
 		});
 		if (error instanceof ValidationError) return c.json(body(error), 400);
 		if (error instanceof NotFoundError) return c.json(body(error), 404);
+		// Something the server relies on failed in a way a person can be told.
+		if (error instanceof CodedError && error.code) {
+			return c.json(body(error), 502);
+		}
 		console.error(error);
 		return c.json({ error: "Internal error" }, 500);
 	});
@@ -252,6 +270,46 @@ export function createApp(options: AppOptions): Hono {
 
 	// Models are shared by everyone using this installation.
 	app.get("/api/local-models", async (c) => c.json(await models.list()));
+	app.post("/api/prompts/improve", async (c) => {
+		if (!options.improvePrompt) throw new NotFoundError("No writer here");
+		const body = await json(c);
+		const { prompt, modelIds, editing, language } = body;
+		if (typeof prompt !== "string" || !prompt.trim()) {
+			throw new ValidationError("prompt must be some text");
+		}
+		if (prompt.length > MAX_IDEA_LENGTH) {
+			throw new ValidationError(
+				`prompt must be at most ${MAX_IDEA_LENGTH} characters`,
+			);
+		}
+		if (
+			!Array.isArray(modelIds) ||
+			!modelIds.every((id) => typeof id === "string")
+		) {
+			throw new ValidationError("modelIds must be a list of model ids");
+		}
+		if (
+			language !== undefined &&
+			(typeof language !== "string" ||
+				!/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(language))
+		) {
+			throw new ValidationError(
+				"language must be a language code such as pt-BR",
+			);
+		}
+		const improved = await options.improvePrompt(
+			user(c),
+			{
+				prompt,
+				modelIds,
+				editing: editing === true,
+				...(typeof language === "string" && { language }),
+			},
+			// The person gave up: the language model stops too.
+			c.req.raw.signal,
+		);
+		return c.json({ prompt: improved });
+	});
 	app.post("/api/local-models/:id/install", async (c) => {
 		// No body, or one naming the variant to install instead of the best fit.
 		const body = await c.req.json().catch(() => ({}));

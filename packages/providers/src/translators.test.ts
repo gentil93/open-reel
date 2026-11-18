@@ -48,6 +48,24 @@ describe("translating with the person's key", () => {
 		});
 	});
 
+	test("answers other instructions too, such as improving a prompt", async () => {
+		const openrouter = service(["google/gemini-3.5-flash-lite"], "richer");
+		const writer = new CloudTranslator("openrouter", "key", openrouter.fetch);
+		expect(
+			await writer.reply("Improve it.", "a fox", signal(), {
+				temperature: 0.7,
+			}),
+		).toBe("richer");
+		// No temperature: newer models refuse it.
+		expect(openrouter.asked[0]?.body).toEqual({
+			model: "google/gemini-3.5-flash-lite",
+			messages: [
+				{ role: "system", content: "Improve it." },
+				{ role: "user", content: "a fox" },
+			],
+		});
+	});
+
 	test("Gemini is asked in its own format", async () => {
 		const google = service(["gemini-3.5-flash-lite"]);
 		const translator = new CloudTranslator("google", "key", google.fetch);

@@ -3,6 +3,7 @@ export * from "./db/repository";
 export * from "./engine";
 export * from "./errors";
 export * from "./ids";
+export * from "./improve";
 export * from "./keys";
 export * from "./local/engines";
 export * from "./local/hardware";

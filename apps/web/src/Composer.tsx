@@ -58,7 +58,7 @@ function savedModels(): string[] {
 
 export function Composer(props: Props) {
 	const { models, providers, references, setReferences } = props;
-	const { t, explain, number } = useI18n();
+	const { t, explain, number, language } = useI18n();
 	const [prompt, setPrompt] = useState("");
 	const [chosen, setChosen] = useState<string[]>(savedModels);
 	const [aspectRatio, setAspectRatio] = useState("");
@@ -81,6 +81,10 @@ export function Composer(props: Props) {
 	const [extending, setExtending] = useState(false);
 	// The reference being turned or cropped.
 	const [adjusting, setAdjusting] = useState<string | null>(null);
+	// A richer prompt offered for the one written; nothing changes until used.
+	const [suggestion, setSuggestion] = useState<string | null>(null);
+	const [improving, setImproving] = useState<AbortController | null>(null);
+	const [improveError, setImproveError] = useState<unknown>(null);
 	const [only] = references.length === 1 ? references : [];
 	const marked = only != null && mask?.reference === only ? mask : null;
 	const maskId = marked?.id ?? null;
@@ -159,6 +163,52 @@ export function Composer(props: Props) {
 		onSuccess: (asset) => setReferences([...references, asset.id]),
 	});
 
+	// Kept in a ref too, so a second click before the next render is ignored
+	// and the request stops when the composer goes away.
+	const improvingRef = useRef<AbortController | null>(null);
+	useEffect(() => () => improvingRef.current?.abort(), []);
+	// The prompt as typed now, to drop a suggestion for one since changed.
+	const promptRef = useRef(prompt);
+	promptRef.current = prompt;
+
+	const stopImproving = () => {
+		improvingRef.current?.abort();
+		improvingRef.current = null;
+		setImproving(null);
+	};
+
+	const improve = async () => {
+		const idea = prompt.trim();
+		if (idea === "" || improvingRef.current) return;
+		const controller = new AbortController();
+		improvingRef.current = controller;
+		setImproving(controller);
+		setImproveError(null);
+		try {
+			const { prompt: better } = await api.improvePrompt(
+				{
+					prompt: idea,
+					modelIds: selected.map((m) => m.id),
+					editing: references.length > 0,
+					language,
+				},
+				controller.signal,
+			);
+			// Written for a prompt that is no longer there: using it would
+			// overwrite what was typed since.
+			if (!controller.signal.aborted && promptRef.current.trim() === idea) {
+				setSuggestion(better);
+			}
+		} catch (problem) {
+			if (!controller.signal.aborted) setImproveError(problem);
+		} finally {
+			if (improvingRef.current === controller) {
+				improvingRef.current = null;
+				setImproving(null);
+			}
+		}
+	};
+
 	const canSend = prompt.trim() !== "" && selected.length > 0 && !props.busy;
 	const submit = () => {
 		if (!canSend) return;
@@ -175,6 +225,10 @@ export function Composer(props: Props) {
 			maskAssetId: maskId ?? undefined,
 		});
 		setPrompt("");
+		// Whatever was offered was for the prompt just sent.
+		stopImproving();
+		setSuggestion(null);
+		setImproveError(null);
 	};
 
 	// Chosen models that have a key but are ruled out by the reference images.
@@ -184,6 +238,7 @@ export function Composer(props: Props) {
 	const error =
 		props.error ??
 		(upload.error ? explain(upload.error) : null) ??
+		(improveError ? explain(improveError) : null) ??
 		(overReferenceLimit ? t("composer.tooManyReferences") : null);
 	const control = "rounded-md border border-line bg-bg px-2 py-1.5 text-sm";
 
@@ -327,9 +382,51 @@ export function Composer(props: Props) {
 					</ul>
 				)}
 
+				{suggestion != null && (
+					<section
+						aria-label={t("composer.suggestion")}
+						className="rounded-md border border-line bg-bg px-3 py-2"
+					>
+						<h3 className="font-mono text-xs uppercase tracking-wide text-dim">
+							{t("composer.suggestion")}
+						</h3>
+						<p className="mt-1 leading-relaxed">{suggestion}</p>
+						<div className="mt-2 flex flex-wrap gap-1.5 text-sm">
+							<button
+								type="button"
+								onClick={() => {
+									setPrompt(suggestion);
+									setSuggestion(null);
+								}}
+								className="aurora rounded-md px-3 py-1"
+							>
+								{t("composer.suggestionUse")}
+							</button>
+							<button
+								type="button"
+								onClick={improve}
+								disabled={improving != null}
+								className="rounded-md border border-line px-3 py-1 text-dim hover:border-dim hover:text-ink disabled:opacity-40"
+							>
+								{t("composer.suggestionAnother")}
+							</button>
+							<button
+								type="button"
+								onClick={() => setSuggestion(null)}
+								className="rounded-md px-3 py-1 text-dim hover:text-ink"
+							>
+								{t("composer.suggestionDiscard")}
+							</button>
+						</div>
+					</section>
+				)}
+
 				<textarea
 					value={prompt}
-					onChange={(event) => setPrompt(event.target.value)}
+					onChange={(event) => {
+						setPrompt(event.target.value);
+						setImproveError(null);
+					}}
 					onKeyDown={(event) => {
 						if (
 							event.key === "Enter" &&
@@ -440,6 +537,25 @@ export function Composer(props: Props) {
 							event.target.value = "";
 						}}
 					/>
+					{improving ? (
+						<button
+							type="button"
+							onClick={stopImproving}
+							className={`${control} text-dim hover:text-ink`}
+						>
+							<span className="animate-pulse">{t("composer.improving")}</span> ·{" "}
+							{t("composer.improveStop")}
+						</button>
+					) : (
+						<button
+							type="button"
+							onClick={improve}
+							disabled={prompt.trim() === ""}
+							className={`${control} text-dim hover:text-ink disabled:opacity-40`}
+						>
+							✦ {t("composer.improve")}
+						</button>
+					)}
 					<button
 						type="button"
 						onClick={() => fileInput.current?.click()}

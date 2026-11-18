@@ -1,13 +1,15 @@
 import {
 	CodedError,
+	type LanguageModel,
+	type ReplyOptions,
 	TRANSLATE_INSTRUCTIONS,
 	type Translator,
 } from "@open-reel/core";
 import { type Fetch, refusal, send } from "./http";
 
 /**
- * Puts prompts into English with a language model reached with the person's
- * own key. A prompt costs a fraction of a cent.
+ * A language model reached with the person's own key: it puts prompts into
+ * English and improves them. A prompt costs a fraction of a cent.
  *
  * Model names change often, so each service has a list, cheapest and newest
  * first: a name the service no longer knows (404) moves on to the next one,
@@ -36,7 +38,7 @@ const NAMES: Record<CloudTranslatorId, string> = {
 	openrouter: "OpenRouter",
 };
 
-export class CloudTranslator implements Translator {
+export class CloudTranslator implements Translator, LanguageModel {
 	/** The model that answered last, by its place in the list. */
 	private model = 0;
 
@@ -46,26 +48,45 @@ export class CloudTranslator implements Translator {
 		private fetch: Fetch = (url, init) => globalThis.fetch(url, init),
 	) {}
 
-	async toEnglish(prompt: string, signal: AbortSignal): Promise<string> {
+	toEnglish(prompt: string, signal: AbortSignal): Promise<string> {
+		return this.reply(TRANSLATE_INSTRUCTIONS, prompt, signal);
+	}
+
+	/**
+	 * The temperature is left out: newer models refuse settings older ones
+	 * take, and their default varies enough.
+	 */
+	async reply(
+		instructions: string,
+		text: string,
+		signal: AbortSignal,
+		_options?: ReplyOptions,
+	): Promise<string> {
 		const models = MODELS[this.service];
 		for (let i = this.model; i < models.length; i++) {
-			const response = await this.ask(models[i] as string, prompt, signal);
+			const response = await this.ask(
+				models[i] as string,
+				instructions,
+				text,
+				signal,
+			);
 			// A model this service does not know (any more): the next one.
 			if (response.status === 404) continue;
 			if (!response.ok) throw await refusal(response, NAMES[this.service]);
 			this.model = i;
-			const text = await this.read(response);
-			if (!text) throw new Error("No translation came back");
-			return text;
+			const answer = await this.read(response);
+			if (!answer) throw new Error("No answer came back");
+			return answer;
 		}
 		throw new CodedError(
-			`${NAMES[this.service]} has none of the models open-reel translates with`,
+			`${NAMES[this.service]} has none of the models open-reel writes with`,
 		);
 	}
 
 	private ask(
 		model: string,
-		prompt: string,
+		instructions: string,
+		text: string,
 		signal: AbortSignal,
 	): Promise<Response> {
 		if (this.service === "google") {
@@ -79,8 +100,8 @@ export class CloudTranslator implements Translator {
 						"content-type": "application/json",
 					},
 					body: JSON.stringify({
-						systemInstruction: { parts: [{ text: TRANSLATE_INSTRUCTIONS }] },
-						contents: [{ role: "user", parts: [{ text: prompt }] }],
+						systemInstruction: { parts: [{ text: instructions }] },
+						contents: [{ role: "user", parts: [{ text }] }],
 					}),
 					signal,
 				},
@@ -105,8 +126,8 @@ export class CloudTranslator implements Translator {
 				body: JSON.stringify({
 					model,
 					messages: [
-						{ role: "system", content: TRANSLATE_INSTRUCTIONS },
-						{ role: "user", content: prompt },
+						{ role: "system", content: instructions },
+						{ role: "user", content: text },
 					],
 				}),
 				signal,

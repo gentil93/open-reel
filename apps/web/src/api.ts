@@ -84,6 +84,19 @@ export const api = {
 			"/api/turns",
 			send("POST", input),
 		),
+	improvePrompt: (
+		input: {
+			prompt: string;
+			modelIds: string[];
+			editing: boolean;
+			language: string;
+		},
+		signal: AbortSignal,
+	) =>
+		request<{ prompt: string }>("/api/prompts/improve", {
+			...send("POST", input),
+			signal,
+		}),
 	cancelJob: (id: string) =>
 		request<void>(`/api/jobs/${id}/cancel`, { method: "POST" }),
 	agents: () => request<AgentsStatus>("/api/agents"),

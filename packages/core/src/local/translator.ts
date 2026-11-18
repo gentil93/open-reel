@@ -1,5 +1,6 @@
 import { mkdir, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import type { LanguageModel, ReplyOptions } from "../improve";
 import { TRANSLATE_INSTRUCTIONS, type Translator } from "../translate";
 import {
 	type PathMapper,
@@ -10,8 +11,8 @@ import {
 import type { LocalModelStore, LocalRuntime } from "./store";
 
 /**
- * Puts prompts into English with a small language model installed on this
- * computer, run by llama.cpp on the processor.
+ * A small language model installed on this computer, run by llama.cpp on the
+ * processor: it puts prompts into English and improves them.
  *
  * Where it can, the model stays loaded in `llama-server` between prompts
  * (loading takes a few seconds, a prompt a second). Under WSL the engine is
@@ -91,6 +92,13 @@ export interface LocalTranslatorOptions {
 	idleMs?: number;
 }
 
+/** One message to answer, with its instructions. */
+interface Message {
+	instructions: string;
+	text: string;
+	temperature: number;
+}
+
 interface Server {
 	key: string;
 	url: string;
@@ -98,7 +106,7 @@ interface Server {
 	exited: Promise<number>;
 }
 
-export class LocalTranslator implements Translator {
+export class LocalTranslator implements Translator, LanguageModel {
 	private store: LocalModelStore;
 	private model: string;
 	private spawn: Spawn;
@@ -133,17 +141,33 @@ export class LocalTranslator implements Translator {
 		return view?.models.find((m) => m.id === this.model)?.ready ?? false;
 	}
 
-	async toEnglish(prompt: string, signal: AbortSignal): Promise<string> {
+	toEnglish(prompt: string, signal: AbortSignal): Promise<string> {
+		return this.reply(TRANSLATE_INSTRUCTIONS, prompt, signal, {
+			temperature: 0,
+		});
+	}
+
+	async reply(
+		instructions: string,
+		text: string,
+		signal: AbortSignal,
+		options: ReplyOptions = {},
+	): Promise<string> {
 		const runtime = await this.store.runtime(this.model);
+		const message = {
+			instructions,
+			text,
+			temperature: options.temperature ?? 0,
+		};
 		return runtime.throughWindows
-			? this.once(runtime, prompt, signal)
-			: this.served(runtime, prompt, signal);
+			? this.once(runtime, message, signal)
+			: this.served(runtime, message, signal);
 	}
 
 	/** Through the server, started if it is not running. */
 	private async served(
 		runtime: LocalRuntime,
-		prompt: string,
+		message: Message,
 		signal: AbortSignal,
 	): Promise<string> {
 		clearTimeout(this.idle);
@@ -156,22 +180,22 @@ export class LocalTranslator implements Translator {
 				headers: { "content-type": "application/json" },
 				body: JSON.stringify({
 					messages: [
-						{ role: "system", content: TRANSLATE_INSTRUCTIONS },
-						{ role: "user", content: prompt },
+						{ role: "system", content: message.instructions },
+						{ role: "user", content: message.text },
 					],
-					temperature: 0,
+					temperature: message.temperature,
 					max_tokens: MAX_TOKENS,
 				}),
 				signal,
 			});
 			if (!response.ok) {
-				throw new Error(`The translator refused (HTTP ${response.status})`);
+				throw new Error(`The language model refused (HTTP ${response.status})`);
 			}
 			const body = (await response.json()) as {
 				choices?: { message?: { content?: string } }[];
 			};
 			const text = body.choices?.[0]?.message?.content;
-			if (typeof text !== "string") throw new Error("No translation came back");
+			if (typeof text !== "string") throw new Error("No answer came back");
 			return text;
 		} finally {
 			this.inFlight--;
@@ -265,10 +289,10 @@ export class LocalTranslator implements Translator {
 		return server;
 	}
 
-	/** Runs the model once for this prompt, through a file it reads. */
+	/** Runs the model once for this message, through a file it reads. */
 	private async once(
 		runtime: LocalRuntime,
-		prompt: string,
+		message: Message,
 		signal: AbortSignal,
 	): Promise<string> {
 		const model = runtime.files.model;
@@ -279,7 +303,7 @@ export class LocalTranslator implements Translator {
 		);
 		await mkdir(runtime.scratch, { recursive: true });
 		const file = join(runtime.scratch, `${crypto.randomUUID()}.prompt.txt`);
-		await Bun.write(file, chatPrompt(TRANSLATE_INSTRUCTIONS, prompt));
+		await Bun.write(file, chatPrompt(message.instructions, message.text));
 		try {
 			const { code, stdout, stderr } = await this.run(
 				[
@@ -291,7 +315,7 @@ export class LocalTranslator implements Translator {
 					"-no-cnv",
 					"--no-display-prompt",
 					"--temp",
-					"0",
+					String(message.temperature),
 					"-n",
 					String(MAX_TOKENS),
 					"-c",

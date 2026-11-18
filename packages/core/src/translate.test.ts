@@ -21,6 +21,7 @@ describe("a translation as a language model replies it", () => {
 		);
 		expect(cleanTranslation("  Translation: a red fox \n")).toBe("a red fox");
 		expect(cleanTranslation('"a red fox"')).toBe("a red fox");
+		expect(cleanTranslation("«une renarde rousse»")).toBe("une renarde rousse");
 		expect(
 			cleanTranslation("<think>\nThe user wants…\n</think>\n\na fox"),
 		).toBe("a fox");
