@@ -104,6 +104,11 @@ export class WarmEngines {
 		this.gpu = options.gpu;
 	}
 
+	/** Whether no job is running on the loaded model. */
+	get unused(): boolean {
+		return this.busy === 0;
+	}
+
 	/** The model loaded now, by the key it was started with. */
 	get loaded(): string | null {
 		return this.running?.key ?? null;

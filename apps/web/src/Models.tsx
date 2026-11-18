@@ -11,7 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, demoUrl } from "./api";
 import { remaining } from "./format";
 import { type I18n, isMessageKey, useI18n } from "./i18n";
-import { useModelProgress } from "./live";
+import { useFolderMove, useModelProgress } from "./live";
 import {
 	categoryOf,
 	filterLocal,
@@ -788,6 +788,121 @@ function Catalog({ view }: { view: LocalModelsView }) {
 	);
 }
 
+/** Where the models are kept, and a way to move them to another folder. */
+function Folder({ disk }: { disk: LocalModelsView["disk"] }) {
+	const { t, bytes, explain } = useI18n();
+	const live = useFolderMove();
+	const moving = live ?? disk.moving;
+	const [editing, setEditing] = useState(false);
+	const [path, setPath] = useState(disk.path);
+	const move = useMutation({
+		mutationFn: () => api.moveModels(path),
+		onSuccess: () => setEditing(false),
+	});
+	const percent = moving
+		? Math.round((moving.movedBytes / Math.max(moving.totalBytes, 1)) * 100)
+		: 0;
+	return (
+		<div className="min-w-0 flex-1 basis-80">
+			<dt className="font-mono text-[11px] uppercase tracking-wider text-dim">
+				{t("models.disk.path")}
+			</dt>
+			<dd className="pt-1">
+				{moving ? (
+					<div className="flex flex-col gap-1.5">
+						<p className="truncate text-sm" title={moving.to}>
+							{t("models.folder.moving", { path: moving.to })}
+						</p>
+						<div
+							role="progressbar"
+							aria-label={t("models.folder.moving", { path: moving.to })}
+							aria-valuemin={0}
+							aria-valuemax={100}
+							aria-valuenow={percent}
+							className="h-1.5 overflow-hidden rounded-full bg-line"
+						>
+							<div
+								className="h-full rounded-full bg-accent transition-[width] duration-300"
+								style={{ width: `${percent}%` }}
+							/>
+						</div>
+						<p className="font-mono text-xs text-dim">
+							{t("models.folder.moved", {
+								moved: bytes(moving.movedBytes),
+								total: bytes(moving.totalBytes),
+							})}
+						</p>
+					</div>
+				) : editing ? (
+					<form
+						className="flex flex-col gap-2"
+						onSubmit={(event) => {
+							event.preventDefault();
+							move.mutate();
+						}}
+					>
+						<input
+							value={path}
+							onChange={(event) => setPath(event.target.value)}
+							aria-label={t("models.folder.label")}
+							spellCheck={false}
+							// biome-ignore lint/a11y/noAutofocus: the form opens on request
+							autoFocus
+							className="rounded-md border border-line bg-panel px-3 py-2 font-mono text-sm focus:border-dim focus:outline-none"
+						/>
+						<p className="text-xs leading-relaxed text-dim">
+							{t("models.folder.hint", { size: bytes(disk.usedBytes) })}
+						</p>
+						{move.error && (
+							<p className="text-sm text-danger">{explain(move.error)}</p>
+						)}
+						<div className="flex gap-2">
+							<button
+								type="submit"
+								disabled={move.isPending || !path.trim()}
+								className="rounded-md bg-accent px-4 py-2 font-medium text-accent-ink disabled:opacity-40"
+							>
+								{t("models.folder.move")}
+							</button>
+							<button
+								type="button"
+								onClick={() => {
+									setEditing(false);
+									move.reset();
+								}}
+								className="rounded-md border border-line px-4 py-2 hover:border-dim"
+							>
+								{t("common.cancel")}
+							</button>
+						</div>
+					</form>
+				) : (
+					<div className="flex min-w-0 items-center gap-3">
+						<span className="truncate font-mono text-sm" title={disk.path}>
+							{disk.path}
+						</span>
+						{disk.changeable && (
+							<button
+								type="button"
+								onClick={() => {
+									setPath(disk.path);
+									setEditing(true);
+								}}
+								className="shrink-0 rounded border border-line px-2 py-0.5 text-xs hover:border-dim hover:text-ink"
+							>
+								{t("models.folder.change")}
+							</button>
+						)}
+					</div>
+				)}
+				{disk.moveError && !moving && !editing && (
+					<p className="mt-1 text-sm text-danger">{explain(disk.moveError)}</p>
+				)}
+			</dd>
+		</div>
+	);
+}
+
 export function Models() {
 	const { t, bytes, explain } = useI18n();
 	const view = useQuery({
@@ -826,14 +941,7 @@ export function Models() {
 							</dt>
 							<dd className="font-mono text-lg">{bytes(disk.freeBytes)}</dd>
 						</div>
-						<div className="min-w-0">
-							<dt className="font-mono text-[11px] uppercase tracking-wider text-dim">
-								{t("models.disk.path")}
-							</dt>
-							<dd className="truncate pt-1 font-mono text-sm" title={disk.path}>
-								{disk.path}
-							</dd>
-						</div>
+						<Folder disk={disk} />
 					</dl>
 				)}
 				{view.data && <Catalog view={view.data} />}

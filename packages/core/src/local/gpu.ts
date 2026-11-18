@@ -99,6 +99,14 @@ export class GpuLock {
 		this.pollMs = options.pollMs ?? POLL_MS;
 	}
 
+	/** Follows the models folder elsewhere; only while nothing is held. */
+	moveTo(root: string): void {
+		if (this.holds.size > 0) {
+			throw new Error("The GPU is in use; it cannot move to another folder");
+		}
+		this.dir = join(root, "gpu");
+	}
+
 	/** Bytes this process has reserved. */
 	get reserved(): number {
 		let bytes = 0;

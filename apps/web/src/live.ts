@@ -43,6 +43,23 @@ export function useModelProgress(modelId: string): ModelProgress | undefined {
 	);
 }
 
+type FolderMove = Omit<
+	Extract<LocalModelEvent, { type: "models.moving" }>,
+	"type"
+>;
+// How far the models are in moving to another folder, while they move.
+let folderMove: FolderMove | null = null;
+
+export function useFolderMove(): FolderMove | null {
+	return useSyncExternalStore(
+		(watcher) => {
+			watchers.add(watcher);
+			return () => watchers.delete(watcher);
+		},
+		() => folderMove,
+	);
+}
+
 async function applyJob(client: QueryClient, job: JobView): Promise<void> {
 	// A fetch already in flight may carry an older state of this job and would
 	// overwrite the update when it lands.
@@ -83,9 +100,18 @@ export function useLiveJobs(): void {
 			}
 			connectedBefore = true;
 		});
+		source.addEventListener("models.moving", (message) => {
+			const event = JSON.parse(message.data) as LocalModelEvent;
+			if (event.type !== "models.moving") return;
+			const { type: _, ...move } = event;
+			folderMove = move;
+			notify();
+		});
 		source.addEventListener("models.changed", () => {
-			// An install started or ended; what was known about it is stale.
+			// An install started or ended, or a move to another folder did;
+			// what was known about it is stale.
 			modelProgress.clear();
+			folderMove = null;
 			notify();
 			void client.invalidateQueries({ queryKey: ["local-models"] });
 			// Installed models can be picked in the composer.

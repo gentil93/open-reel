@@ -2,7 +2,13 @@
 import { writeSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { defaultDataDir, defaultModelsDir, plainPath } from "@open-reel/core";
+import {
+	chosenModelsDir,
+	defaultDataDir,
+	defaultModelsDir,
+	modelsLocationFile,
+	plainPath,
+} from "@open-reel/core";
 import {
 	createApp,
 	createRuntime,
@@ -66,15 +72,21 @@ const WEB_DIST = resources
 const migrationsDir = resources ? join(resources, "drizzle") : undefined;
 const dataDir = values["data-dir"] ?? defaultDataDir();
 // An explicit data directory keeps everything inside it, models included,
-// unless OPEN_REEL_MODELS_DIR names another place for them.
-const modelsDir =
+// unless OPEN_REEL_MODELS_DIR names another place for them. Otherwise the
+// folder can be changed in the app, and every open-reel sharing the default
+// one follows that choice.
+const fixedModelsDir =
 	process.env.OPEN_REEL_MODELS_DIR ??
-	(values["data-dir"]
-		? join(dataDir, "models")
-		: await defaultModelsDir(dataDir));
+	(values["data-dir"] ? join(dataDir, "models") : null);
+const defaultModels = fixedModelsDir ? null : await defaultModelsDir(dataDir);
+const modelsDir =
+	fixedModelsDir ?? (await chosenModelsDir(defaultModels as string));
 const runtime = await createRuntime({
 	dataDir,
 	modelsDir,
+	modelsLocationFile: defaultModels
+		? modelsLocationFile(defaultModels)
+		: undefined,
 	migrationsDir,
 }).catch((error) => {
 	if (!(error instanceof DataDirInUseError)) throw error;

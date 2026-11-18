@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { join, win32 } from "node:path";
+import { join, posix, win32 } from "node:path";
 import { detectHardware } from "./local/hardware";
 
 /** Directory for the database, assets and stored keys, where each system expects it. */
@@ -71,4 +71,72 @@ export async function defaultModelsDir(
 		if (linux) return join(linux, "open-reel", "models");
 	}
 	return join(dataDir, "models");
+}
+
+/**
+ * Where a models folder chosen by hand is written down: next to the default
+ * one, so every open-reel that shares the default folder (the desktop app
+ * and open-reel under WSL) follows the same choice.
+ */
+export function modelsLocationFile(defaultModelsDir: string): string {
+	const path = /^[A-Za-z]:\\/.test(defaultModelsDir) ? win32 : posix;
+	return path.join(path.dirname(defaultModelsDir), "models-location.json");
+}
+
+/**
+ * A folder as written by any open-reel sharing the choice, as this system
+ * names it: `D:\Models` is `/mnt/d/Models` under WSL, and back. Null when
+ * this system cannot reach it.
+ */
+export function pathHere(
+	path: string,
+	platform: NodeJS.Platform = process.platform,
+): string | null {
+	const drive = path.match(/^([A-Za-z]):[\\/](.*)$/);
+	const mounted = path.match(/^\/mnt\/([a-z])(?:\/(.*))?$/);
+	if (platform === "win32") {
+		if (drive) return path;
+		if (mounted) {
+			return win32.join(
+				`${mounted[1]?.toUpperCase()}:\\`,
+				...(mounted[2] ?? "").split("/").filter(Boolean),
+			);
+		}
+		return null;
+	}
+	if (drive) {
+		// Only under WSL do Windows drives show, under /mnt.
+		return platform === "linux"
+			? posix.join(
+					`/mnt/${drive[1]?.toLowerCase()}`,
+					...(drive[2] ?? "").split(/[\\/]/).filter(Boolean),
+				)
+			: null;
+	}
+	return posix.isAbsolute(path) ? path : null;
+}
+
+/** How to write a folder down so the other side of WSL reads it too. */
+export function portablePath(path: string): string {
+	const mounted = path.match(/^\/mnt\/([a-z])(?:\/(.*))?$/);
+	if (!mounted) return path;
+	return win32.join(
+		`${mounted[1]?.toUpperCase()}:\\`,
+		...(mounted[2] ?? "").split("/").filter(Boolean),
+	);
+}
+
+/** The models folder chosen by hand, if any, else the default one. */
+export async function chosenModelsDir(
+	defaultModelsDir: string,
+	platform: NodeJS.Platform = process.platform,
+): Promise<string> {
+	const file = Bun.file(modelsLocationFile(defaultModelsDir));
+	const chosen = await file
+		.json()
+		.then((body: { path?: unknown }) =>
+			typeof body.path === "string" ? pathHere(body.path, platform) : null,
+		)
+		.catch(() => null);
+	return chosen ?? defaultModelsDir;
 }

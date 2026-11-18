@@ -487,12 +487,29 @@ export interface LocalModelsView {
 		freeBytes: number;
 		/** Taken by models and engines, including interrupted downloads. */
 		usedBytes: number;
+		/** Whether another folder can be chosen (not when set from outside). */
+		changeable: boolean;
+		/** While the models move to another folder, how far that is. */
+		moving: { to: string; movedBytes: number; totalBytes: number } | null;
+		/** Why the last move failed; the models stayed where they were. */
+		moveError: {
+			message: string;
+			code: string | null;
+			params: ErrorParams | null;
+		} | null;
 	};
 }
 
 export type LocalModelEvent =
 	/** A model was installed, deleted, or its install started or stopped. */
 	| { type: "models.changed" }
+	/** The models are moving to another folder. */
+	| {
+			type: "models.moving";
+			to: string;
+			movedBytes: number;
+			totalBytes: number;
+	  }
 	| {
 			type: "model.progress";
 			id: string;

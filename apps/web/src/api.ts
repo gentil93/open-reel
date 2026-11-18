@@ -80,6 +80,8 @@ export const api = {
 		request<void>(`/api/local-models/${id}/cancel`, { method: "POST" }),
 	deleteModel: (id: string) =>
 		request<void>(`/api/local-models/${id}`, { method: "DELETE" }),
+	moveModels: (path: string) =>
+		request<void>("/api/local-models/location", send("POST", { path })),
 	gallery: (query: string, before?: GalleryItem) => {
 		const search = new URLSearchParams({ limit: String(GALLERY_PAGE) });
 		if (query) search.set("query", query);

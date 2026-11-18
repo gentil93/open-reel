@@ -16,6 +16,8 @@ export interface AppOptions {
 	service: ReelService;
 	engine: JobEngine;
 	models: LocalModelStore;
+	/** Starts moving the local models to another folder. */
+	moveModels?: (path: string) => Promise<void>;
 	/** Extra origins allowed to call the API, e.g. the Vite dev server. */
 	allowedOrigins?: string[];
 	/** Maps a request to its user. Local installs have a single user. */
@@ -224,6 +226,16 @@ export function createApp(options: AppOptions): Hono {
 	app.post("/api/local-models/:id/cancel", async (c) => {
 		await models.cancel(c.req.param("id"));
 		return c.body(null, 204);
+	});
+	// The move goes on after the answer; its progress comes as events.
+	app.post("/api/local-models/location", async (c) => {
+		const body = await json(c);
+		if (typeof body.path !== "string" || !body.path.trim()) {
+			throw new ValidationError("path must name a folder");
+		}
+		const move = options.moveModels ?? ((path) => models.relocate(path));
+		await move(body.path);
+		return c.body(null, 202);
 	});
 	app.delete("/api/local-models/:id", async (c) => {
 		await models.remove(c.req.param("id"));

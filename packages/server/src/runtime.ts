@@ -26,6 +26,8 @@ export interface Runtime {
 	service: ReelService;
 	engine: JobEngine;
 	models: LocalModelStore;
+	/** Starts moving the local models to another folder. */
+	moveModels(path: string): Promise<void>;
 	/** Resumes jobs left unfinished by a previous process. */
 	start(): Promise<void>;
 	close(): void;
@@ -72,6 +74,11 @@ export interface RuntimeOptions {
 	dataDir: string;
 	/** Where models and engines go. Defaults to `models` in the data directory. */
 	modelsDir?: string;
+	/**
+	 * Where another models folder, chosen in the app, is written down.
+	 * Without it the folder cannot be changed from the app.
+	 */
+	modelsLocationFile?: string;
 	/** Defaults to the built-in providers. */
 	providers?: ProviderAdapter[];
 	/** Models that can be downloaded. Defaults to the built-in catalog. */
@@ -104,6 +111,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 		fetch: options.fetch,
 		hardware: options.hardware,
 		checkEngine: options.checkEngine,
+		locationFile: options.modelsLocationFile,
 	});
 	// Installed local models are offered next to the remote ones.
 	const local = new LocalProvider({ store: models, catalog });
@@ -127,6 +135,11 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 		service,
 		engine,
 		models,
+		moveModels: async (path) => {
+			// A loaded model holds its files open, and Windows cannot move them.
+			local.unloadIdle();
+			await models.relocate(path);
+		},
 		start: () => engine.start(),
 		close: () => {
 			// Downloads stop with the process; what they fetched is resumed later.

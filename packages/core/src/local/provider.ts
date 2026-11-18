@@ -664,6 +664,12 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 		// Aborting the job's signal already stops the engine.
 	}
 
+	/** Unloads a model kept loaded between pictures, unless a job uses it. */
+	unloadIdle(): void {
+		if (this.warm === false) return;
+		if (this.warm.unused) this.warm.stop();
+	}
+
 	/** Unloads the model, so no engine outlives open-reel. */
 	close(): void {
 		if (this.warm) this.warm.stop();

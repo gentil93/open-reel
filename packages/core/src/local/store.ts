@@ -8,7 +8,7 @@ import {
 	stat,
 	statfs,
 } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import {
 	CodedError,
 	describeError,
@@ -16,6 +16,7 @@ import {
 	ValidationError,
 } from "../errors";
 import { sniffMime } from "../mime";
+import { pathHere, portablePath } from "../paths";
 import type {
 	EngineBuild,
 	Fit,
@@ -34,7 +35,32 @@ import { type BuildChoice, chooseBuild, chooseVariant, fitOf } from "./engines";
 import { isLocked, withFileLock } from "./file-lock";
 import { GpuLock } from "./gpu";
 import { detectHardware } from "./hardware";
+import { type Moved, moveBack, moveInto, treeSize } from "./move";
 import { extractZip } from "./zip";
+
+/** What moves with the models folder; the rest only matters for a moment. */
+const MOVED_ENTRIES = [
+	"blobs",
+	"installed",
+	"engines",
+	"demos",
+	"broken-engines.json",
+];
+
+/** Whether two paths name one folder (Windows ignores case). */
+function samePath(a: string, b: string): boolean {
+	const norm = (path: string) => {
+		const plain = resolve(path);
+		return process.platform === "win32" ? plain.toLowerCase() : plain;
+	};
+	return norm(a) === norm(b);
+}
+
+/** Whether `inner` is below `outer`. */
+function within(inner: string, outer: string): boolean {
+	const path = relative(resolve(outer), resolve(inner));
+	return path !== "" && !path.startsWith("..") && !isAbsolute(path);
+}
 
 const MAX_DEMO_BYTES = 64 * 1024 * 1024;
 const PROGRESS_INTERVAL_MS = 250;
@@ -57,6 +83,12 @@ export interface LocalModelStoreOptions {
 	 * `--help`, which catches missing libraries and blocked programs.
 	 */
 	checkEngine?: (executable: string) => Promise<string | null>;
+	/**
+	 * Where a folder chosen by hand is written down (see
+	 * `modelsLocationFile`). Without it the folder cannot be changed, as when
+	 * it was set from outside.
+	 */
+	locationFile?: string;
 }
 
 /** An engine build that was installed but does not run on this machine. */
@@ -299,10 +331,16 @@ export class LocalModelStore {
 	private queue: Promise<void> = Promise.resolve();
 	/** Shares the GPU's memory between jobs, with other open-reels too. */
 	readonly gpu: GpuLock;
+	private locationFile: string | null;
+	private moving: LocalModelsView["disk"]["moving"] = null;
+	private moveTask: Promise<void> = Promise.resolve();
+	/** Why the last move to another folder failed, until the next one. */
+	private moveError: LocalModelsView["disk"]["moveError"] = null;
 
 	constructor(options: LocalModelStoreOptions) {
 		assertCatalog(options.catalog, options.engines);
 		this.root = options.root;
+		this.locationFile = options.locationFile ?? null;
 		this.catalog = options.catalog;
 		this.engines = options.engines;
 		this.fetch = options.fetch ?? globalThis.fetch;
@@ -473,6 +511,7 @@ export class LocalModelStore {
 	}
 
 	async list(): Promise<LocalModelsView> {
+		await this.follow();
 		const hardware = await this.machine();
 		const disk = await this.onDisk();
 		const [installed, builds] = await Promise.all([
@@ -613,7 +652,14 @@ export class LocalModelStore {
 			hardware,
 			engines,
 			models,
-			disk: { path: this.root, freeBytes: await this.freeBytes(), usedBytes },
+			disk: {
+				path: this.root,
+				freeBytes: await this.freeBytes(),
+				usedBytes,
+				changeable: this.locationFile != null,
+				moving: this.moving,
+				moveError: this.moveError,
+			},
 		};
 	}
 
@@ -621,6 +667,161 @@ export class LocalModelStore {
 		await mkdir(this.root, { recursive: true });
 		const info = await statfs(this.root);
 		return info.bavail * info.bsize;
+	}
+
+	/**
+	 * Moves the models to `target` and keeps them there from now on, for
+	 * every open-reel that shares the choice. Refused while anything runs from
+	 * the folder: an install, a local job or a loaded model, or another
+	 * open-reel downloading into it. If a file cannot be moved, what was
+	 * moved goes back.
+	 */
+	async relocate(target: string): Promise<void> {
+		const file = this.locationFile;
+		if (!file) {
+			throw new ValidationError(
+				"The models folder is set from outside open-reel",
+				"modelsFolderFixed",
+			);
+		}
+		const here = pathHere(target.trim());
+		if (!here) {
+			throw new ValidationError(
+				`Not a full path: ${target}`,
+				"folderNotAbsolute",
+				{ path: target },
+			);
+		}
+		if (samePath(here, this.root)) return;
+		if (within(here, this.root) || within(this.root, here)) {
+			throw new ValidationError(
+				"The new folder cannot hold the current one, nor sit inside it",
+				"folderInside",
+				{ path: here },
+			);
+		}
+		const lockedHere = async (dir: string) =>
+			(await readdir(join(this.root, dir)).catch(() => [])).some(
+				(name) =>
+					name.endsWith(".lock") && isLocked(join(this.root, dir, name)),
+			);
+		if (
+			this.moving ||
+			this.installs.size > 0 ||
+			this.gpu.reserved > 0 ||
+			(await lockedHere("blobs")) ||
+			(await lockedHere("engines"))
+		) {
+			throw new ValidationError(
+				"Models are in use; try again once nothing is installing or generating",
+				"modelsBusy",
+			);
+		}
+		try {
+			await mkdir(here, { recursive: true });
+			const probe = join(here, `.open-reel-${crypto.randomUUID()}`);
+			await Bun.write(probe, "");
+			await rm(probe);
+		} catch {
+			throw new ValidationError(
+				`Cannot write to ${here}`,
+				"folderNotWritable",
+				{ path: here },
+			);
+		}
+		let totalBytes = 0;
+		for (const entry of MOVED_ENTRIES) {
+			totalBytes += await treeSize(join(this.root, entry));
+		}
+		// Within one disk files are renamed and take no room.
+		const [from, to] = await Promise.all([stat(this.root), stat(here)]).catch(
+			() => [null, null],
+		);
+		if (from && to && from.dev !== to.dev) {
+			const info = await statfs(here);
+			const freeBytes = info.bavail * info.bsize;
+			if (totalBytes > freeBytes) {
+				throw new ValidationError(
+					`Not enough disk space: ${formatBytes(totalBytes)} needed, ${formatBytes(freeBytes)} free`,
+					"notEnoughDisk",
+					{ neededBytes: totalBytes, freeBytes },
+				);
+			}
+		}
+
+		const moving = { to: here, movedBytes: 0, totalBytes };
+		this.moving = moving;
+		this.moveError = null;
+		this.emit({ type: "models.moving", ...moving });
+		// Across disks it takes minutes: it goes on after the answer, telling
+		// how far it is, and a failure shows with the folder.
+		this.moveTask = this.move(here, file, moving);
+	}
+
+	private async move(
+		here: string,
+		file: string,
+		moving: NonNullable<LocalModelsView["disk"]["moving"]>,
+	): Promise<void> {
+		let reported = 0;
+		const report = (bytes: number) => {
+			moving.movedBytes += bytes;
+			const now = Date.now();
+			if (now - reported < PROGRESS_INTERVAL_MS) return;
+			reported = now;
+			this.emit({ type: "models.moving", ...moving });
+		};
+		const moved: Moved[] = [];
+		try {
+			for (const entry of MOVED_ENTRIES) {
+				await moveInto(
+					join(this.root, entry),
+					join(here, entry),
+					report,
+					moved,
+				);
+			}
+			await Bun.write(file, JSON.stringify({ path: portablePath(here) }));
+			this.moving = null;
+			this.switchTo(here);
+		} catch (error) {
+			await moveBack(moved);
+			const reason = error instanceof Error ? error.message : String(error);
+			this.moveError = describeError(
+				new CodedError(
+					`Could not move the models: ${reason}`,
+					"modelsMoveFailed",
+					{ reason },
+				),
+			);
+			this.moving = null;
+			this.emit({ type: "models.changed" });
+		}
+	}
+
+	/** Uses the folder another open-reel chose, once nothing runs here. */
+	private async follow(): Promise<void> {
+		if (
+			!this.locationFile ||
+			this.moving ||
+			this.installs.size > 0 ||
+			this.gpu.reserved > 0
+		) {
+			return;
+		}
+		const chosen = await Bun.file(this.locationFile)
+			.json()
+			.then((body: { path?: unknown }) =>
+				typeof body.path === "string" ? pathHere(body.path) : null,
+			)
+			.catch(() => null);
+		if (chosen && !samePath(chosen, this.root)) this.switchTo(chosen);
+	}
+
+	private switchTo(root: string): void {
+		this.root = root;
+		this.gpu.moveTo(root);
+		this.emit({ type: "models.changed" });
 	}
 
 	/** What it takes to run an installed model on this machine. */
@@ -1154,6 +1355,7 @@ export class LocalModelStore {
 
 	/** Resolves once no install is queued or running. */
 	async idle(): Promise<void> {
+		await this.moveTask;
 		while (this.installs.size > 0) await this.queue;
 	}
 

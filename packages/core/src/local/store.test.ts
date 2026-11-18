@@ -810,6 +810,86 @@ test("two open-reels installing the same model download each file once", async (
 	expect((await first.blobs()).filter((n) => n.endsWith(".lock"))).toEqual([]);
 });
 
+test("models move to another folder, and stay there for every open-reel", async () => {
+	const first = await setup();
+	const locationFile = join(first.root, "..", `${crypto.randomUUID()}.json`);
+	const store = new LocalModelStore({
+		root: first.root,
+		catalog: CATALOG,
+		engines: ENGINES,
+		fetch: first.fetch,
+		hardware: async () => machine(24),
+		checkEngine: async () => null,
+		locationFile,
+	});
+	await store.install("a");
+	await store.idle();
+	const used = (await store.list()).disk.usedBytes;
+	expect((await store.list()).disk.changeable).toBe(true);
+
+	const target = await mkdtemp(join(tmpdir(), "open-reel-target-"));
+	dirs.push(target, locationFile);
+	const moving: number[] = [];
+	store.subscribe((event) => {
+		if (event.type === "models.moving") moving.push(event.movedBytes);
+	});
+	await store.relocate(target);
+	await store.idle();
+
+	const view = await store.list();
+	expect(view.disk.path).toBe(target);
+	expect(view.disk.usedBytes).toBe(used);
+	expect(view.disk.moving).toBeNull();
+	expect(view.models.find((m) => m.id === "a")?.ready).toBe(true);
+	expect(moving.at(-1)).toBeGreaterThan(0);
+	expect(await readdir(join(first.root, "blobs")).catch(() => [])).toEqual([]);
+	// Written where every open-reel sharing the default folder reads it.
+	expect(await Bun.file(locationFile).json()).toEqual({ path: target });
+
+	// Another open-reel, still on the old folder, follows.
+	const other = new LocalModelStore({
+		root: first.root,
+		catalog: CATALOG,
+		engines: ENGINES,
+		hardware: async () => machine(24),
+		locationFile,
+	});
+	expect((await other.list()).disk.path).toBe(target);
+});
+
+test("moving the models is refused while they are in use, or without a place to write it down", async () => {
+	const { store, root } = await setup();
+	await expect(store.relocate("/elsewhere")).rejects.toMatchObject({
+		code: "modelsFolderFixed",
+	});
+	expect((await store.list()).disk.changeable).toBe(false);
+
+	const locationFile = join(root, "location.json");
+	const movable = new LocalModelStore({
+		root,
+		catalog: CATALOG,
+		engines: ENGINES,
+		hardware: async () => machine(24),
+		locationFile,
+	});
+	await expect(movable.relocate("relative/path")).rejects.toMatchObject({
+		code: "folderNotAbsolute",
+	});
+	await expect(movable.relocate(join(root, "inside"))).rejects.toMatchObject({
+		code: "folderInside",
+	});
+	// A local job holds the GPU.
+	const it = movable.gpu.acquire(1, new AbortController().signal);
+	let held = await it.next();
+	while (!held.done) held = await it.next();
+	const target = await mkdtemp(join(tmpdir(), "open-reel-target-"));
+	dirs.push(target);
+	await expect(movable.relocate(target)).rejects.toMatchObject({
+		code: "modelsBusy",
+	});
+	held.value.release();
+});
+
 test("removing a model leaves a file another open-reel is downloading", async () => {
 	const first = await setup();
 	await first.store.install("a");
