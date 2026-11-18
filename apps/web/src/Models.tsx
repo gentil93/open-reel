@@ -233,6 +233,8 @@ function taskText(t: I18n["t"], task: LocalModelTask): string {
 			return t("models.task.imageEdit");
 		case "image-to-image":
 			return t("models.task.imageToImage");
+		case "upscale":
+			return t("models.task.upscale");
 		case "text-to-video":
 			return t("models.task.textToVideo");
 		case "image-to-video":

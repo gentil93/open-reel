@@ -74,6 +74,11 @@ export interface ModelCapabilities {
 	 */
 	mask?: number;
 	/**
+	 * Set for a model that only makes its reference larger and sharper: how
+	 * many times. It takes no words, and makes nothing from words alone.
+	 */
+	upscale?: number;
+	/**
 	 * Video lengths in seconds the model can produce, ascending. Absent or empty
 	 * means the length cannot be chosen.
 	 */
@@ -372,6 +377,8 @@ export interface LocalModelDefaults {
 	references?: { as: "ref" | "init"; max: number };
 	/** More engine options this model needs, e.g. `["--diffusion-fa"]`. */
 	engineArgs?: string[];
+	/** Upscalers: how many times larger the picture comes out. */
+	upscale?: number;
 }
 
 /** What a local model makes, and from what. */
@@ -382,6 +389,8 @@ export type LocalModelTask =
 	| "image-edit"
 	/** A picture redrawn from another, as much as asked, and words. */
 	| "image-to-image"
+	/** A picture made larger and sharper, without words. */
+	| "upscale"
 	/** A video from words. */
 	| "text-to-video"
 	/** A video that starts from a picture. */

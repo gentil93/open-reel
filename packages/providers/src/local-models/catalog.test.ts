@@ -46,13 +46,15 @@ describe("the local models catalog", () => {
 				(t) =>
 					t === "image-edit" ||
 					t === "image-to-video" ||
-					t === "image-to-image",
+					t === "image-to-image" ||
+					t === "upscale",
 			);
 			expect(Boolean(model.defaults.references), model.id).toBe(takes);
 			// Redrawing and animating start from the picture; editing follows it.
 			if (
 				model.tasks.includes("image-to-video") ||
-				model.tasks.includes("image-to-image")
+				model.tasks.includes("image-to-image") ||
+				model.tasks.includes("upscale")
 			) {
 				expect(model.defaults.references?.as, model.id).toBe("init");
 			}

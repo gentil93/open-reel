@@ -900,7 +900,10 @@ export function Picker(props: {
 	);
 	const [allLocal, setAllLocal] = useState(false);
 	const localModels = sortLocal(
-		(local.data?.models ?? []).filter((m) => m.media === props.media),
+		// An upscaler is offered on pictures made, not to make them.
+		(local.data?.models ?? []).filter(
+			(m) => m.media === props.media && !m.tasks.includes("upscale"),
+		),
 	);
 	// Models that cannot run well here wait behind a button, so the ones
 	// worth choosing come first.

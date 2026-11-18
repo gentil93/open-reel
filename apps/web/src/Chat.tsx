@@ -61,6 +61,8 @@ function JobCard(props: {
 	model: ModelSpec | undefined;
 	onOpen(item: LightboxItem): void;
 	onUseAsReference(assetId: string): void;
+	/** Makes a picture larger, when an upscaler is installed: by how much. */
+	upscale?: { factor: number; busy: boolean; run(assetId: string): void };
 }) {
 	const { job, model } = props;
 	const i18n = useI18n();
@@ -242,6 +244,18 @@ function JobCard(props: {
 								>
 									{t("common.useAsReference")}
 								</button>
+								{props.upscale && model?.capabilities.upscale == null && (
+									<button
+										type="button"
+										onClick={() => props.upscale?.run(asset.id)}
+										disabled={props.upscale.busy}
+										className={`${overlay} right-2 bottom-2 disabled:opacity-40`}
+									>
+										{t("job.upscale", {
+											factor: i18n.number(props.upscale.factor),
+										})}
+									</button>
+								)}
 							</div>
 						);
 					})}
@@ -256,6 +270,7 @@ function TurnBlock(props: {
 	models: Map<string, ModelSpec>;
 	onOpen(item: LightboxItem): void;
 	onUseAsReference(assetId: string): void;
+	upscale?: { factor: number; busy: boolean; run(assetId: string): void };
 }) {
 	const { turn } = props;
 	const { t } = useI18n();
@@ -296,6 +311,7 @@ function TurnBlock(props: {
 						model={props.models.get(job.modelId)}
 						onOpen={props.onOpen}
 						onUseAsReference={props.onUseAsReference}
+						upscale={props.upscale}
 					/>
 				))}
 			</div>
@@ -374,14 +390,21 @@ export function Chat({
 	}, [turnCount]);
 
 	const create = useMutation({
-		mutationFn: (draft: Draft) =>
-			api.createTurn({ ...draft, sessionId, referenceAssetIds: references }),
-		onSuccess: ({ session: created, turn }) => {
+		mutationFn: (draft: Draft & { referenceAssetIds?: string[] }) =>
+			api.createTurn({
+				...draft,
+				sessionId,
+				referenceAssetIds: draft.referenceAssetIds ?? references,
+			}),
+		onSuccess: ({ session: created, turn }, draft) => {
 			markWelcomed();
-			// Drop only what was sent; more may have been added meanwhile.
-			setReferences((current) =>
-				current.filter((id) => !turn.referenceAssetIds.includes(id)),
-			);
+			// Drop only what was sent from the composer; more may have been
+			// added meanwhile. A turn that brought its own pictures sent none.
+			if (!draft.referenceAssetIds) {
+				setReferences((current) =>
+					current.filter((id) => !turn.referenceAssetIds.includes(id)),
+				);
+			}
 			client.setQueryData<SessionDetail>(["session", created.id], (current) =>
 				current?.turns.some((t) => t.id === turn.id)
 					? current
@@ -403,6 +426,23 @@ export function Chat({
 	});
 
 	const byId = new Map(models.data?.map((m) => [m.id, m]));
+	// An installed upscaler enlarges any picture made, as a turn of its own.
+	const upscaler = models.data?.find((m) => m.capabilities.upscale != null);
+	const factor = upscaler?.capabilities.upscale;
+	const upscale =
+		upscaler && factor != null
+			? {
+					factor,
+					busy: create.isPending,
+					run: (assetId: string) =>
+						create.mutate({
+							prompt: t("job.upscale", { factor: i18n.number(factor) }),
+							modelIds: [upscaler.id],
+							count: 1,
+							referenceAssetIds: [assetId],
+						}),
+				}
+			: undefined;
 	const loadError = session.error ?? models.error ?? providers.error;
 
 	return (
@@ -443,6 +483,7 @@ export function Chat({
 							models={byId}
 							onOpen={setOpen}
 							onUseAsReference={addReference}
+							upscale={upscale}
 						/>
 					))}
 					<div ref={end} />

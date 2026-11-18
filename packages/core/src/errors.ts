@@ -34,6 +34,7 @@ export const ERROR_CODES = [
 	"modelsMoving",
 	"noApiKey",
 	"noModel",
+	"needsPicture",
 	"noMask",
 	"noReferences",
 	"noResult",

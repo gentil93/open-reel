@@ -58,6 +58,8 @@ export function bestLocal(
 		.filter(
 			(m) =>
 				m.media === media &&
+				// An upscaler only enlarges pictures it is given.
+				!m.tasks.includes("upscale") &&
 				m.variant != null &&
 				(localFit(m) === "gpu" || localFit(m) === "offload"),
 		)
@@ -78,7 +80,7 @@ export function categoryOf(
 	model: Pick<LocalModelStatus, "tasks">,
 ): LocalCategory {
 	const main = model.tasks[0];
-	if (main === "image-edit") return "edit";
+	if (main === "image-edit" || main === "upscale") return "edit";
 	if (main === "text-to-video" || main === "image-to-video") return "video";
 	return "image";
 }
@@ -90,7 +92,7 @@ export function inCategory(
 ): boolean {
 	return model.tasks.some((task) =>
 		category === "edit"
-			? task === "image-edit" || task === "image-to-image"
+			? task === "image-edit" || task === "image-to-image" || task === "upscale"
 			: category === "video"
 				? task === "text-to-video" || task === "image-to-video"
 				: task === "text-to-image",
@@ -170,7 +172,12 @@ export function firstModel(
 ): ModelSpec | undefined {
 	const ready = readyProviders(providers);
 	return models
-		.filter((m) => m.media === "image" && ready.has(m.providerId))
+		.filter(
+			(m) =>
+				m.media === "image" &&
+				m.capabilities.upscale == null &&
+				ready.has(m.providerId),
+		)
 		.sort((a, b) => price(a) - price(b))[0];
 }
 

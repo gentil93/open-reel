@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "./i18n";
 
 interface Props {
@@ -67,10 +67,12 @@ export function Extend({ src, onDone, onClose }: Props) {
 		place: { x: number; y: number };
 	} | null>(null);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: loaded once per picture
 	useEffect(() => {
 		dialog.current?.showModal();
 		const loaded = new Image();
 		loaded.onload = () => setImage(loaded);
+		loaded.onerror = () => setError(t("extend.cannotLoad"));
 		loaded.src = src;
 	}, [src]);
 
@@ -101,18 +103,25 @@ export function Extend({ src, onDone, onClose }: Props) {
 				}
 			: null;
 
+	/**
+	 * A tiny copy, stretched over the whole canvas, is a blur every browser
+	 * can draw, and gives the new part the picture's light and colours.
+	 */
+	const tiny = useMemo(() => {
+		if (!image) return null;
+		const canvas = document.createElement("canvas");
+		canvas.width = 12;
+		canvas.height = 12;
+		canvas.getContext("2d")?.drawImage(image, 0, 0, 12, 12);
+		return canvas;
+	}, [image]);
+
 	/** Draws the larger picture: the new part blurred from the old one's colours. */
 	const draw = (canvas: HTMLCanvasElement, width: number, height: number) => {
 		const context = canvas.getContext("2d");
-		if (!context || !image || !box) return false;
+		if (!context || !image || !box || !tiny) return false;
 		canvas.width = width;
 		canvas.height = height;
-		// A tiny copy stretched over the whole canvas is a blur every browser
-		// can draw, and gives the new part the picture's light and colours.
-		const tiny = document.createElement("canvas");
-		tiny.width = 12;
-		tiny.height = 12;
-		tiny.getContext("2d")?.drawImage(image, 0, 0, 12, 12);
 		context.imageSmoothingEnabled = true;
 		context.imageSmoothingQuality = "high";
 		context.drawImage(tiny, 0, 0, width, height);

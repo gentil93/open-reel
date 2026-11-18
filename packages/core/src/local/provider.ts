@@ -22,12 +22,15 @@ import { WarmEngines } from "./warm";
 export interface LocalHandle {
 	modelId: string;
 	params: GenerationParams;
-	/** Pictures the person gave, written to the scratch folder at submit. */
-	references?: string[];
+	/**
+	 * Pictures the person gave, made ready for the engine. They are written
+	 * to files for each run, so a run tried again finds them there too.
+	 */
+	pictures?: { data: Uint8Array; extension: string }[];
 	/** The size to make, when it follows a picture being redrawn. */
 	size?: { width: number; height: number };
-	/** What of the picture to redraw, written to the scratch folder at submit. */
-	mask?: string;
+	/** What of the picture to redraw, made ready for the engine. */
+	mask?: Uint8Array;
 }
 
 /** Turns a path into one the engine can open, e.g. a Windows path under WSL. */
@@ -109,6 +112,7 @@ const ROLE_OPTIONS: Record<string, string> = {
 	llm: "--llm",
 	llm_vision: "--llm_vision",
 	tokenizer: "--tokenizer",
+	upscale_model: "--upscale-model",
 	"embeddings-connectors": "--embeddings-connectors",
 };
 
@@ -143,8 +147,18 @@ export function dimensions(
 
 /** A picture model that starts from a picture: image-to-image. */
 export function redraws(model: LocalModelSpec): boolean {
-	return model.media === "image" && model.defaults.references?.as === "init";
+	return (
+		model.media === "image" &&
+		model.defaults.references?.as === "init" &&
+		model.defaults.upscale == null
+	);
 }
+
+/**
+ * The longest side a picture is upscaled from: four times larger it is
+ * already over 6000 pixels, and the engine's memory grows with it.
+ */
+export const MAX_UPSCALE_INPUT = 1536;
 
 /**
  * Steps to ask for when redrawing: the engine runs only `steps × strength`
@@ -169,6 +183,16 @@ export async function engineArguments(
 	/** What of the redrawn picture to change: white is redrawn. */
 	mask?: string,
 ): Promise<string[]> {
+	if (defaults.upscale != null) {
+		const [picture] = references;
+		if (!picture) throw new Error("An upscaler needs a picture");
+		const args = ["-M", "upscale"];
+		for (const [role, file] of Object.entries(runtime.files)) {
+			args.push(roleOption(role), await path(file));
+		}
+		args.push("-i", await path(picture), "-o", await path(output));
+		return [...args, ...modelOptions(runtime)];
+	}
 	const video = runtime.model.media === "video";
 	const { width, height } =
 		size ??
@@ -358,13 +382,18 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 				media: model.media,
 				operations: operationsOf(model),
 				capabilities: {
-					aspectRatios: model.defaults.aspectRatios,
+					aspectRatios: model.defaults.upscale
+						? []
+						: model.defaults.aspectRatios,
 					seed: true,
 					maxCount: 1,
 					maxReferenceImages: model.defaults.references?.max ?? 0,
 					...(redraws(model) && {
 						strength: DEFAULT_STRENGTH,
 						mask: DEFAULT_MASK_STRENGTH,
+					}),
+					...(model.defaults.upscale != null && {
+						upscale: model.defaults.upscale,
 					}),
 					...(model.defaults.durations && {
 						durations: model.defaults.durations,
@@ -383,63 +412,63 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 		const spec = this.catalog.find((m) => m.id === handle.modelId);
 		const max = spec?.defaults.references?.max ?? 0;
 		if (!spec || request.references.length === 0 || max === 0) return handle;
-		// The engine reads pictures from files, kept next to its output.
-		const { scratch } = await this.store.runtime(handle.modelId);
-		await mkdir(scratch, { recursive: true });
 		const [first] = request.references;
+		const readable = (data: Uint8Array) => {
+			const picture = new Bun.Image(data);
+			return picture
+				.metadata()
+				.then((size) => ({ picture, ...size }))
+				.catch(() => {
+					throw new ValidationError(
+						"The reference picture cannot be read",
+						"referenceUnreadable",
+					);
+				});
+		};
+		if (spec.defaults.upscale != null && first) {
+			// As a PNG the engine surely reads, no larger than it can take.
+			const { picture, width, height } = await readable(first.data);
+			const shrink = Math.max(width, height) > MAX_UPSCALE_INPUT;
+			const data = await (shrink
+				? picture.resize(MAX_UPSCALE_INPUT, MAX_UPSCALE_INPUT, {
+						fit: "inside",
+					})
+				: picture
+			)
+				.png()
+				.bytes();
+			handle.pictures = [{ data, extension: "png" }];
+			return handle;
+		}
 		if (redraws(spec) && first) {
 			// The new picture keeps the old one's shape, at the model's size;
 			// the engine is given it at exactly that size.
-			const picture = new Bun.Image(first.data);
-			const { width, height } = await picture.metadata().catch(() => {
-				throw new ValidationError(
-					"The reference picture cannot be read",
-					"referenceUnreadable",
-				);
-			});
-			handle.size = dimensions(spec.defaults.size, `${width}:${height}`);
-			const path = join(scratch, `${crypto.randomUUID()}.png`);
-			await Bun.write(
-				path,
-				await picture
-					.resize(handle.size.width, handle.size.height, { fit: "fill" })
-					.png()
-					.bytes(),
-			);
-			handle.references = [path];
+			const { picture, width, height } = await readable(first.data);
+			const size = dimensions(spec.defaults.size, `${width}:${height}`);
+			handle.size = size;
+			handle.pictures = [
+				{
+					data: await picture
+						.resize(size.width, size.height, { fit: "fill" })
+						.png()
+						.bytes(),
+					extension: "png",
+				},
+			];
 			if (request.mask) {
-				const { width: wide, height: high } = handle.size;
-				const maskPath = join(scratch, `${crypto.randomUUID()}-mask.png`);
-				try {
-					// Marked on the picture as shown: stretched the same way.
-					const marked = new Bun.Image(request.mask.data);
-					await marked.metadata().catch(() => {
-						throw new ValidationError(
-							"The mask cannot be read",
-							"referenceUnreadable",
-						);
-					});
-					await Bun.write(
-						maskPath,
-						await marked.resize(wide, high, { fit: "fill" }).png().bytes(),
-					);
-				} catch (error) {
-					// No job will run to remove what was written for it.
-					await rm(path, { force: true });
-					await rm(maskPath, { force: true });
-					throw error;
-				}
-				handle.mask = maskPath;
+				// Marked on the picture as shown: stretched the same way.
+				const marked = await readable(request.mask.data);
+				handle.mask = await marked.picture
+					.resize(size.width, size.height, { fit: "fill" })
+					.png()
+					.bytes();
 			}
 			return handle;
 		}
-		handle.references = [];
-		for (const reference of request.references.slice(0, max)) {
-			const extension = reference.mime.split("/")[1] ?? "png";
-			const path = join(scratch, `${crypto.randomUUID()}.${extension}`);
-			await Bun.write(path, reference.data);
-			handle.references.push(path);
-		}
+		handle.pictures = request.references.slice(0, max).map((reference) => ({
+			data: reference.data,
+			extension: reference.mime.split("/")[1] ?? "png",
+		}));
 		return handle;
 	}
 
@@ -465,7 +494,8 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 		if (
 			this.warm &&
 			!video &&
-			!handle.references?.length &&
+			!handle.pictures?.length &&
+			runtime.model.defaults.upscale == null &&
 			!runtime.throughWindows &&
 			server !== runtime.executable &&
 			(await Bun.file(server).exists())
@@ -506,14 +536,32 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 				// The server would not start; run the engine once instead.
 			}
 		}
-		const hold = yield* this.store.gpu.acquire(
-			runtime.variant.memoryBytes,
-			ctx.signal,
-		);
+		// Written for this run and removed after it: a run tried again
+		// writes them anew.
+		const written: string[] = [];
+		const write = async (data: Uint8Array, name: string) => {
+			const file = join(runtime.scratch, `${crypto.randomUUID()}${name}`);
+			written.push(file);
+			await Bun.write(file, data);
+			return file;
+		};
 		try {
-			yield* this.once(runtime, handle, ctx, output, path);
+			const references: string[] = [];
+			for (const picture of handle.pictures ?? []) {
+				references.push(await write(picture.data, `.${picture.extension}`));
+			}
+			const mask = handle.mask && (await write(handle.mask, "-mask.png"));
+			const hold = yield* this.store.gpu.acquire(
+				runtime.variant.memoryBytes,
+				ctx.signal,
+			);
+			try {
+				yield* this.once(runtime, handle, ctx, output, path, references, mask);
+			} finally {
+				hold.release();
+			}
 		} finally {
-			hold.release();
+			for (const file of written) await rm(file, { force: true });
 		}
 	}
 
@@ -524,6 +572,8 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 		ctx: ProviderContext,
 		output: string,
 		path: PathMapper,
+		references: string[],
+		mask: string | undefined,
 	): AsyncIterable<ProviderEvent> {
 		const video = runtime.model.media === "video";
 		const argv = [
@@ -534,9 +584,9 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 				handle.params,
 				output,
 				path,
-				handle.references,
+				references,
 				handle.size,
-				handle.mask,
+				mask,
 			)),
 		];
 		// The engine writes the picture as it forms, numbered from 000.
@@ -650,10 +700,6 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 		} finally {
 			child.kill();
 			await rm(output, { force: true });
-			for (const reference of handle.references ?? []) {
-				await rm(reference, { force: true });
-			}
-			if (handle.mask) await rm(handle.mask, { force: true });
 			for (let i = 0; i <= nextPreview + PREVIEWS_PER_JOB; i++) {
 				await rm(previewFile(i), { force: true });
 			}

@@ -11,9 +11,11 @@ import {
 	type LocalModelSpec,
 	LocalProvider,
 	type LocalRuntime,
+	MAX_UPSCALE_INPUT,
 	type ProviderEvent,
 	previewInterval,
 	redrawSteps,
+	roleOption,
 	type Spawn,
 	samplingProgress,
 } from "../index";
@@ -70,6 +72,20 @@ const WAN: LocalModelSpec = {
 		fps: 16,
 		durations: [2, 5],
 		negativePrompt: "static",
+	},
+};
+
+/** A model that only makes pictures larger. */
+const UPSCALER: LocalModelSpec = {
+	...FLUX,
+	id: "upscaler",
+	tasks: ["upscale"],
+	defaults: {
+		...FLUX.defaults,
+		aspectRatios: [],
+		steps: 1,
+		references: { as: "init", max: 1 },
+		upscale: 4,
 	},
 };
 
@@ -664,6 +680,82 @@ describe("running", () => {
 		const argv = calls[0] ?? [];
 		const after = (flag: string) => argv[argv.indexOf(flag) + 1];
 		expect([after("-W"), after("-H")]).toEqual(["512", "1024"]);
+	});
+
+	test("an upscaler enlarges the picture it is given, and nothing else", async () => {
+		const { provider, fake, calls, dir } = await setup(UPSCALER);
+		let given: Uint8Array = new Uint8Array();
+		const spawn: Spawn = (argv) => {
+			given = new Uint8Array(
+				readFileSync(argv[argv.indexOf("-i") + 1] as string),
+			);
+			return fake([])(argv);
+		};
+		const local = provider(spawn);
+		await local.load();
+		const [model] = local.listModels();
+		expect(model?.operations).toEqual(["edit"]);
+		expect(model?.capabilities).toMatchObject({
+			upscale: 4,
+			maxReferenceImages: 1,
+			aspectRatios: [],
+		});
+		expect(model?.capabilities.strength).toBeUndefined();
+		expect(model?.capabilities.mask).toBeUndefined();
+		const events = await run(local, undefined, [
+			{ data: picture(3000, 1500), mime: "image/png" },
+		]);
+		expect(events.at(-1)?.type).toBe("completed");
+		const argv = calls[0] ?? [];
+		expect(argv.slice(1, 3)).toEqual(["-M", "upscale"]);
+		// Its weights go by their role, as every model's files do.
+		expect(roleOption("upscale_model")).toBe("--upscale-model");
+		expect(argv[argv.indexOf("-o") + 1]).toEndWith(".png");
+		for (const flag of ["-p", "--steps", "--strength", "-W", "--preview"]) {
+			expect(argv).not.toContain(flag);
+		}
+		// Larger pictures are brought down first: four times them is too much.
+		expect(await new Bun.Image(given).metadata()).toMatchObject({
+			width: MAX_UPSCALE_INPUT,
+			height: MAX_UPSCALE_INPUT / 2,
+			format: "png",
+		});
+		expect(await readdir(dir)).toEqual([]);
+	});
+
+	test("a run tried again finds its pictures again", async () => {
+		const { provider, fake, calls, dir } = await setup(REDRAW);
+		const seen: string[] = [];
+		const spawn: Spawn = (argv) => {
+			const file = argv[argv.indexOf("-i") + 1] as string;
+			seen.push(readFileSync(file).byteLength > 0 ? "found" : "empty");
+			return fake([], seen.length === 1 ? 1 : 0)(argv);
+		};
+		const local = provider(spawn);
+		await local.load();
+		const [model] = local.listModels();
+		const handle = await local.submit({
+			model: model as never,
+			params: params(),
+			references: [{ data: picture(64, 64), mime: "image/png" }],
+			mask: { data: picture(64, 64), mime: "image/png" },
+		});
+		const runOnce = async () => {
+			const events: ProviderEvent[] = [];
+			for await (const event of local.events(handle, {
+				apiKey: undefined,
+				signal: new AbortController().signal,
+			})) {
+				events.push(event);
+			}
+			return events.at(-1)?.type;
+		};
+		// The engine dies the first time; the job engine tries the same handle.
+		expect(await runOnce()).toBe("failed");
+		expect(await runOnce()).toBe("completed");
+		expect(seen).toEqual(["found", "found"]);
+		expect(calls[1]).toContain("--mask");
+		expect(await readdir(dir)).toEqual([]);
 	});
 
 	test("a failing engine reports its last error line", async () => {

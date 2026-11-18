@@ -50,6 +50,13 @@ export function adaptParams(
 					{ model: model.name, count: caps.maxReferenceImages },
 				);
 	}
+	if (caps.upscale != null && params.referenceAssetIds.length === 0) {
+		throw new ValidationError(
+			`${model.name} needs a picture to work on`,
+			"needsPicture",
+			{ model: model.name },
+		);
+	}
 	if (params.maskAssetId != null) {
 		// A mask marks one picture: with none, or several, it marks nothing.
 		if (params.referenceAssetIds.length !== 1) {

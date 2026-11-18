@@ -213,6 +213,25 @@ describe("turns", () => {
 		).rejects.toMatchObject({ code: "referenceNotFound" });
 	});
 
+	test("an upscaler is refused without a picture to enlarge", () => {
+		const upscaler = {
+			...CLIP,
+			capabilities: {
+				...CLIP.capabilities,
+				maxReferenceImages: 1,
+				upscale: 4,
+			},
+		};
+		const params = { prompt: "x", count: 1, extras: {} };
+		expect(() =>
+			adaptParams(upscaler, { ...params, referenceAssetIds: [] }),
+		).toThrow(expect.objectContaining({ code: "needsPicture" }));
+		expect(
+			adaptParams(upscaler, { ...params, referenceAssetIds: ["a"] })
+				.referenceAssetIds,
+		).toEqual(["a"]);
+	});
+
 	test("a model that cannot take a mask is refused one", () => {
 		const params = {
 			prompt: "x",

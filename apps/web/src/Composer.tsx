@@ -112,7 +112,10 @@ export function Composer(props: Props) {
 	};
 	// Images and videos are chosen separately: they differ in cost by orders of
 	// magnitude, and nobody compares one against the other.
-	const offered = models.filter((m) => m.media === media);
+	// An upscaler is offered on pictures made, not here.
+	const offered = models.filter(
+		(m) => m.media === media && m.capabilities.upscale == null,
+	);
 	const selected = offered.filter((m) => chosen.includes(m.id) && !blocked(m));
 	const offeredRatios = [
 		...new Set(selected.flatMap((m) => m.capabilities.aspectRatios)),
