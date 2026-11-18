@@ -245,6 +245,8 @@ export class LocalModelStore {
 	private checkEngine: (executable: string) => Promise<string | null>;
 	/** Builds that were installed here and did not run. */
 	private broken = new Set<string>();
+	/** The models ready when the store last looked, to notice outside changes. */
+	private lastReady: string | null = null;
 	private listeners = new Set<LocalModelListener>();
 	private installs = new Map<string, Install>();
 	private errors = new Map<string, ReturnType<typeof describeError>>();
@@ -539,6 +541,18 @@ export class LocalModelStore {
 			usedBytes += sizes.get(hash) ?? (await sizeOf(this.blob(hash)));
 		}
 		for (const bytes of disk.partial.values()) usedBytes += bytes;
+		// Another open-reel sharing this folder (the desktop app and open-reel
+		// under WSL do) may have installed or deleted a model: say so, as for
+		// a change made here.
+		const ready = models
+			.filter((m) => m.ready)
+			.map((m) => m.id)
+			.join();
+		if (this.lastReady != null && ready !== this.lastReady) {
+			this.lastReady = ready;
+			this.emit({ type: "models.changed" });
+		}
+		this.lastReady = ready;
 		return {
 			hardware,
 			engines,

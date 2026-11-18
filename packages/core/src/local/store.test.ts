@@ -710,3 +710,21 @@ test("when no engine runs here, the install says why", async () => {
 	expect(failed.errorCode).toBe("engineDoesNotRun");
 	expect(failed.errorParams).toEqual({ reason: "the program was blocked" });
 });
+
+test("a model installed by another open-reel on the same folder is noticed", async () => {
+	const first = await setup();
+	await first.store.install("a");
+	await first.store.idle();
+
+	// A second process on the same folder, started before the install...
+	const { root } = first;
+	const other = await setup({ root });
+	const events: string[] = [];
+	other.store.subscribe((event) => events.push(event.type));
+	await other.store.list();
+	expect(events).toEqual([]);
+	// ...sees a model removed by the first one and says so.
+	await first.store.remove("a");
+	await other.store.list();
+	expect(events).toEqual(["models.changed"]);
+});
