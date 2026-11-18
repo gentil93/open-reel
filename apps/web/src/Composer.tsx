@@ -3,6 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { api, assetUrl } from "./api";
 import { useI18n } from "./i18n";
+import { MaskPainter } from "./MaskPainter";
 import { PickerDialog } from "./Picker";
 
 export interface Draft {
@@ -13,6 +14,8 @@ export interface Draft {
 	durationSeconds?: number;
 	/** How much a model that redraws the reference changes it. */
 	strength?: number;
+	/** The area of the reference to redraw; the rest is kept. */
+	maskAssetId?: string;
 }
 
 interface Props {
@@ -59,6 +62,21 @@ export function Composer(props: Props) {
 	// Unset, the slider shows the chosen models' own strength.
 	const [moved, setStrength] = useState<number | null>(null);
 	const fileInput = useRef<HTMLInputElement>(null);
+	// The area of the reference to redraw, for the reference it was marked on.
+	const [mask, setMask] = useState<{
+		reference: string;
+		id: string;
+		/** The marks as painted, to show over the picture. */
+		marks: string;
+	} | null>(null);
+	const [painting, setPainting] = useState(false);
+	const [only] = references.length === 1 ? references : [];
+	const marked = only != null && mask?.reference === only ? mask : null;
+	const maskId = marked?.id ?? null;
+	// Marking an area is offered when a picture model here can use it.
+	const canMask = models.some(
+		(m) => m.media === "image" && m.capabilities.mask != null,
+	);
 
 	const ready = new Set(
 		providers.filter((p) => p.hasKey || !p.requiresKey).map((p) => p.id),
@@ -76,6 +94,9 @@ export function Composer(props: Props) {
 						count: model.capabilities.maxReferenceImages,
 					});
 		}
+		if (maskId && model.capabilities.mask == null) {
+			return t("composer.blocked.noMask", { model: model.name });
+		}
 		return null;
 	};
 	// Images and videos are chosen separately: they differ in cost by orders of
@@ -92,7 +113,12 @@ export function Composer(props: Props) {
 	// Some models redraw the reference picture: how much is up to the person.
 	const redrawer = selected.find((m) => m.capabilities.strength != null);
 	const redrawing = references.length > 0 && redrawer != null;
-	const strength = moved ?? redrawer?.capabilities.strength;
+	// A marked part is redrawn more than a whole picture, unless moved.
+	const strength =
+		moved ??
+		(maskId
+			? (redrawer?.capabilities.mask ?? redrawer?.capabilities.strength)
+			: redrawer?.capabilities.strength);
 	// A redrawn picture keeps the reference's shape: no ratio to choose.
 	const ratios =
 		redrawing && selected.every((m) => m.capabilities.strength != null)
@@ -132,6 +158,7 @@ export function Composer(props: Props) {
 				seconds != null && durations.includes(seconds) ? seconds : undefined,
 			// Unmoved, each model redraws by its own.
 			strength: redrawing && moved != null ? moved : undefined,
+			maskAssetId: maskId ?? undefined,
 		});
 		setPrompt("");
 	};
@@ -226,6 +253,14 @@ export function Composer(props: Props) {
 									alt={t("common.reference")}
 									className="size-16 rounded-md border border-line object-cover"
 								/>
+								{id === only && marked && (
+									// The marked area, as it was painted.
+									<img
+										src={marked.marks}
+										alt=""
+										className="absolute inset-0 size-16 rounded-md object-cover opacity-55"
+									/>
+								)}
 								<button
 									type="button"
 									aria-label={t("composer.removeReference")}
@@ -238,6 +273,26 @@ export function Composer(props: Props) {
 								</button>
 							</li>
 						))}
+						{only != null && canMask && (
+							<li className="flex flex-col items-start justify-center gap-1 text-sm">
+								<button
+									type="button"
+									onClick={() => setPainting(true)}
+									className="rounded-md border border-line px-2.5 py-1 text-dim hover:border-dim hover:text-ink"
+								>
+									{maskId ? t("composer.editArea") : t("composer.markArea")}
+								</button>
+								{maskId && (
+									<button
+										type="button"
+										onClick={() => setMask(null)}
+										className="px-1 text-xs text-dim underline hover:text-ink"
+									>
+										{t("composer.removeMask")}
+									</button>
+								)}
+							</li>
+						)}
 					</ul>
 				)}
 
@@ -379,6 +434,20 @@ export function Composer(props: Props) {
 					</button>
 				</div>
 			</div>
+			{painting && only != null && (
+				<MaskPainter
+					src={assetUrl(only)}
+					mask={maskId ? assetUrl(maskId) : null}
+					onDone={async (blob, marks) => {
+						const asset = await api.upload(
+							new File([blob], "mask.png", { type: "image/png" }),
+						);
+						setMask({ reference: only, id: asset.id, marks });
+						setPainting(false);
+					}}
+					onClose={() => setPainting(false)}
+				/>
+			)}
 			{picking && (
 				<PickerDialog
 					media={media}

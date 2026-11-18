@@ -50,6 +50,22 @@ export function adaptParams(
 					{ model: model.name, count: caps.maxReferenceImages },
 				);
 	}
+	if (params.maskAssetId != null) {
+		// A mask marks one picture: with none, or several, it marks nothing.
+		if (params.referenceAssetIds.length !== 1) {
+			throw new ValidationError(
+				"A mask needs exactly one reference image to redraw",
+				"maskWithoutReference",
+			);
+		}
+		if (caps.mask == null) {
+			throw new ValidationError(
+				`${model.name} cannot redraw only part of a picture`,
+				"noMask",
+				{ model: model.name },
+			);
+		}
+	}
 	const durations = caps.durations ?? [];
 	// Always explicit, so the stored parameters say what was actually asked for.
 	// Unasked, the shortest: providers bill video by the second.
@@ -71,10 +87,13 @@ export function adaptParams(
 				? params.aspectRatio
 				: undefined,
 		seed: caps.seed ? params.seed : undefined,
-		// Only what was used: a strength means something only when redrawing.
+		// Only what was used, and always said: a strength means something only
+		// when redrawing, and unasked it is the model's own.
 		strength:
 			caps.strength != null && params.referenceAssetIds.length > 0
-				? params.strength
+				? (params.strength ??
+					(params.maskAssetId != null ? caps.mask : undefined) ??
+					caps.strength)
 				: undefined,
 	};
 }
@@ -171,11 +190,12 @@ export class ReelService {
 			}
 			return model;
 		});
-		const references = await this.deps.repo.getAssets(
-			ctx,
-			params.referenceAssetIds,
-		);
-		if (references.length !== new Set(params.referenceAssetIds).size) {
+		const marked = [
+			...params.referenceAssetIds,
+			...(params.maskAssetId != null ? [params.maskAssetId] : []),
+		];
+		const references = await this.deps.repo.getAssets(ctx, marked);
+		if (references.length !== new Set(marked).size) {
 			throw new ValidationError(
 				"A reference image was not found",
 				"referenceNotFound",

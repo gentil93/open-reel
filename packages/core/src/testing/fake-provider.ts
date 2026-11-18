@@ -42,6 +42,8 @@ export interface FakeHandle {
 	prompt: string;
 	count: number;
 	aspectRatio?: string;
+	/** The mask's bytes, when one was given. */
+	mask?: Uint8Array;
 }
 
 /**
@@ -84,6 +86,7 @@ export class FakeProvider implements ProviderAdapter<FakeHandle> {
 				seed: true,
 				maxCount: 2,
 				maxReferenceImages: name === "alpha" ? 2 : 0,
+				...(name === "alpha" && { mask: 0.85 }),
 			},
 			pricing: { usdPerOutput: 0.01 },
 		}));
@@ -95,6 +98,7 @@ export class FakeProvider implements ProviderAdapter<FakeHandle> {
 			prompt: request.params.prompt,
 			count: request.params.count,
 			aspectRatio: request.params.aspectRatio,
+			...(request.mask && { mask: request.mask.data }),
 		};
 		this.submitted.push(handle);
 		return handle;

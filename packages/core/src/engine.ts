@@ -289,8 +289,17 @@ export class JobEngine {
 							ctx,
 							job.params.referenceAssetIds,
 						);
+						const [mask] =
+							job.params.maskAssetId != null
+								? await this.loadReferences(ctx, [job.params.maskAssetId])
+								: [];
 						handle = await adapter.submit(
-							{ model, params: job.params, references },
+							{
+								model,
+								params: job.params,
+								references,
+								...(mask && { mask }),
+							},
 							pctx,
 						);
 						// Only a resumable handle is worth storing; others can embed whole images.

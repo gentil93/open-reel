@@ -9,6 +9,7 @@ import type {
 	ProviderRequest,
 } from "../provider";
 import {
+	DEFAULT_MASK_STRENGTH,
 	DEFAULT_STRENGTH,
 	type GenerationParams,
 	type LocalModelDefaults,
@@ -25,6 +26,8 @@ export interface LocalHandle {
 	references?: string[];
 	/** The size to make, when it follows a picture being redrawn. */
 	size?: { width: number; height: number };
+	/** What of the picture to redraw, written to the scratch folder at submit. */
+	mask?: string;
 }
 
 /** Turns a path into one the engine can open, e.g. a Windows path under WSL. */
@@ -163,6 +166,8 @@ export async function engineArguments(
 	references: string[] = [],
 	/** The size to make instead of the ratio's, e.g. the redrawn picture's. */
 	size?: { width: number; height: number },
+	/** What of the redrawn picture to change: white is redrawn. */
+	mask?: string,
 ): Promise<string[]> {
 	const video = runtime.model.media === "video";
 	const { width, height } =
@@ -173,7 +178,9 @@ export async function engineArguments(
 			video ? 16 : 64,
 		);
 	const redrawing = redraws(runtime.model) && references.length > 0;
-	const strength = params.strength ?? DEFAULT_STRENGTH;
+	const masked = redrawing && mask != null;
+	const strength =
+		params.strength ?? (masked ? DEFAULT_MASK_STRENGTH : DEFAULT_STRENGTH);
 	const steps = redrawing
 		? redrawSteps(defaults.steps, strength)
 		: defaults.steps;
@@ -209,6 +216,7 @@ export async function engineArguments(
 		}
 	}
 	if (redrawing) args.push("--strength", String(strength));
+	if (masked) args.push("--mask", await path(mask));
 	args.push(...modelOptions(runtime));
 	if (video) {
 		const fps = defaults.fps ?? 16;
@@ -354,7 +362,10 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 					seed: true,
 					maxCount: 1,
 					maxReferenceImages: model.defaults.references?.max ?? 0,
-					...(redraws(model) && { strength: DEFAULT_STRENGTH }),
+					...(redraws(model) && {
+						strength: DEFAULT_STRENGTH,
+						mask: DEFAULT_MASK_STRENGTH,
+					}),
 					...(model.defaults.durations && {
 						durations: model.defaults.durations,
 					}),
@@ -396,6 +407,30 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 					.bytes(),
 			);
 			handle.references = [path];
+			if (request.mask) {
+				const { width: wide, height: high } = handle.size;
+				const maskPath = join(scratch, `${crypto.randomUUID()}-mask.png`);
+				try {
+					// Marked on the picture as shown: stretched the same way.
+					const marked = new Bun.Image(request.mask.data);
+					await marked.metadata().catch(() => {
+						throw new ValidationError(
+							"The mask cannot be read",
+							"referenceUnreadable",
+						);
+					});
+					await Bun.write(
+						maskPath,
+						await marked.resize(wide, high, { fit: "fill" }).png().bytes(),
+					);
+				} catch (error) {
+					// No job will run to remove what was written for it.
+					await rm(path, { force: true });
+					await rm(maskPath, { force: true });
+					throw error;
+				}
+				handle.mask = maskPath;
+			}
 			return handle;
 		}
 		handle.references = [];
@@ -501,6 +536,7 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 				path,
 				handle.references,
 				handle.size,
+				handle.mask,
 			)),
 		];
 		// The engine writes the picture as it forms, numbered from 000.
@@ -617,6 +653,7 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 			for (const reference of handle.references ?? []) {
 				await rm(reference, { force: true });
 			}
+			if (handle.mask) await rm(handle.mask, { force: true });
 			for (let i = 0; i <= nextPreview + PREVIEWS_PER_JOB; i++) {
 				await rm(previewFile(i), { force: true });
 			}

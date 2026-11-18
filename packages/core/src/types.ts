@@ -22,6 +22,11 @@ export const LOCAL_USER: UserContext = { userId: "local" };
 
 /** How much a redrawn picture changes when nobody said. */
 export const DEFAULT_STRENGTH = 0.7;
+/**
+ * The same for a marked part: less leaves what was asked for out, and more
+ * tends to grow a second subject inside the mark.
+ */
+export const DEFAULT_MASK_STRENGTH = 0.85;
 
 export const generationParamsSchema = z.object({
 	prompt: z.string().trim().min(1),
@@ -39,6 +44,11 @@ export const generationParamsSchema = z.object({
 	 * keeps it, 1 keeps only its colors and layout. Ignored by other models.
 	 */
 	strength: z.number().min(0.05).max(1).optional(),
+	/**
+	 * A picture the size of the reference marking what to redraw: white is
+	 * redrawn, black is kept. Only for models that take a mask.
+	 */
+	maskAssetId: z.string().optional(),
 	/** Model-specific parameters, passed through to the provider untouched. */
 	extras: z.record(z.string(), z.unknown()).default({}),
 });
@@ -58,6 +68,11 @@ export interface ModelCapabilities {
 	 * instead of following it as an example: the strength it uses unasked.
 	 */
 	strength?: number;
+	/**
+	 * Set when the model can redraw only part of its reference, marked by a
+	 * mask: the strength it uses there unasked.
+	 */
+	mask?: number;
 	/**
 	 * Video lengths in seconds the model can produce, ascending. Absent or empty
 	 * means the length cannot be chosen.

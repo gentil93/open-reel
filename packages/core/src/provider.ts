@@ -10,6 +10,8 @@ export interface ProviderRequest {
 	model: ModelSpec;
 	params: GenerationParams;
 	references: ReferenceImage[];
+	/** What of the first reference to redraw, when the person marked it. */
+	mask?: ReferenceImage;
 }
 
 export interface ProviderContext {

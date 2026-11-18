@@ -4,6 +4,7 @@ import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+	DEFAULT_MASK_STRENGTH,
 	DEFAULT_STRENGTH,
 	dimensions,
 	engineArguments,
@@ -543,6 +544,71 @@ describe("running", () => {
 		expect(await readdir(dir)).toEqual([]);
 	});
 
+	test("a mask reaches the engine at the size of the picture it marks", async () => {
+		const { provider, fake, calls, dir } = await setup(REDRAW);
+		let given: Uint8Array = new Uint8Array();
+		const spawn: Spawn = (argv) => {
+			given = new Uint8Array(
+				readFileSync(argv[argv.indexOf("--mask") + 1] as string),
+			);
+			return fake([])(argv);
+		};
+		const local = provider(spawn);
+		await local.load();
+		const [model] = local.listModels();
+		expect(model?.capabilities.mask).toBe(DEFAULT_MASK_STRENGTH);
+		const handle = await local.submit({
+			model: model as never,
+			params: params({ strength: 0.75 }),
+			references: [{ data: picture(1600, 900), mime: "image/png" }],
+			// Marked on the picture as shown, at another size.
+			mask: { data: picture(800, 450), mime: "image/png" },
+		});
+		const events: ProviderEvent[] = [];
+		for await (const event of local.events(handle, {
+			apiKey: undefined,
+			signal: new AbortController().signal,
+		})) {
+			events.push(event);
+		}
+		expect(events.at(-1)?.type).toBe("completed");
+		const argv = calls[0] ?? [];
+		expect(argv[argv.indexOf("--strength") + 1]).toBe("0.75");
+		// Unasked, a marked part changes more than a whole picture would.
+		const unasked = await engineArguments(
+			runtime(REDRAW),
+			REDRAW.defaults,
+			params(),
+			"/o.png",
+			async (p) => p,
+			["/s/old.png"],
+			undefined,
+			"/s/mask.png",
+		);
+		expect(unasked[unasked.indexOf("--strength") + 1]).toBe(
+			String(DEFAULT_MASK_STRENGTH),
+		);
+		expect(unasked[unasked.indexOf("--mask") + 1]).toBe("/s/mask.png");
+		expect(await new Bun.Image(given).metadata()).toMatchObject({
+			width: 1024,
+			height: 576,
+		});
+		expect(await readdir(dir)).toEqual([]);
+
+		// Without a picture to redraw, a mask means nothing to the engine.
+		const words = await engineArguments(
+			runtime(REDRAW),
+			REDRAW.defaults,
+			params(),
+			"/o.png",
+			async (p) => p,
+			[],
+			undefined,
+			"/s/mask.png",
+		);
+		expect(words).not.toContain("--mask");
+	});
+
 	test("a picture to redraw that cannot be read is refused, saying so", async () => {
 		const { provider, fake } = await setup(REDRAW);
 		const local = provider(fake([]));
@@ -555,6 +621,49 @@ describe("running", () => {
 				references: [{ data: new Uint8Array([1, 2, 3]), mime: "image/png" }],
 			}),
 		).rejects.toMatchObject({ code: "referenceUnreadable" });
+	});
+
+	test("a mask that cannot be read leaves nothing behind", async () => {
+		const { provider, fake, dir } = await setup(REDRAW);
+		const local = provider(fake([]));
+		await local.load();
+		const [model] = local.listModels();
+		expect(
+			local.submit({
+				model: model as never,
+				params: params(),
+				references: [{ data: picture(64, 64), mime: "image/png" }],
+				mask: { data: new Uint8Array([1, 2, 3]), mime: "image/png" },
+			}),
+		).rejects.toMatchObject({ code: "referenceUnreadable" });
+		await Bun.sleep(50);
+		expect(await readdir(dir)).toEqual([]);
+	});
+
+	test("a phone photo is redrawn the way it is shown, not the way it is stored", async () => {
+		const { provider, fake, calls } = await setup(REDRAW);
+		const local = provider(fake([]));
+		// Stored 200x100, with EXIF saying to turn it a quarter to show it.
+		const stored = await new Bun.Image(picture(200, 100)).jpeg().bytes();
+		const tiff = [
+			0x4d, 0x4d, 0, 0x2a, 0, 0, 0, 8, 0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6,
+			0, 0, 0, 0, 0, 0,
+		];
+		const exif = [0x45, 0x78, 0x69, 0x66, 0, 0, ...tiff];
+		const turned = new Uint8Array([
+			0xff,
+			0xd8,
+			0xff,
+			0xe1,
+			0,
+			exif.length + 2,
+			...exif,
+			...stored.subarray(2),
+		]);
+		await run(local, undefined, [{ data: turned, mime: "image/jpeg" }]);
+		const argv = calls[0] ?? [];
+		const after = (flag: string) => argv[argv.indexOf(flag) + 1];
+		expect([after("-W"), after("-H")]).toEqual(["512", "1024"]);
 	});
 
 	test("a failing engine reports its last error line", async () => {

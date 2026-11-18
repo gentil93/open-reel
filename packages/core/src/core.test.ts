@@ -183,6 +183,59 @@ describe("turns", () => {
 		expect(await app.service.listSessions(LOCAL_USER)).toHaveLength(0);
 	});
 
+	test("a mask marks what of the reference a model redraws", async () => {
+		const app = boot(await tempDir());
+		const picture = await app.service.uploadAsset(LOCAL_USER, PNG);
+		const mask = await app.service.uploadAsset(LOCAL_USER, PNG);
+		const turn = (modelIds: string[], over: object = {}) =>
+			app.service.createTurn(LOCAL_USER, {
+				prompt: "x",
+				modelIds,
+				referenceAssetIds: [picture.id],
+				maskAssetId: mask.id,
+				...over,
+			});
+		await turn(["fake/alpha"]);
+		await app.engine.idle();
+		expect(app.provider.submitted[0]?.mask).toEqual(PNG);
+
+		await expect(turn(["fake/alpha", "fake/beta"])).rejects.toMatchObject({
+			code: "noReferences",
+		});
+		await expect(
+			turn(["fake/alpha"], { referenceAssetIds: [] }),
+		).rejects.toMatchObject({ code: "maskWithoutReference" });
+		await expect(
+			turn(["fake/alpha"], { referenceAssetIds: [picture.id, mask.id] }),
+		).rejects.toMatchObject({ code: "maskWithoutReference" });
+		await expect(
+			turn(["fake/alpha"], { maskAssetId: "ast_missing" }),
+		).rejects.toMatchObject({ code: "referenceNotFound" });
+	});
+
+	test("a model that cannot take a mask is refused one", () => {
+		const params = {
+			prompt: "x",
+			count: 1,
+			referenceAssetIds: ["a"],
+			extras: {},
+			maskAssetId: "m",
+		};
+		const model = {
+			...CLIP,
+			capabilities: { ...CLIP.capabilities, maxReferenceImages: 1 },
+		};
+		expect(() => adaptParams(model, params)).toThrow(
+			expect.objectContaining({ code: "noMask" }),
+		);
+		expect(
+			adaptParams(
+				{ ...model, capabilities: { ...model.capabilities, mask: 0.85 } },
+				params,
+			).maskAssetId,
+		).toBe("m");
+	});
+
 	test("rejects unknown models and empty prompts", async () => {
 		const app = boot(await tempDir());
 		expect(
@@ -634,7 +687,11 @@ describe("video", () => {
 	});
 
 	test("a strength is kept only for a model that redraws a given picture", () => {
-		const strengthOf = (strength: number | undefined, references: string[]) =>
+		const strengthOf = (
+			strength: number | undefined,
+			references: string[],
+			asked: object = { strength: 0.4 },
+		) =>
 			adaptParams(
 				{
 					...CLIP,
@@ -642,6 +699,7 @@ describe("video", () => {
 						...CLIP.capabilities,
 						maxReferenceImages: 1,
 						strength,
+						mask: 0.85,
 					},
 				},
 				{
@@ -649,12 +707,15 @@ describe("video", () => {
 					count: 1,
 					referenceAssetIds: references,
 					extras: {},
-					strength: 0.4,
+					...asked,
 				},
 			).strength;
 		expect(strengthOf(0.7, ["a"])).toBe(0.4);
 		expect(strengthOf(0.7, [])).toBeUndefined();
 		expect(strengthOf(undefined, ["a"])).toBeUndefined();
+		// Unasked, the model's own, as the stored parameters say what was used.
+		expect(strengthOf(0.7, ["a"], {})).toBe(0.7);
+		expect(strengthOf(0.7, ["a"], { maskAssetId: "m" })).toBe(0.85);
 	});
 
 	test("a redrawn picture keeps its reference's shape, not the ratio asked", () => {
