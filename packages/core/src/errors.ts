@@ -35,6 +35,8 @@ export const ERROR_CODES = [
 	"noApiKey",
 	"noModel",
 	"needsPicture",
+	"claudeConfigUnreadable",
+	"claudeNotFound",
 	"noMask",
 	"noReferences",
 	"noResult",

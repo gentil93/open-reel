@@ -1,7 +1,7 @@
 import type { ProviderStatus, TranslateWith } from "@open-reel/core/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { api } from "./api";
+import { type AgentPolicy, api } from "./api";
 import { useI18n } from "./i18n";
 import { useModelProgress } from "./live";
 
@@ -247,6 +247,212 @@ function Translation() {
 	);
 }
 
+/** An argument as a shell reads it: quoted when it has to be. */
+const shellWord = (word: string, shell: "posix" | "powershell") =>
+	/^[\w@%+=:,./-]+$/.test(word)
+		? word
+		: shell === "powershell"
+			? `'${word.replaceAll("'", "''")}'`
+			: `'${word.replaceAll("'", "'\\''")}'`;
+
+/** The options `open-reel mcp` takes for a policy. */
+const policyArgs = (policy: AgentPolicy) =>
+	policy.allowPaid
+		? [
+				"--allow-paid",
+				...(policy.spendLimitUsd != null
+					? ["--spend-limit", String(policy.spendLimitUsd)]
+					: []),
+			]
+		: [];
+
+/**
+ * Lets AI agents, Claude first, make pictures and videos here with the
+ * person's models: on this computer's alone unless they allow paid ones.
+ */
+function Agents() {
+	const { t, explain, number } = useI18n();
+	const client = useQueryClient();
+	const status = useQuery({ queryKey: ["agents"], queryFn: api.agents });
+	const [allowPaid, setAllowPaid] = useState<boolean | null>(null);
+	const [limit, setLimit] = useState<string | null>(null);
+	const [unlimited, setUnlimited] = useState<boolean | null>(null);
+	const [copied, setCopied] = useState(false);
+	const [restart, setRestart] = useState(false);
+	const desktop = status.data?.claudeDesktop;
+	// Until changed here, what Claude Desktop was set up with.
+	const paid = allowPaid ?? desktop?.policy?.allowPaid ?? false;
+	// No limit only when chosen as such, never from an empty field.
+	const saved = desktop?.policy;
+	const noLimit =
+		unlimited ?? (saved?.allowPaid === true && saved.spendLimitUsd == null);
+	const limitText = limit ?? String(saved?.spendLimitUsd ?? 5);
+	const limitUsd = Number(limitText);
+	const validLimit =
+		!paid ||
+		noLimit ||
+		(limitText.trim() !== "" && Number.isFinite(limitUsd) && limitUsd >= 0);
+	const policy: AgentPolicy = {
+		allowPaid: paid,
+		spendLimitUsd: paid && !noLimit ? limitUsd : null,
+	};
+	const refresh = () => client.invalidateQueries({ queryKey: ["agents"] });
+	const connect = useMutation({
+		mutationFn: () => api.connectClaudeDesktop(policy),
+		onSuccess: () => {
+			setRestart(true);
+			return refresh();
+		},
+	});
+	const disconnect = useMutation({
+		mutationFn: api.disconnectClaudeDesktop,
+		onSuccess: () => {
+			setRestart(true);
+			return refresh();
+		},
+	});
+	const shell = status.data?.shell ?? "posix";
+	const command =
+		status.data && validLimit
+			? [...status.data.claudeCode, ...policyArgs(policy)]
+					.map((word) => shellWord(word, shell))
+					.join(" ")
+			: "";
+	// Up to date: the same limits, and this installation as it is now.
+	const same =
+		desktop?.current === true &&
+		desktop.policy?.allowPaid === policy.allowPaid &&
+		(desktop.policy?.spendLimitUsd ?? null) === policy.spendLimitUsd;
+	const error = connect.error ?? disconnect.error ?? status.error;
+	const card = "rounded-lg border border-line bg-panel p-4";
+
+	return (
+		<section className="mt-10">
+			<h2 className="font-medium">{t("settings.agents")}</h2>
+			<p className="mt-2 text-sm leading-relaxed text-dim">
+				{t("settings.agentsIntro")}
+			</p>
+			<div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+				<label className="flex items-center gap-2">
+					<input
+						type="checkbox"
+						checked={paid}
+						onChange={(event) => setAllowPaid(event.target.checked)}
+						className="accent-accent"
+					/>
+					{t("settings.agentsPaid")}
+				</label>
+				{paid && (
+					<>
+						<label className="flex items-center gap-2 text-dim">
+							{t("settings.agentsLimit")}
+							<input
+								type="number"
+								min={0}
+								step={1}
+								value={limitText}
+								disabled={noLimit}
+								onChange={(event) => setLimit(event.target.value)}
+								aria-invalid={!validLimit}
+								className="w-24 rounded-md border border-line bg-bg px-2 py-1 font-mono disabled:opacity-40"
+							/>
+							{!noLimit && validLimit && (
+								<span className="text-xs">
+									{number(limitUsd, { style: "currency", currency: "USD" })}
+								</span>
+							)}
+						</label>
+						<label className="flex items-center gap-2 text-dim">
+							<input
+								type="checkbox"
+								checked={noLimit}
+								onChange={(event) => setUnlimited(event.target.checked)}
+								className="accent-accent"
+							/>
+							{t("settings.agentsNoLimit")}
+						</label>
+					</>
+				)}
+			</div>
+
+			<div className={`${card} mt-4`}>
+				<div className="flex items-baseline justify-between gap-4">
+					<h3 className="font-medium">Claude Desktop</h3>
+					<span
+						className={`font-mono text-xs ${desktop?.connected ? "text-accent" : "text-dim"}`}
+					>
+						{!desktop?.available
+							? t("settings.agentsNotInstalled")
+							: desktop.connected
+								? t("settings.agentsConnected")
+								: t("settings.agentsNotConnected")}
+					</span>
+				</div>
+				{desktop?.problem && (
+					<p className="mt-2 text-sm text-danger">
+						{t("settings.agentsUnreadable")}
+					</p>
+				)}
+				{desktop?.available && !desktop.problem && (
+					<div className="mt-3 flex flex-wrap gap-2">
+						{(!desktop.connected || !same) && (
+							<button
+								type="button"
+								onClick={() => connect.mutate()}
+								disabled={connect.isPending || !validLimit}
+								className="cta rounded-lg px-4 py-2 text-sm font-medium"
+							>
+								{desktop.connected
+									? t("settings.agentsUpdate")
+									: t("settings.agentsConnect")}
+							</button>
+						)}
+						{desktop.connected && (
+							<button
+								type="button"
+								onClick={() => disconnect.mutate()}
+								disabled={disconnect.isPending}
+								className="rounded-md border border-line px-3 py-2 text-sm text-dim hover:text-danger"
+							>
+								{t("settings.agentsDisconnect")}
+							</button>
+						)}
+					</div>
+				)}
+				{restart && (
+					<p className="mt-2 text-sm text-dim" role="status">
+						{t("settings.agentsRestart")}
+					</p>
+				)}
+			</div>
+
+			<div className={`${card} mt-3`}>
+				<h3 className="font-medium">Claude Code</h3>
+				<p className="mt-1 text-sm text-dim">{t("settings.agentsCode")}</p>
+				<div className="mt-3 flex items-start gap-2">
+					<code className="min-w-0 flex-1 break-all rounded-md border border-line bg-bg px-3 py-2 font-mono text-xs leading-relaxed">
+						{command}
+					</code>
+					<button
+						type="button"
+						disabled={!command}
+						onClick={() =>
+							void navigator.clipboard?.writeText(command).then(() => {
+								setCopied(true);
+								setTimeout(() => setCopied(false), 2000);
+							})
+						}
+						className="rounded-md border border-line px-3 py-2 text-sm text-dim hover:text-ink"
+					>
+						{copied ? t("settings.agentsCopied") : t("settings.agentsCopy")}
+					</button>
+				</div>
+			</div>
+			{error && <p className="mt-2 text-sm text-danger">{explain(error)}</p>}
+		</section>
+	);
+}
+
 export function Settings() {
 	const { t, explain, language, setLanguage, languages } = useI18n();
 	const providers = useQuery({
@@ -286,6 +492,7 @@ export function Settings() {
 					<ProviderRow key={provider.id} provider={provider} />
 				))}
 			</ul>
+			<Agents />
 		</div>
 	);
 }

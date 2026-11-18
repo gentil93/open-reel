@@ -12,6 +12,8 @@ import {
 	writeServerInfo,
 } from "@open-reel/core";
 import {
+	Agents,
+	agentsSetup,
 	createApp,
 	createRuntime,
 	DataDirInUseError,
@@ -106,6 +108,9 @@ const runtime = await createRuntime({
 const app = createApp({
 	...runtime,
 	allowedOrigins: values.dev ? ["http://localhost:5173"] : [],
+	agents: new Agents(() =>
+		agentsSetup({ dataDir: values["data-dir"], resources }),
+	),
 });
 
 if (!values.dev) {

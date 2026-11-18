@@ -12,6 +12,29 @@ import type {
 
 export type SessionDetail = Session & { turns: TurnView[] };
 
+/** What an agent may spend, as the person chose it. */
+export interface AgentPolicy {
+	allowPaid: boolean;
+	spendLimitUsd: number | null;
+}
+
+/** How AI agents connect to this installation. */
+export interface AgentsStatus {
+	/** `claude mcp add …`, without the options of a policy. */
+	claudeCode: string[];
+	/** The shell those words are for, to quote them. */
+	shell: "posix" | "powershell";
+	claudeDesktop: {
+		available: boolean;
+		connected: boolean;
+		/** The entry starts this installation as it is now. */
+		current: boolean;
+		policy: AgentPolicy | null;
+		/** Why its settings could not be read, when they could not. */
+		problem: string | null;
+	};
+}
+
 /** An error from the server, with the code that lets the interface translate it. */
 export class ApiError extends Error {
 	constructor(
@@ -63,6 +86,11 @@ export const api = {
 		),
 	cancelJob: (id: string) =>
 		request<void>(`/api/jobs/${id}/cancel`, { method: "POST" }),
+	agents: () => request<AgentsStatus>("/api/agents"),
+	connectClaudeDesktop: (policy: AgentPolicy) =>
+		request<void>("/api/agents/claude-desktop", send("PUT", policy)),
+	disconnectClaudeDesktop: () =>
+		request<void>("/api/agents/claude-desktop", { method: "DELETE" }),
 	retryJob: (id: string) =>
 		request<void>(`/api/jobs/${id}/retry`, { method: "POST" }),
 	upload: (file: File) =>

@@ -14,6 +14,7 @@ import {
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
+import type { Agents } from "./agents";
 
 export interface AppOptions {
 	service: ReelService;
@@ -27,6 +28,8 @@ export interface AppOptions {
 	allowedOrigins?: string[];
 	/** Maps a request to its user. Local installs have a single user. */
 	resolveUser?: (c: Context) => UserContext;
+	/** Connects AI agents to this installation; absent where it cannot. */
+	agents?: Agents;
 }
 
 const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
@@ -141,6 +144,37 @@ export function createApp(options: AppOptions): Hono {
 	app.get("/api/providers", async (c) =>
 		c.json(await service.listProviders(user(c))),
 	);
+
+	// Connecting agents writes to their settings, on the person's request.
+	const agents = options.agents;
+	if (agents) {
+		app.get("/api/agents", async (c) => c.json(await agents.status()));
+		app.put("/api/agents/claude-desktop", async (c) => {
+			const body = (await c.req.json().catch(() => null)) as {
+				allowPaid?: unknown;
+				spendLimitUsd?: unknown;
+			} | null;
+			const limit = body?.spendLimitUsd ?? null;
+			if (
+				typeof body?.allowPaid !== "boolean" ||
+				(limit !== null &&
+					!(typeof limit === "number" && Number.isFinite(limit) && limit >= 0))
+			) {
+				throw new ValidationError(
+					"allowPaid must be true or false, and spendLimitUsd zero or more, or null",
+				);
+			}
+			await agents.connectClaudeDesktop({
+				allowPaid: body.allowPaid,
+				spendLimitUsd: body.allowPaid ? (limit as number | null) : null,
+			});
+			return c.body(null, 204);
+		});
+		app.delete("/api/agents/claude-desktop", async (c) => {
+			await agents.disconnectClaudeDesktop();
+			return c.body(null, 204);
+		});
+	}
 	app.put("/api/providers/:id/key", async (c) => {
 		const { key } = await json(c);
 		if (typeof key !== "string") throw new ValidationError("Missing key");
