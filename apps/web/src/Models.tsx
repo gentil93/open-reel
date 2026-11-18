@@ -1,15 +1,26 @@
 import type {
+	CommercialUse,
 	Fit,
 	LocalEngineStatus,
 	LocalModelStatus,
 	LocalModelsView,
+	LocalModelTask,
 } from "@open-reel/core/types";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { api, demoUrl } from "./api";
 import { remaining } from "./format";
-import { type I18n, useI18n } from "./i18n";
+import { type I18n, isMessageKey, useI18n } from "./i18n";
 import { useModelProgress } from "./live";
+import {
+	categoryOf,
+	filterLocal,
+	type LocalCategory,
+	type LocalFilter,
+	localFit,
+	recommendedLocal,
+	sortLocal,
+} from "./recommend";
 
 type Demo = LocalModelStatus["demos"][number] & { src: string };
 
@@ -197,16 +208,101 @@ export function fitText(t: I18n["t"], fit: Fit): string {
 	}
 }
 
+/** What the model does, in the reader's language, from the catalog when it has it. */
+function summaryOf(t: I18n["t"], model: LocalModelStatus): string {
+	const key = `models.summary.${model.id}`;
+	return isMessageKey(key) ? t(key) : model.summary;
+}
+
+function taskText(t: I18n["t"], task: LocalModelTask): string {
+	switch (task) {
+		case "text-to-image":
+			return t("models.task.textToImage");
+		case "image-edit":
+			return t("models.task.imageEdit");
+		case "text-to-video":
+			return t("models.task.textToVideo");
+		case "image-to-video":
+			return t("models.task.imageToVideo");
+	}
+}
+
+export function commercialText(i18n: I18n, commercial: CommercialUse): string {
+	switch (commercial.kind) {
+		case "allowed":
+			return i18n.t("models.commercial.allowed");
+		case "limited":
+			return i18n.t("models.commercial.limited", {
+				revenue: i18n.number(commercial.revenueUsd, {
+					style: "currency",
+					currency: "USD",
+					notation: "compact",
+				}),
+			});
+		case "none":
+			return i18n.t("models.commercial.none");
+	}
+}
+
+const COMMERCIAL_STYLE: Record<CommercialUse["kind"], string> = {
+	allowed: "border-good/30 text-good",
+	limited: "border-warn/30 text-warn",
+	none: "border-danger/30 text-danger",
+};
+
+const FIT_BADGE: Record<Fit, string> = {
+	gpu: "bg-good/12 text-good",
+	offload: "bg-warn/12 text-warn",
+	cpu: "bg-warn/12 text-warn",
+	none: "bg-danger/12 text-danger",
+};
+
+/** How the model runs here, in a few words: the first thing to choose by. */
+function FitBadge({
+	model,
+	recommended,
+}: {
+	model: LocalModelStatus;
+	recommended: boolean;
+}) {
+	const { t } = useI18n();
+	const fit = localFit(model);
+	if (recommended) {
+		return (
+			<span className="aurora rounded-full px-2.5 py-0.5 text-xs font-semibold">
+				{t("models.badge.recommended")}
+			</span>
+		);
+	}
+	const text =
+		fit === "gpu"
+			? t("models.badge.great")
+			: fit === "offload"
+				? t("models.badge.slow")
+				: fit === "cpu"
+					? t("models.badge.cpu")
+					: t("models.badge.none");
+	return (
+		<span className={`rounded-full px-2.5 py-0.5 text-xs ${FIT_BADGE[fit]}`}>
+			<span aria-hidden="true">● </span>
+			{text}
+		</span>
+	);
+}
+
 function ModelCard({
 	model,
 	engine,
 	freeBytes,
+	recommended,
 }: {
 	model: LocalModelStatus;
 	engine: LocalEngineStatus | undefined;
 	freeBytes: number;
+	recommended: boolean;
 }) {
-	const { t, bytes, explain } = useI18n();
+	const i18n = useI18n();
+	const { t, bytes, explain } = i18n;
 	const install = useMutation({
 		mutationFn: (variant?: string) => api.installModel(model.id, variant),
 	});
@@ -254,6 +350,14 @@ function ModelCard({
 		<li className="flex flex-col overflow-hidden rounded-lg border border-line bg-panel">
 			<Demos model={model} />
 			<div className="flex flex-1 flex-col gap-3 p-4">
+				<div className="flex flex-wrap gap-1.5">
+					<FitBadge model={model} recommended={recommended} />
+					<span
+						className={`rounded-full border px-2.5 py-0.5 text-xs ${COMMERCIAL_STYLE[model.commercial.kind]}`}
+					>
+						{commercialText(i18n, model.commercial)}
+					</span>
+				</div>
 				<div>
 					<div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
 						<h2 className="font-medium">{model.name}</h2>
@@ -268,7 +372,16 @@ function ModelCard({
 						</span>
 					</div>
 					<p className="mt-0.5 text-xs text-dim">
-						{model.author} · {model.license} ·{" "}
+						{model.author} ·{" "}
+						<a
+							href={model.licenseUrl}
+							target="_blank"
+							rel="noreferrer"
+							className="underline hover:text-ink"
+						>
+							{model.license}
+						</a>{" "}
+						·{" "}
 						<a
 							href={model.homepage}
 							target="_blank"
@@ -279,7 +392,20 @@ function ModelCard({
 						</a>
 					</p>
 				</div>
-				<p className="text-sm leading-relaxed">{model.summary}</p>
+				<p className="text-sm leading-relaxed">{summaryOf(t, model)}</p>
+				<ul
+					aria-label={t("models.task.label")}
+					className="flex flex-wrap gap-1.5"
+				>
+					{model.tasks.map((task) => (
+						<li
+							key={task}
+							className="rounded border border-line px-1.5 py-0.5 font-mono text-[11px] text-dim"
+						>
+							{taskText(t, task)}
+						</li>
+					))}
+				</ul>
 
 				{variant ? (
 					<div>
@@ -499,6 +625,156 @@ function Machine({ view }: { view: LocalModelsView }) {
 	);
 }
 
+const NO_FILTER: LocalFilter = {
+	category: "all",
+	runsWell: false,
+	commercial: false,
+	installed: false,
+};
+
+const CATEGORIES: LocalCategory[] = ["image", "edit", "video"];
+
+function categoryText(t: I18n["t"], category: LocalCategory | "all"): string {
+	switch (category) {
+		case "all":
+			return t("models.filter.all");
+		case "image":
+			return t("models.category.image");
+		case "edit":
+			return t("models.category.edit");
+		case "video":
+			return t("models.category.video");
+	}
+}
+
+function categoryBody(t: I18n["t"], category: LocalCategory): string {
+	switch (category) {
+		case "image":
+			return t("models.category.imageBody");
+		case "edit":
+			return t("models.category.editBody");
+		case "video":
+			return t("models.category.videoBody");
+	}
+}
+
+const chip =
+	"rounded-full border border-line px-3.5 py-1.5 text-sm text-dim transition-colors hover:text-ink aria-pressed:border-ink aria-pressed:bg-ink aria-pressed:text-bg";
+
+/** Every model, narrowed by what it does and how it suits this computer. */
+function Catalog({ view }: { view: LocalModelsView }) {
+	const { t } = useI18n();
+	const [filter, setFilter] = useState<LocalFilter>(NO_FILTER);
+	const recommended = recommendedLocal(view.models);
+	const shown = sortLocal(filterLocal(view.models, filter));
+	const set = (change: Partial<LocalFilter>) =>
+		setFilter((current) => ({ ...current, ...change }));
+	const count = (category: LocalCategory | "all") =>
+		filterLocal(view.models, { ...filter, category }).length;
+	// All shelves at once group models by their main use; one shelf lists
+	// every model that can do its job.
+	const shelves =
+		filter.category === "all"
+			? CATEGORIES.map((category) => ({
+					category,
+					models: shown.filter((m) => categoryOf(m) === category),
+				}))
+			: [{ category: filter.category, models: shown }];
+	const card = (model: LocalModelStatus) => (
+		<ModelCard
+			key={model.id}
+			model={model}
+			engine={view.engines.find((engine) =>
+				model.variants.some(
+					(v) => v.id === model.variant && v.engine === engine.engine,
+				),
+			)}
+			freeBytes={view.disk.freeBytes}
+			recommended={recommended.has(model.id)}
+		/>
+	);
+	const toggles: {
+		key: "runsWell" | "commercial" | "installed";
+		text: string;
+	}[] = [
+		{ key: "runsWell", text: t("models.filter.runsWell") },
+		{ key: "commercial", text: t("models.filter.commercial") },
+		{ key: "installed", text: t("models.filter.installed") },
+	];
+	return (
+		<div className="mt-8">
+			<fieldset className="flex flex-col gap-3">
+				<legend className="sr-only">{t("models.filter.label")}</legend>
+				<div className="flex flex-wrap gap-2">
+					{(["all", ...CATEGORIES] as const).map((category) => (
+						<button
+							key={category}
+							type="button"
+							aria-pressed={filter.category === category}
+							onClick={() => set({ category })}
+							className={chip}
+						>
+							{categoryText(t, category)}{" "}
+							<span className="font-mono text-xs opacity-60">
+								{count(category)}
+							</span>
+						</button>
+					))}
+				</div>
+				<div className="flex flex-wrap gap-2">
+					{toggles.map((toggle) => (
+						<button
+							key={toggle.key}
+							type="button"
+							aria-pressed={filter[toggle.key]}
+							onClick={() => set({ [toggle.key]: !filter[toggle.key] })}
+							className={`${chip} text-xs`}
+						>
+							{filter[toggle.key] ? "✓ " : ""}
+							{toggle.text}
+						</button>
+					))}
+				</div>
+			</fieldset>
+			{shown.length === 0 ? (
+				<p className="mt-8 text-sm text-dim">
+					{t("models.filter.none")}{" "}
+					<button
+						type="button"
+						onClick={() => setFilter(NO_FILTER)}
+						className="underline hover:text-ink"
+					>
+						{t("models.filter.clear")}
+					</button>
+				</p>
+			) : (
+				shelves.map(
+					(shelf) =>
+						shelf.models.length > 0 && (
+							<section
+								key={shelf.category}
+								aria-label={categoryText(t, shelf.category)}
+								className="mt-8"
+							>
+								<div className="flex flex-wrap items-baseline justify-between gap-2">
+									<h2 className="font-display text-xl font-bold tracking-tight">
+										{categoryText(t, shelf.category)}
+									</h2>
+									<p className="text-sm text-dim">
+										{categoryBody(t, shelf.category)}
+									</p>
+								</div>
+								<ul className="mt-3 grid gap-4 lg:grid-cols-2">
+									{shelf.models.map(card)}
+								</ul>
+							</section>
+						),
+				)
+			)}
+		</div>
+	);
+}
+
 export function Models() {
 	const { t, bytes, explain } = useI18n();
 	const view = useQuery({
@@ -547,20 +823,7 @@ export function Models() {
 						</div>
 					</dl>
 				)}
-				<ul className="mt-6 grid gap-4 lg:grid-cols-2">
-					{view.data?.models.map((model) => (
-						<ModelCard
-							key={model.id}
-							model={model}
-							engine={view.data?.engines.find((engine) =>
-								model.variants.some(
-									(v) => v.id === model.variant && v.engine === engine.engine,
-								),
-							)}
-							freeBytes={disk?.freeBytes ?? 0}
-						/>
-					))}
-				</ul>
+				{view.data && <Catalog view={view.data} />}
 			</div>
 		</div>
 	);

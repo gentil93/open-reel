@@ -71,6 +71,92 @@ export function bestLocal(
 		)[0];
 }
 
+/** The shelves the local models are sorted on, by what each is mainly for. */
+export type LocalCategory = "image" | "edit" | "video";
+
+export function categoryOf(
+	model: Pick<LocalModelStatus, "tasks">,
+): LocalCategory {
+	const main = model.tasks[0];
+	if (main === "image-edit") return "edit";
+	if (main === "text-to-video" || main === "image-to-video") return "video";
+	return "image";
+}
+
+/** Whether a model belongs on a shelf: its main use, or one it also has. */
+export function inCategory(
+	model: Pick<LocalModelStatus, "tasks">,
+	category: LocalCategory,
+): boolean {
+	return model.tasks.some((task) =>
+		category === "edit"
+			? task === "image-edit"
+			: category === "video"
+				? task === "text-to-video" || task === "image-to-video"
+				: task === "text-to-image",
+	);
+}
+
+/** What the local models list can be narrowed to. */
+export interface LocalFilter {
+	category: LocalCategory | "all";
+	/** Only those that run on the graphics card at full speed. */
+	runsWell: boolean;
+	/** Only those whose license allows paid work without limits. */
+	commercial: boolean;
+	installed: boolean;
+}
+
+export function filterLocal(
+	models: LocalModelStatus[],
+	filter: LocalFilter,
+): LocalModelStatus[] {
+	return models.filter(
+		(model) =>
+			(filter.category === "all" || inCategory(model, filter.category)) &&
+			(!filter.runsWell || localFit(model) === "gpu") &&
+			(!filter.commercial || model.commercial.kind === "allowed") &&
+			(!filter.installed || model.state !== "available"),
+	);
+}
+
+/**
+ * Best for this computer first: installed, then how well it runs here, then
+ * quality and speed, then the smaller download.
+ */
+export function sortLocal(models: LocalModelStatus[]): LocalModelStatus[] {
+	const fit = (model: LocalModelStatus) => FIT_ORDER.indexOf(localFit(model));
+	return models.toSorted(
+		(a, b) =>
+			Number(b.state !== "available") - Number(a.state !== "available") ||
+			fit(a) - fit(b) ||
+			(b.profile?.quality ?? 0) - (a.profile?.quality ?? 0) ||
+			(b.profile?.speed ?? 0) - (a.profile?.speed ?? 0) ||
+			a.size - b.size,
+	);
+}
+
+/**
+ * The model to recommend on each shelf for this computer: of those that run
+ * on its graphics card at full speed, the best, then the quickest, then the
+ * smallest. A shelf where nothing runs that well has none.
+ */
+export function recommendedLocal(models: LocalModelStatus[]): Set<string> {
+	const picks = new Set<string>();
+	for (const category of ["image", "edit", "video"] as const) {
+		const best = models
+			.filter((m) => categoryOf(m) === category && localFit(m) === "gpu")
+			.toSorted(
+				(a, b) =>
+					(b.profile?.quality ?? 0) - (a.profile?.quality ?? 0) ||
+					(b.profile?.speed ?? 0) - (a.profile?.speed ?? 0) ||
+					a.size - b.size,
+			)[0];
+		if (best) picks.add(best.id);
+	}
+	return picks;
+}
+
 const price = (model: ModelSpec) =>
 	model.pricing?.usdPerOutput ?? Number.POSITIVE_INFINITY;
 

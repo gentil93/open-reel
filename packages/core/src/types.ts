@@ -334,7 +334,35 @@ export interface LocalModelDefaults {
 	/** Video models: frames per second, and the lengths they can make. */
 	fps?: number;
 	durations?: number[];
+	/**
+	 * How the model takes pictures: as references to follow (`ref`, for
+	 * editing models) or as the first frame to start from (`init`, for
+	 * image-to-video). Absent when it only works from words.
+	 */
+	references?: { as: "ref" | "init"; max: number };
+	/** More engine options this model needs, e.g. `["--diffusion-fa"]`. */
+	engineArgs?: string[];
 }
+
+/** What a local model makes, and from what. */
+export type LocalModelTask =
+	/** A picture from words. */
+	| "text-to-image"
+	/** A changed picture, from a picture and words. */
+	| "image-edit"
+	/** A video from words. */
+	| "text-to-video"
+	/** A video that starts from a picture. */
+	| "image-to-video";
+
+/** What a model's license allows, in the terms people choose by. */
+export type CommercialUse =
+	/** Any use, paid work included. */
+	| { kind: "allowed" }
+	/** Paid work only below an annual revenue, in US dollars. */
+	| { kind: "limited"; revenueUsd: number }
+	/** Personal and research use only. */
+	| { kind: "none" };
 
 /** A model that can be downloaded and kept on this machine. */
 export interface LocalModelSpec {
@@ -342,8 +370,14 @@ export interface LocalModelSpec {
 	name: string;
 	author: string;
 	media: Media;
+	/** What it does, the first being what it is mainly for. */
+	tasks: LocalModelTask[];
 	summary: string;
+	/** The license's name, e.g. "Apache 2.0". */
 	license: string;
+	/** Where the license's full text is. */
+	licenseUrl: string;
+	commercial: CommercialUse;
 	/** The model's page, for its full description and license terms. */
 	homepage: string;
 	/** Best quality first. */

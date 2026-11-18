@@ -57,8 +57,11 @@ const LOCAL_MODEL: LocalModelSpec = {
 	name: "Tiny",
 	author: "Example",
 	media: "image",
+	tasks: ["text-to-image"],
 	summary: "A model for tests.",
 	license: "MIT",
+	licenseUrl: "https://license.example",
+	commercial: { kind: "allowed" },
 	homepage: "https://models.example",
 	variants: [
 		{

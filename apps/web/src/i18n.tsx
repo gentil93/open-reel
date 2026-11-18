@@ -18,6 +18,9 @@ import ptBR from "./locales/pt-BR.json";
 
 export type MessageKey = Extract<keyof typeof en, string>;
 
+/** Whether the catalog has a message, for keys made from data such as ids. */
+export const isMessageKey = (key: string): key is MessageKey => key in en;
+
 const translations: Record<string, Partial<Record<MessageKey, Message>>> = {
 	en: {},
 	"pt-BR": ptBR,

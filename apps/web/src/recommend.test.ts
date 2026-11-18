@@ -10,11 +10,15 @@ import type {
 import {
 	bestCloud,
 	bestLocal,
+	categoryOf,
 	cloudFamilies,
+	filterLocal,
 	firstModel,
 	fitLevel,
 	gpuMemory,
 	neededMemory,
+	recommendedLocal,
+	sortLocal,
 } from "./recommend";
 
 const GB = 2 ** 30;
@@ -28,6 +32,8 @@ function local(
 		id,
 		name: id,
 		media: "image",
+		tasks: ["text-to-image"],
+		commercial: { kind: "allowed" },
 		state: "available",
 		ready: false,
 		installed: false,
@@ -194,5 +200,71 @@ describe("firstModel", () => {
 		];
 		expect(firstModel(models, keyed("fal"))?.id).toBe("local/b");
 		expect(firstModel(models.slice(0, 1), keyed())).toBeUndefined();
+	});
+});
+
+describe("the local models list", () => {
+	const ALL = {
+		category: "all",
+		runsWell: false,
+		commercial: false,
+		installed: false,
+	} as const;
+	const editor = local("editor", "gpu", { tasks: ["image-edit"] });
+	const both = local("both", "gpu", {
+		tasks: ["text-to-image", "image-edit"],
+	});
+	const clip = local("clip", "offload", {
+		media: "video",
+		tasks: ["text-to-video", "image-to-video"],
+	});
+	const personal = local("personal", "gpu", {
+		commercial: { kind: "none" },
+	});
+	const big = local("big", "none");
+	const models = [editor, both, clip, personal, big];
+
+	test("a model sits on the shelf of what it is mainly for", () => {
+		expect(models.map(categoryOf)).toEqual([
+			"edit",
+			"image",
+			"video",
+			"image",
+			"image",
+		]);
+	});
+
+	test("a shelf also shows models that can do its job as a second use", () => {
+		const ids = (filter: Partial<typeof ALL> | object) =>
+			filterLocal(models, { ...ALL, ...filter }).map((m) => m.id);
+		expect(ids({ category: "edit" })).toEqual(["editor", "both"]);
+		expect(ids({ category: "video" })).toEqual(["clip"]);
+		expect(ids({ runsWell: true })).toEqual(["editor", "both", "personal"]);
+		expect(ids({ commercial: true })).not.toContain("personal");
+		expect(ids({ installed: true })).toEqual([]);
+	});
+
+	test("what runs well here comes first, then the better model", () => {
+		const good = local("good", "gpu", {
+			profile: profile("good", 1, 3),
+		});
+		const fast = local("fast", "gpu", {
+			profile: profile("fast", 3, 1),
+		});
+		const mine = local("mine", "offload", { state: "installed" });
+		expect(sortLocal([big, fast, mine, good]).map((m) => m.id)).toEqual([
+			"mine",
+			"good",
+			"fast",
+			"big",
+		]);
+	});
+
+	test("each shelf recommends its best model that runs at full speed", () => {
+		const good = local("good", "gpu", { profile: profile("good", 1, 3) });
+		const picks = recommendedLocal([...models, good]);
+		expect([...picks].sort()).toEqual(["editor", "good"]);
+		// The only video model would spill out of the graphics card.
+		expect(picks.has("clip")).toBe(false);
 	});
 });

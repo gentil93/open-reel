@@ -18,6 +18,7 @@ import {
 import { sniffMime } from "../mime";
 import type {
 	EngineBuild,
+	Fit,
 	Hardware,
 	LocalEngineSpec,
 	LocalEngineStatus,
@@ -92,6 +93,8 @@ export interface LocalRuntime {
 	executable: string;
 	/** Run from WSL as a Windows program. */
 	throughWindows: boolean;
+	/** How it runs here: `offload` keeps part of the model in system memory. */
+	fit: Fit;
 	/** Absolute paths of the variant's files, by role (or name, without one). */
 	files: Record<string, string>;
 	/** A folder on the same disk for the engine's output. */
@@ -597,7 +600,8 @@ export class LocalModelStore {
 				},
 			);
 		}
-		const choice = this.chooser(await this.machine())(variant.engine);
+		const hardware = await this.machine();
+		const choice = this.chooser(hardware)(variant.engine);
 		if (!choice || !(await this.installedBuilds()).has(choice.build.id)) {
 			throw new ValidationError(
 				`The engine for ${model.name} is not installed. Install the model again.`,
@@ -612,6 +616,7 @@ export class LocalModelStore {
 			build: choice.build,
 			executable: join(dir, ...choice.build.executable.split(/[\\/]/)),
 			throughWindows: choice.throughWindows,
+			fit: fitOf(variant, hardware, choice),
 			scratch: join(this.root, "tmp"),
 			files: Object.fromEntries(
 				variant.files.map((file) => [

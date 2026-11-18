@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -35,8 +36,11 @@ const FLUX: LocalModelSpec = {
 	name: "FLUX",
 	author: "Example",
 	media: "image",
+	tasks: ["text-to-image"],
 	summary: "",
 	license: "MIT",
+	licenseUrl: "https://license.example",
+	commercial: { kind: "allowed" },
 	homepage: "https://models.example",
 	variants: [],
 	demos: [],
@@ -52,6 +56,7 @@ const WAN: LocalModelSpec = {
 	...FLUX,
 	id: "wan",
 	media: "video",
+	tasks: ["text-to-video"],
 	defaults: {
 		size: 832,
 		aspectRatios: ["16:9"],
@@ -67,6 +72,7 @@ const WAN: LocalModelSpec = {
 const runtime = (
 	model: LocalModelSpec,
 	scratch = "/scratch",
+	fit: LocalRuntime["fit"] = "gpu",
 ): LocalRuntime => ({
 	model,
 	variant: { id: "v", label: "v", engine: "sd", memoryBytes: 1, files: [] },
@@ -82,6 +88,7 @@ const runtime = (
 	},
 	executable: "/engines/b/sd-cli.exe",
 	throughWindows: true,
+	fit,
 	files:
 		model.media === "video"
 			? { diffusion_model: "/m/wan", t5xxl: "/m/t5", vae: "/m/vae" }
@@ -159,6 +166,71 @@ describe("engine arguments", () => {
 		expect(after("-W")).toBe("832");
 		// Without a ratio asked, the model's own first one, not a square.
 		expect(after("-H")).toBe("464");
+	});
+
+	test("an editing model is given the pictures to follow, up to its limit", async () => {
+		const edit: LocalModelSpec = {
+			...FLUX,
+			tasks: ["text-to-image", "image-edit"],
+			defaults: {
+				...FLUX.defaults,
+				references: { as: "ref", max: 2 },
+				engineArgs: ["--scheduler", "simple"],
+			},
+		};
+		const args = await engineArguments(
+			runtime(edit),
+			edit.defaults,
+			params(),
+			"/o.png",
+			async (p) => p,
+			["/s/a.png", "/s/b.png", "/s/c.png"],
+		);
+		expect(args.slice(-6)).toEqual([
+			"-r",
+			"/s/a.png",
+			"-r",
+			"/s/b.png",
+			"--scheduler",
+			"simple",
+		]);
+	});
+
+	test("an image-to-video model starts from the picture", async () => {
+		const animate: LocalModelSpec = {
+			...WAN,
+			tasks: ["text-to-video", "image-to-video"],
+			defaults: { ...WAN.defaults, references: { as: "init", max: 1 } },
+		};
+		const args = await engineArguments(
+			runtime(animate),
+			animate.defaults,
+			params(),
+			"/o.webm",
+			async (p) => p,
+			["/s/first.png"],
+		);
+		expect(args[args.indexOf("-i") + 1]).toBe("/s/first.png");
+		expect(args).not.toContain("-r");
+	});
+
+	test("a model that does not fit the graphics card keeps part in memory", async () => {
+		const fits = await engineArguments(
+			runtime(FLUX),
+			FLUX.defaults,
+			params(),
+			"/o.png",
+			async (p) => p,
+		);
+		const short = await engineArguments(
+			runtime(FLUX, "/scratch", "offload"),
+			FLUX.defaults,
+			params(),
+			"/o.png",
+			async (p) => p,
+		);
+		expect(fits).not.toContain("--offload-to-cpu");
+		expect(short.at(-1)).toBe("--offload-to-cpu");
 	});
 
 	test("a file with an unknown role is refused rather than guessed", async () => {
@@ -257,13 +329,14 @@ describe("running", () => {
 	async function run(
 		provider: LocalProvider,
 		signal = new AbortController().signal,
+		references: { data: Uint8Array; mime: string }[] = [],
 	) {
 		await provider.load();
 		const [model] = provider.listModels();
 		const handle = await provider.submit({
 			model: model as never,
 			params: params(),
-			references: [],
+			references,
 		});
 		const events: ProviderEvent[] = [];
 		for await (const event of provider.events(handle, {
@@ -342,6 +415,48 @@ describe("running", () => {
 		]);
 		expect(calls[0]?.[0]).toBe("/engines/b/sd-cli.exe");
 		// The engine's output is removed once read.
+		expect(await readdir(dir)).toEqual([]);
+	});
+
+	test("models that take pictures are offered for editing", async () => {
+		const both: LocalModelSpec = {
+			...FLUX,
+			tasks: ["text-to-image", "image-edit"],
+			defaults: { ...FLUX.defaults, references: { as: "ref", max: 3 } },
+		};
+		const editOnly: LocalModelSpec = { ...both, tasks: ["image-edit"] };
+		for (const [model, operations] of [
+			[both, ["generate", "edit"]],
+			[editOnly, ["edit"]],
+		] as const) {
+			const { provider, fake } = await setup(model);
+			const local = provider(fake([]));
+			await local.load();
+			const [listed] = local.listModels();
+			expect(listed?.operations).toEqual([...operations]);
+			expect(listed?.capabilities.maxReferenceImages).toBe(3);
+		}
+	});
+
+	test("a picture to follow is handed to the engine as a file, then removed", async () => {
+		const edit: LocalModelSpec = {
+			...FLUX,
+			tasks: ["image-edit"],
+			defaults: { ...FLUX.defaults, references: { as: "ref", max: 1 } },
+		};
+		const { provider, fake, calls, dir } = await setup(edit);
+		let given: Uint8Array = new Uint8Array();
+		const spawn: Spawn = (argv) => {
+			const path = argv[argv.indexOf("-r") + 1] as string;
+			given = new Uint8Array(readFileSync(path));
+			return fake([])(argv);
+		};
+		const events = await run(provider(spawn), undefined, [
+			{ data: new Uint8Array([9, 8, 7]), mime: "image/jpeg" },
+		]);
+		expect(events.at(-1)?.type).toBe("completed");
+		expect(calls[0]?.[calls[0].indexOf("-r") + 1]).toEndWith(".jpeg");
+		expect(given).toEqual(new Uint8Array([9, 8, 7]));
 		expect(await readdir(dir)).toEqual([]);
 	});
 

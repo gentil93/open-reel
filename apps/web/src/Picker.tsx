@@ -31,6 +31,7 @@ import {
 	gpuMemory,
 	localFit,
 	neededMemory,
+	sortLocal,
 } from "./recommend";
 
 /** Where each service hands out API keys. */
@@ -896,8 +897,19 @@ export function Picker(props: {
 		providers.data ?? [],
 		props.media,
 	);
-	const localEntries: Entry[] = (local.data?.models ?? [])
-		.filter((m) => m.media === props.media)
+	const [allLocal, setAllLocal] = useState(false);
+	const localModels = sortLocal(
+		(local.data?.models ?? []).filter((m) => m.media === props.media),
+	);
+	// Models that cannot run well here wait behind a button, so the ones
+	// worth choosing come first.
+	const runsHere = (model: LocalModelStatus) =>
+		model.state !== "available" || fitLevel(localFit(model)) !== "none";
+	const hiddenLocal = allLocal
+		? 0
+		: localModels.filter((m) => !runsHere(m)).length;
+	const localEntries: Entry[] = localModels
+		.filter((m) => allLocal || runsHere(m))
 		.map((model) => ({
 			kind: "local",
 			key: `local:${model.id}`,
@@ -1053,6 +1065,15 @@ export function Picker(props: {
 										/>
 									))}
 								</div>
+								{group.entries === localEntries && hiddenLocal > 0 && (
+									<button
+										type="button"
+										onClick={() => setAllLocal(true)}
+										className="mt-3 text-sm text-dim underline hover:text-ink"
+									>
+										{t("picker.showTooBig", { count: hiddenLocal })}
+									</button>
+								)}
 							</section>
 						),
 				)}

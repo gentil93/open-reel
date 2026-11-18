@@ -34,9 +34,12 @@ describe("catalogs", () => {
 
 	test("every English key is used by the app", () => {
 		const used = usedKeys();
-		// Errors and progress stages are looked up by the code the server sends.
+		// Errors and progress stages are looked up by the code the server sends,
+		// and model summaries by the model's id.
 		const byCode = (key: string) =>
-			key.startsWith("errors.") || key.startsWith("progress.");
+			key.startsWith("errors.") ||
+			key.startsWith("progress.") ||
+			key.startsWith("models.summary.");
 		const unused = Object.keys(en).filter(
 			(key) => !used.has(key) && !byCode(key),
 		);

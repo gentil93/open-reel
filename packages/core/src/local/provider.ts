@@ -19,6 +19,8 @@ import { WarmEngines } from "./warm";
 export interface LocalHandle {
 	modelId: string;
 	params: GenerationParams;
+	/** Pictures the person gave, written to the scratch folder at submit. */
+	references?: string[];
 }
 
 /** Turns a path into one the engine can open, e.g. a Windows path under WSL. */
@@ -83,15 +85,40 @@ const windowsPath: PathMapper = async (path) => {
 	return text;
 };
 
-/** The engine option for each role a file can have. */
+/**
+ * The engine option for each role a file can have: stable-diffusion.cpp's
+ * file options. Most roles are spelled as their option.
+ */
 const ROLE_OPTIONS: Record<string, string> = {
 	model: "-m",
 	diffusion_model: "--diffusion-model",
+	"high-noise-diffusion-model": "--high-noise-diffusion-model",
 	vae: "--vae",
+	taesd: "--taesd",
 	clip_l: "--clip_l",
+	clip_g: "--clip_g",
+	clip_vision: "--clip_vision",
 	t5xxl: "--t5xxl",
 	llm: "--llm",
+	llm_vision: "--llm_vision",
+	tokenizer: "--tokenizer",
+	"embeddings-connectors": "--embeddings-connectors",
 };
+
+/** The engine option for a file's role; an unknown role is refused, not guessed. */
+export function roleOption(role: string): string {
+	const option = ROLE_OPTIONS[role];
+	if (!option) throw new Error(`No engine option for a ${role} file`);
+	return option;
+}
+
+/** Options every run of a model takes: its own, and offloading when short. */
+function modelOptions(runtime: LocalRuntime): string[] {
+	return [
+		...(runtime.model.defaults.engineArgs ?? []),
+		...(runtime.fit === "offload" ? ["--offload-to-cpu"] : []),
+	];
+}
 
 /** Width and height for a ratio, the longer side `size`, in steps of `step`. */
 export function dimensions(
@@ -114,6 +141,7 @@ export async function engineArguments(
 	params: GenerationParams,
 	output: string,
 	path: PathMapper,
+	references: string[] = [],
 ): Promise<string[]> {
 	const video = runtime.model.media === "video";
 	const { width, height } = dimensions(
@@ -123,9 +151,7 @@ export async function engineArguments(
 	);
 	const args = ["-M", video ? "vid_gen" : "img_gen"];
 	for (const [role, file] of Object.entries(runtime.files)) {
-		const option = ROLE_OPTIONS[role];
-		if (!option) throw new Error(`No engine option for a ${role} file`);
-		args.push(option, await path(file));
+		args.push(roleOption(role), await path(file));
 	}
 	args.push(
 		"-p",
@@ -148,6 +174,13 @@ export async function engineArguments(
 	if (defaults.flowShift != null) {
 		args.push("--flow-shift", String(defaults.flowShift));
 	}
+	if (defaults.references) {
+		const flag = defaults.references.as === "init" ? "-i" : "-r";
+		for (const reference of references.slice(0, defaults.references.max)) {
+			args.push(flag, await path(reference));
+		}
+	}
+	args.push(...modelOptions(runtime));
 	if (video) {
 		const fps = defaults.fps ?? 16;
 		const seconds = params.durationSeconds ?? defaults.durations?.[0] ?? 2;
@@ -201,6 +234,16 @@ function completePng(data: Uint8Array): boolean {
 		data.length > end.length &&
 		end.every((byte, i) => data[data.length - end.length + i] === byte)
 	);
+}
+
+/** What a model can be asked to do: make from words, change a picture, or both. */
+export function operationsOf(model: LocalModelSpec): ModelSpec["operations"] {
+	const operations: ModelSpec["operations"] = [];
+	if (model.tasks.some((t) => t === "text-to-image" || t === "text-to-video")) {
+		operations.push("generate");
+	}
+	if (model.defaults.references) operations.push("edit");
+	return operations;
 }
 
 /** The engine's server program, next to its one-shot program. */
@@ -276,12 +319,12 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 				providerModelId: model.id,
 				name: model.name,
 				media: model.media,
-				operations: ["generate"],
+				operations: operationsOf(model),
 				capabilities: {
 					aspectRatios: model.defaults.aspectRatios,
 					seed: true,
 					maxCount: 1,
-					maxReferenceImages: 0,
+					maxReferenceImages: model.defaults.references?.max ?? 0,
 					...(model.defaults.durations && {
 						durations: model.defaults.durations,
 					}),
@@ -292,10 +335,24 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 	}
 
 	async submit(request: ProviderRequest): Promise<LocalHandle> {
-		return {
+		const handle: LocalHandle = {
 			modelId: request.model.providerModelId,
 			params: request.params,
 		};
+		const spec = this.catalog.find((m) => m.id === handle.modelId);
+		const max = spec?.defaults.references?.max ?? 0;
+		if (request.references.length === 0 || max === 0) return handle;
+		// The engine reads pictures from files, kept next to its output.
+		const { scratch } = await this.store.runtime(handle.modelId);
+		await mkdir(scratch, { recursive: true });
+		handle.references = [];
+		for (const reference of request.references.slice(0, max)) {
+			const extension = reference.mime.split("/")[1] ?? "png";
+			const path = join(scratch, `${crypto.randomUUID()}.${extension}`);
+			await Bun.write(path, reference.data);
+			handle.references.push(path);
+		}
+		return handle;
 	}
 
 	async *events(
@@ -320,6 +377,7 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 		if (
 			this.warm &&
 			!video &&
+			!handle.references?.length &&
 			!runtime.throughWindows &&
 			server !== runtime.executable &&
 			(await Bun.file(server).exists())
@@ -331,9 +389,9 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 			);
 			const argv = [server];
 			for (const [role, file] of Object.entries(runtime.files)) {
-				const option = ROLE_OPTIONS[role];
-				if (option) argv.push(option, file);
+				argv.push(roleOption(role), file);
 			}
+			argv.push(...modelOptions(runtime));
 			try {
 				yield* this.warm.run(
 					`${runtime.model.id}:${runtime.variant.id}`,
@@ -388,6 +446,7 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 				handle.params,
 				output,
 				path,
+				handle.references,
 			)),
 		];
 		// The engine writes the picture as it forms, numbered from 000.
@@ -496,6 +555,9 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 		} finally {
 			child.kill();
 			await rm(output, { force: true });
+			for (const reference of handle.references ?? []) {
+				await rm(reference, { force: true });
+			}
 			for (let i = 0; i <= nextPreview + PREVIEWS_PER_JOB; i++) {
 				await rm(previewFile(i), { force: true });
 			}
