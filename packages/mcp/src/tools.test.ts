@@ -7,9 +7,10 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { FakeProvider } from "@open-reel/core";
 import { picture } from "@open-reel/core/testing";
+import type { ModelSpec } from "@open-reel/core/types";
 import { createApp, createRuntime } from "@open-reel/server";
 import { OpenReelClient } from "./client";
-import { createMcpServer, type McpOptions } from "./tools";
+import { bestLocalModel, createMcpServer, type McpOptions } from "./tools";
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -214,4 +215,48 @@ test("the client reaches a server over the network by default", async () => {
 	} finally {
 		server.stop(true);
 	}
+});
+
+test("without a model named, the best free one is used, the faster of equals", () => {
+	const model = (
+		id: string,
+		quality: 1 | 2 | 3,
+		speed: 1 | 2 | 3,
+		over: Partial<ModelSpec["capabilities"]> = {},
+		providerId = "local",
+	): ModelSpec => ({
+		id: `${providerId}/${id}`,
+		providerId,
+		providerModelId: id,
+		name: id,
+		media: "image",
+		operations: ["generate"],
+		capabilities: {
+			aspectRatios: [],
+			seed: true,
+			maxCount: 1,
+			maxReferenceImages: 0,
+			...over,
+		},
+		profile: {
+			family: id,
+			name: id,
+			author: "Example",
+			speed,
+			quality,
+			text: false,
+			bestFor: [],
+		},
+	});
+	const models = [
+		model("draft", 1, 3, { maxReferenceImages: 1 }),
+		model("best-slow", 3, 1),
+		model("best-fast", 3, 2),
+		model("cloud-best", 3, 3, {}, "fal"),
+		model("upscaler", 3, 3, { upscale: 4, maxReferenceImages: 1 }),
+	];
+	expect(bestLocalModel(models, 0)?.id).toBe("local/best-fast");
+	// From a picture, only one that takes pictures.
+	expect(bestLocalModel(models, 1)?.id).toBe("local/draft");
+	expect(bestLocalModel(models.slice(1, 2), 1)).toBeUndefined();
 });

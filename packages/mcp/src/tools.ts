@@ -88,6 +88,32 @@ function estimate(
 }
 
 /**
+ * The model used when the agent names none: the best free picture model on
+ * this computer that can take `references` pictures, the faster of equals.
+ * The first listed is not the best.
+ */
+export function bestLocalModel(
+	models: ModelSpec[],
+	references: number,
+): ModelSpec | undefined {
+	return models
+		.filter(
+			(m) =>
+				isLocal(m) &&
+				m.media === "image" &&
+				m.capabilities.upscale == null &&
+				(references > 0
+					? m.capabilities.maxReferenceImages >= references
+					: m.operations.includes("generate")),
+		)
+		.toSorted(
+			(a, b) =>
+				(b.profile?.quality ?? 0) - (a.profile?.quality ?? 0) ||
+				(b.profile?.speed ?? 0) - (a.profile?.speed ?? 0),
+		)[0];
+}
+
+/**
  * The tools an agent uses to make and find pictures and videos with
  * open-reel: on this computer's models by default, on paid ones only when
  * the person allowed it, and never installing models.
@@ -404,7 +430,7 @@ export function createMcpServer(
 		{
 			title: "Make pictures or videos",
 			description:
-				"Makes pictures or videos from a prompt, waits for them, and returns small previews with their ids. Give several models to compare them on the same prompt. Give reference_images to redraw, edit or animate a picture: ids from earlier results (ast_…) or paths of image files. Pass session_id to keep iterating in the same session. Without models, the first free local model that fits is used.",
+				"Makes pictures or videos from a prompt, waits for them, and returns small previews with their ids. Give several models to compare them on the same prompt. Give reference_images to redraw, edit or animate a picture: ids from earlier results (ast_…) or paths of image files. Pass session_id to keep iterating in the same session. Without models, the best free local model that fits is used.",
 			inputSchema: {
 				prompt: z.string().min(1).describe("What to make, or what to change."),
 				models: z
@@ -445,15 +471,7 @@ export function createMcpServer(
 			const given = args.reference_images ?? [];
 			let ids = args.models ?? [];
 			if (ids.length === 0) {
-				const fit = models.find(
-					(m) =>
-						isLocal(m) &&
-						m.media === "image" &&
-						m.capabilities.upscale == null &&
-						(given.length > 0
-							? m.capabilities.maxReferenceImages >= given.length
-							: m.operations.includes("generate")),
-				);
+				const fit = bestLocalModel(models, given.length);
 				if (!fit) {
 					return failure(
 						given.length > 0
