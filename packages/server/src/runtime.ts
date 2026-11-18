@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
 	FakeProvider,
 	FileKeyStore,
+	FileSettingsStore,
 	FsAssetStore,
 	type Hardware,
 	JobEngine,
@@ -15,18 +16,23 @@ import {
 	type ProviderAdapter,
 	ProviderRegistry,
 	ReelService,
+	type SettingsStore,
 	SqliteRepository,
 } from "@open-reel/core";
 import {
 	builtinEngines,
 	builtinLocalModels,
 	builtinProviders,
+	CloudTranslator,
 } from "@open-reel/providers";
 
 export interface Runtime {
 	service: ReelService;
 	engine: JobEngine;
 	models: LocalModelStore;
+	settings: SettingsStore;
+	/** Whether the prompt translator on this computer is installed. */
+	translatorReady(): boolean;
 	/** Starts moving the local models to another folder. */
 	moveModels(path: string): Promise<void>;
 	/** Resumes jobs left unfinished by a previous process. */
@@ -140,30 +146,60 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 		model: translatorModel?.id ?? "",
 	});
 	let translatorReady = translatorModel ? await translator.ready() : false;
+	// Checks overlap (an install says it changed several times); only the
+	// latest one counts.
+	let check = 0;
 	models.subscribe((event) => {
 		if (event.type !== "models.changed") return;
+		const mine = ++check;
 		void translator.ready().then((ready) => {
+			if (mine !== check) return;
 			translatorReady = ready;
 			if (!ready) translator.stop();
 		});
 	});
+	// Models kept loaded let go of their files before files are deleted or
+	// moved: Windows does neither to an open file.
+	models.onLetGo(() => local.unloadIdle());
+	models.onLetGo(() => translator.stopAndWait());
+	const settings = new FileSettingsStore(
+		join(options.dataDir, "settings.json"),
+	);
+	// One per service and key, so the jobs of a turn share a translation.
+	const clouds = new Map<string, CloudTranslator>();
+	const translatorFor = async (userId: string) => {
+		const ctx = { userId };
+		const { translateWith } = await settings.get(ctx);
+		if (translateWith === "off") return null;
+		if (translateWith === "local") return translatorReady ? translator : null;
+		const adapter = registry.adapter(translateWith);
+		const key =
+			(await keys.get(ctx, translateWith)) ??
+			(adapter?.keyEnv ? process.env[adapter.keyEnv] : undefined);
+		if (!key) return null;
+		const id = `${translateWith}:${key}`;
+		let cloud = clouds.get(id);
+		if (!cloud) {
+			cloud = new CloudTranslator(translateWith, key, options.fetch);
+			clouds.set(id, cloud);
+		}
+		return cloud;
+	};
 	const engine = new JobEngine({
 		repo,
 		assets,
 		registry,
 		keys,
-		translator: () => (translatorReady ? translator : null),
+		translator: translatorFor,
 	});
 	const service = new ReelService({ repo, assets, registry, keys, engine });
 	return {
 		service,
 		engine,
 		models,
-		moveModels: async (path) => {
-			// A loaded model holds its files open, and Windows cannot move them.
-			await local.unloadIdle();
-			await models.relocate(path);
-		},
+		settings,
+		translatorReady: () => translatorReady,
+		moveModels: (path) => models.relocate(path),
 		start: () => engine.start(),
 		close: () => {
 			// Downloads stop with the process; what they fetched is resumed later.

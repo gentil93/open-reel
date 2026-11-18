@@ -355,6 +355,8 @@ export class LocalModelStore {
 	private moveTask: Promise<void> = Promise.resolve();
 	/** A move is being checked, before it starts. */
 	private relocating = false;
+	/** What keeps model files open (a model kept loaded), to let go of them. */
+	private holders = new Set<() => Promise<void>>();
 	/** Why the last move to another folder failed, until the next one. */
 	private moveError: LocalModelsView["disk"]["moveError"] = null;
 
@@ -800,6 +802,9 @@ export class LocalModelStore {
 			release();
 			throw movingError();
 		}
+		// A model kept loaded holds its files open, and Windows moves no open
+		// file: let them go, now that nothing new can start.
+		await this.letGo();
 		try {
 			const locked = async (dir: string) =>
 				(await readdir(join(this.root, dir)).catch(() => [])).some(
@@ -1370,6 +1375,19 @@ export class LocalModelStore {
 	}
 
 	/**
+	 * Tells the store how to make something that keeps model files open (a
+	 * model kept loaded between pictures or prompts) let go of them, before
+	 * files are deleted or moved. It resolves once they are closed.
+	 */
+	onLetGo(letGo: () => Promise<void>): void {
+		this.holders.add(letGo);
+	}
+
+	private async letGo(): Promise<void> {
+		for (const letGo of this.holders) await letGo().catch(() => {});
+	}
+
+	/**
 	 * Deletes a model, installed or half downloaded, in every variant. Files
 	 * another model uses are kept; an engine no model uses any more goes too.
 	 */
@@ -1377,6 +1395,8 @@ export class LocalModelStore {
 		const model = this.spec(id);
 		this.notMoving();
 		await this.cancel(id);
+		// Windows deletes no open file: a model kept loaded lets go first.
+		await this.letGo();
 		this.errors.delete(id);
 		await rm(this.marker(id), { force: true });
 		const needed = await this.neededHashes();

@@ -1,10 +1,13 @@
 import {
 	isDemoSize,
+	isTranslateWith,
 	type JobEngine,
 	LOCAL_USER,
 	type LocalModelStore,
 	NotFoundError,
 	type ReelService,
+	type SettingsStore,
+	TRANSLATE_WITH,
 	type UserContext,
 	ValidationError,
 } from "@open-reel/core";
@@ -18,6 +21,8 @@ export interface AppOptions {
 	models: LocalModelStore;
 	/** Starts moving the local models to another folder. */
 	moveModels?: (path: string) => Promise<void>;
+	/** A person's choices the server acts on, such as how to translate. */
+	settings?: SettingsStore;
 	/** Extra origins allowed to call the API, e.g. the Vite dev server. */
 	allowedOrigins?: string[];
 	/** Maps a request to its user. Local installs have a single user. */
@@ -227,6 +232,30 @@ export function createApp(options: AppOptions): Hono {
 		await models.cancel(c.req.param("id"));
 		return c.body(null, 204);
 	});
+	app.get("/api/settings", async (c) => {
+		if (!options.settings) throw new NotFoundError("No settings here");
+		return c.json(await options.settings.get(user(c)));
+	});
+	app.put("/api/settings", async (c) => {
+		if (!options.settings) throw new NotFoundError("No settings here");
+		const body = await json(c);
+		if (
+			body.translateWith !== undefined &&
+			!isTranslateWith(body.translateWith)
+		) {
+			throw new ValidationError(
+				`translateWith must be one of ${TRANSLATE_WITH.join(", ")}`,
+			);
+		}
+		return c.json(
+			await options.settings.set(user(c), {
+				...(isTranslateWith(body.translateWith) && {
+					translateWith: body.translateWith,
+				}),
+			}),
+		);
+	});
+
 	// The move goes on after the answer; its progress comes as events.
 	app.post("/api/local-models/location", async (c) => {
 		const body = await json(c);

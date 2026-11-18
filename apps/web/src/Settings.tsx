@@ -1,4 +1,4 @@
-import type { ProviderStatus } from "@open-reel/core/types";
+import type { ProviderStatus, TranslateWith } from "@open-reel/core/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "./api";
@@ -100,7 +100,36 @@ function Translation() {
 	const install = useMutation({ mutationFn: () => api.installModel(id) });
 	const cancel = useMutation({ mutationFn: () => api.cancelModel(id) });
 	const remove = useMutation({ mutationFn: () => api.deleteModel(id) });
+	const client = useQueryClient();
+	const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
+	const providers = useQuery({
+		queryKey: ["providers"],
+		queryFn: api.providers,
+	});
+	const choose = useMutation({
+		mutationFn: (translateWith: TranslateWith) =>
+			api.saveSettings({ translateWith }),
+		onSuccess: (saved) => client.setQueryData(["settings"], saved),
+	});
 	if (!model) return null;
+	const chosen = settings.data?.translateWith ?? "local";
+	const hasKey = (provider: string) =>
+		providers.data?.some((p) => p.id === provider && p.hasKey) ?? false;
+	const options: { value: TranslateWith; label: string; usable: boolean }[] = [
+		{
+			value: "local",
+			label: t("settings.translateLocal"),
+			usable: model.ready,
+		},
+		...(["openai", "google", "openrouter"] as const).map((value) => ({
+			value,
+			label: t("settings.translateCloud", {
+				provider: providers.data?.find((p) => p.id === value)?.name ?? value,
+			}),
+			usable: hasKey(value),
+		})),
+		{ value: "off", label: t("settings.translateOff"), usable: true },
+	];
 	const busy = ["queued", "downloading", "verifying"].includes(
 		live?.state ?? model.state,
 	);
@@ -114,6 +143,39 @@ function Translation() {
 			<p className="mt-2 text-sm leading-relaxed text-dim">
 				{t("settings.translationIntro")}
 			</p>
+			<fieldset className="mt-4">
+				<legend className="text-sm font-medium">
+					{t("settings.translateWith")}
+				</legend>
+				<div className="mt-2 flex flex-col gap-1.5">
+					{options.map((option) => (
+						<label
+							key={option.value}
+							className={`flex items-center gap-2 text-sm ${option.usable ? "" : "text-dim"}`}
+						>
+							<input
+								type="radio"
+								name="translate-with"
+								value={option.value}
+								checked={chosen === option.value}
+								disabled={!option.usable || choose.isPending}
+								onChange={() => choose.mutate(option.value)}
+							/>
+							{option.label}
+							{!option.usable && (
+								<span className="text-xs">
+									{option.value === "local"
+										? t("settings.translateLocalMissing")
+										: t("settings.translateNoKey")}
+								</span>
+							)}
+						</label>
+					))}
+				</div>
+				{choose.error && (
+					<p className="mt-2 text-sm text-danger">{explain(choose.error)}</p>
+				)}
+			</fieldset>
 			<div className="mt-4 rounded-lg border border-line bg-panel p-4">
 				<div className="flex items-baseline justify-between gap-4">
 					<h3 className="font-medium">{model.name}</h3>

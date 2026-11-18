@@ -34,6 +34,8 @@ export type RunOnce = (
 ) => Promise<{ code: number; stdout: string; stderr: string }>;
 
 const runOnce: RunOnce = async (argv, signal) => {
+	// Already given up: an abort listener would never fire.
+	signal.throwIfAborted();
 	const child = Bun.spawn(argv, {
 		stdin: "ignore",
 		stdout: "pipe",
@@ -93,6 +95,7 @@ interface Server {
 	key: string;
 	url: string;
 	stop(): void;
+	exited: Promise<number>;
 }
 
 export class LocalTranslator implements Translator {
@@ -106,6 +109,12 @@ export class LocalTranslator implements Translator {
 	private idleMs: number;
 	private server: Promise<Server> | null = null;
 	private idle: ReturnType<typeof setTimeout> | undefined;
+	/** The model the server has loaded, by its program and file. */
+	private serverKey: string | null = null;
+	/** Translations through the server now: it is not unloaded under them. */
+	private inFlight = 0;
+	/** Bumped by every stop, so a start under way knows it is unwanted. */
+	private generation = 0;
 
 	constructor(options: LocalTranslatorOptions) {
 		this.store = options.store;
@@ -138,8 +147,10 @@ export class LocalTranslator implements Translator {
 		signal: AbortSignal,
 	): Promise<string> {
 		clearTimeout(this.idle);
-		const server = await this.started(runtime);
+		this.inFlight++;
 		try {
+			const server = await this.started(runtime);
+			signal.throwIfAborted();
 			const response = await this.fetch(`${server.url}/v1/chat/completions`, {
 				method: "POST",
 				headers: { "content-type": "application/json" },
@@ -163,30 +174,43 @@ export class LocalTranslator implements Translator {
 			if (typeof text !== "string") throw new Error("No translation came back");
 			return text;
 		} finally {
-			this.idle = setTimeout(() => this.stop(), this.idleMs);
-			this.idle.unref?.();
+			this.inFlight--;
+			// Unloaded once nothing has used it for a while.
+			if (this.inFlight === 0) {
+				clearTimeout(this.idle);
+				this.idle = setTimeout(() => this.stop(), this.idleMs);
+				this.idle.unref?.();
+			}
 		}
 	}
 
+	/** The server with this runtime's model, started if need be. */
 	private started(runtime: LocalRuntime): Promise<Server> {
 		const key = `${runtime.executable}:${runtime.files.model}`;
-		if (this.server) {
-			const current = this.server;
-			return current.then((server) => {
-				if (server.key === key) return server;
-				this.stop();
-				return this.started(runtime);
+		// Another model now (another variant, another engine): the old goes.
+		if (this.server && this.serverKey !== key) this.stop();
+		if (!this.server) {
+			const generation = this.generation;
+			const starting = this.start(key, runtime, generation);
+			this.server = starting;
+			this.serverKey = key;
+			starting.catch(() => {
+				if (this.server === starting) this.forget();
 			});
 		}
-		const starting = this.start(key, runtime);
-		this.server = starting;
-		starting.catch(() => {
-			if (this.server === starting) this.server = null;
-		});
-		return starting;
+		return this.server;
 	}
 
-	private async start(key: string, runtime: LocalRuntime): Promise<Server> {
+	private forget(): void {
+		this.server = null;
+		this.serverKey = null;
+	}
+
+	private async start(
+		key: string,
+		runtime: LocalRuntime,
+		generation: number,
+	): Promise<Server> {
 		const model = runtime.files.model;
 		if (!model) throw new Error("The translator has no model file");
 		const port = await this.freePort();
@@ -208,13 +232,28 @@ export class LocalTranslator implements Translator {
 			for await (const _ of child.output);
 		})().catch(() => {});
 		let exited = false;
+		const url = `http://127.0.0.1:${port}`;
+		const server: Server = {
+			key,
+			url,
+			stop: () => child.kill(),
+			exited: child.exited,
+		};
 		void child.exited.then(() => {
 			exited = true;
+			// It died (out of memory, killed): the next prompt starts another.
+			void this.server?.then((current) => {
+				if (current === server) this.forget();
+			});
 		});
-		const url = `http://127.0.0.1:${port}`;
 		const started = Date.now();
 		for (;;) {
 			if (exited) throw new Error("The translator would not start");
+			if (this.generation !== generation) {
+				// Stopped while it started: nobody gets a server about to go.
+				child.kill();
+				throw new Error("The translator was stopped");
+			}
 			if (Date.now() - started > START_TIMEOUT_MS) {
 				child.kill();
 				throw new Error("The translator took too long to start");
@@ -223,7 +262,7 @@ export class LocalTranslator implements Translator {
 			if (health?.ok) break;
 			await Bun.sleep(POLL_MS);
 		}
-		return { key, url, stop: () => child.kill() };
+		return server;
 	}
 
 	/** Runs the model once for this prompt, through a file it reads. */
@@ -276,9 +315,21 @@ export class LocalTranslator implements Translator {
 
 	/** Unloads the model. */
 	stop(): void {
+		void this.stopAndWait();
+	}
+
+	/**
+	 * Unloads the model and resolves once its server has exited: on Windows
+	 * its file can be moved or deleted only then.
+	 */
+	async stopAndWait(): Promise<void> {
 		clearTimeout(this.idle);
+		// A start under way sees this and gives up.
+		this.generation++;
 		const server = this.server;
-		this.server = null;
-		void server?.then((s) => s.stop()).catch(() => {});
+		this.forget();
+		const running = await server?.catch(() => null);
+		running?.stop();
+		await running?.exited;
 	}
 }

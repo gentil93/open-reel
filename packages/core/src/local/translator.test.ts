@@ -35,12 +35,14 @@ function fakeServer(reply = "a red fox in the snow") {
 	const started: string[][] = [];
 	const asked: unknown[] = [];
 	let killed = 0;
+	const exits: ((code: number) => void)[] = [];
 	const spawn: Spawn = (argv) => {
 		started.push(argv);
 		let exit: (code: number) => void = () => {};
 		const exited = new Promise<number>((resolve) => {
 			exit = resolve;
 		});
+		exits.push((code) => exit(code));
 		return {
 			output: (async function* () {
 				yield "main: server is listening";
@@ -58,7 +60,15 @@ function fakeServer(reply = "a red fox in the snow") {
 		asked.push(JSON.parse(String(init?.body)));
 		return Response.json({ choices: [{ message: { content: reply } }] });
 	};
-	return { spawn, fetch, started, asked, killed: () => killed };
+	return {
+		spawn,
+		fetch,
+		started,
+		asked,
+		killed: () => killed,
+		/** The newest server dies on its own. */
+		crash: () => exits.at(-1)?.(1),
+	};
 }
 
 describe("the local translator", () => {
@@ -150,6 +160,74 @@ describe("the local translator", () => {
 		await expect(
 			translator.toEnglish("uma raposa", new AbortController().signal),
 		).rejects.toThrow("failed to load model");
+	});
+
+	test("a server that died is started again for the next prompt", async () => {
+		const { store } = await setup(false);
+		const server = fakeServer();
+		const translator = new LocalTranslator({
+			store,
+			model: "qwen",
+			spawn: server.spawn,
+			fetch: server.fetch,
+			freePort: async () => 4321,
+		});
+		const signal = new AbortController().signal;
+		await translator.toEnglish("uma raposa", signal);
+		server.crash();
+		await Bun.sleep(0);
+		await translator.toEnglish("outra raposa", signal);
+		expect(server.started).toHaveLength(2);
+		translator.stop();
+	});
+
+	test("is not unloaded while a prompt is being translated", async () => {
+		const { store } = await setup(false);
+		const server = fakeServer();
+		let release = () => {};
+		const held = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const translator = new LocalTranslator({
+			store,
+			model: "qwen",
+			spawn: server.spawn,
+			fetch: async (url, init) => {
+				// The second prompt takes its time.
+				if (!url.endsWith("/health") && String(init?.body).includes("lenta")) {
+					await held;
+				}
+				return server.fetch(url, init);
+			},
+			freePort: async () => 4321,
+			idleMs: 20,
+		});
+		const signal = new AbortController().signal;
+		await translator.toEnglish("primeira", signal);
+		const slow = translator.toEnglish("lenta", signal);
+		await translator.toEnglish("terceira", signal);
+		// Longer than the idle time, with the slow one still under way.
+		await Bun.sleep(60);
+		expect(server.killed()).toBe(0);
+		release();
+		await slow;
+		await Bun.sleep(60);
+		expect(server.killed()).toBe(1);
+	});
+
+	test("stopping lets go of the model, waiting until its server has exited", async () => {
+		const { store } = await setup(false);
+		const server = fakeServer();
+		const translator = new LocalTranslator({
+			store,
+			model: "qwen",
+			spawn: server.spawn,
+			fetch: server.fetch,
+			freePort: async () => 4321,
+		});
+		await translator.toEnglish("uma raposa", new AbortController().signal);
+		await translator.stopAndWait();
+		expect(server.killed()).toBe(1);
 	});
 
 	test("is ready only once its model is installed", async () => {

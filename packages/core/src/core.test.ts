@@ -643,6 +643,60 @@ describe("job engine", () => {
 		}
 	});
 
+	test("canceling while the prompt is translated stops the job at once", async () => {
+		const slow = gate();
+		const app = boot(await tempDir(), new FakeProvider(), 4, {
+			toEnglish: async () => {
+				await slow.promise;
+				return "a fox";
+			},
+		});
+		const { turn, session } = await app.service.createTurn(LOCAL_USER, {
+			prompt: "uma raposa",
+			modelIds: ["fake/beta"],
+		});
+		await settle();
+		await app.service.cancelJob(LOCAL_USER, turn.jobs[0]?.id as string);
+		await settle();
+		const job = (await app.service.getSession(LOCAL_USER, session.id)).turns[0]
+			?.jobs[0];
+		expect(job?.status).toBe("canceled");
+		// Nothing was sent, nor is the translation written onto it later.
+		slow.open();
+		await app.engine.idle();
+		expect(app.provider.submitted).toHaveLength(0);
+		const after = (await app.service.getSession(LOCAL_USER, session.id))
+			.turns[0]?.jobs[0];
+		expect(after?.params.translatedPrompt).toBeUndefined();
+	});
+
+	test("a failed translation is not kept: trying again translates again", async () => {
+		let calls = 0;
+		const app = boot(await tempDir(), new FakeProvider(), 4, {
+			toEnglish: async () => {
+				calls++;
+				if (calls === 1) throw new Error("still loading");
+				return "a fox";
+			},
+		});
+		const { session } = await app.service.createTurn(LOCAL_USER, {
+			prompt: "uma raposa",
+			modelIds: ["fake/beta"],
+		});
+		await app.engine.idle();
+		const first = (await app.service.getSession(LOCAL_USER, session.id))
+			.turns[0]?.jobs[0];
+		expect(first?.params.translatedPrompt).toBeUndefined();
+		await app.service.createTurn(LOCAL_USER, {
+			prompt: "uma raposa",
+			modelIds: ["fake/beta"],
+			sessionId: session.id,
+		});
+		await app.engine.idle();
+		expect(calls).toBe(2);
+		expect(app.provider.submitted.at(-1)?.prompt).toBe("a fox");
+	});
+
 	test("a prompt already in English is sent as it is, and nothing is shown", async () => {
 		const app = boot(await tempDir(), new FakeProvider(), 4, {
 			toEnglish: async (prompt) => prompt,

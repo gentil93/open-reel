@@ -977,6 +977,37 @@ test("a model another open-reel is installing keeps the files it shares", async 
 	expect(await blobs()).toContain(encoder);
 });
 
+test("a model kept loaded lets go of its files before they are deleted or moved", async () => {
+	const { store, root } = await setup();
+	await store.install("a");
+	await store.idle();
+	const order: string[] = [];
+	store.onLetGo(async () => {
+		order.push("let go");
+	});
+	const removing = store.remove("a");
+	await removing;
+	order.push("removed");
+	expect(order).toEqual(["let go", "removed"]);
+
+	const movable = new LocalModelStore({
+		root,
+		catalog: CATALOG,
+		engines: ENGINES,
+		hardware: async () => machine(24),
+		locationFile: join(root, "..", `${crypto.randomUUID()}.json`),
+	});
+	let lets = 0;
+	movable.onLetGo(async () => {
+		lets++;
+	});
+	const target = await mkdtemp(join(tmpdir(), "open-reel-target-"));
+	dirs.push(target);
+	await movable.relocate(target);
+	await movable.idle();
+	expect(lets).toBe(1);
+});
+
 test("removing a model leaves a file another open-reel is downloading", async () => {
 	const first = await setup();
 	await first.store.install("a");

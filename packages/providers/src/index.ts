@@ -14,6 +14,7 @@ export { OpenAIProvider } from "./openai";
 export { OpenRouterProvider } from "./openrouter";
 export { PROFILES, profileFor, withProfiles } from "./profiles";
 export { ReplicateProvider } from "./replicate";
+export { CloudTranslator, type CloudTranslatorId } from "./translators";
 
 /** Every provider that ships with open-reel, with their models' profiles. */
 export function builtinProviders(): ProviderAdapter[] {

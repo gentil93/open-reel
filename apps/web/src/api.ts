@@ -6,6 +6,7 @@ import type {
 	ModelSpec,
 	ProviderStatus,
 	Session,
+	Settings,
 	TurnView,
 } from "@open-reel/core/types";
 
@@ -80,6 +81,9 @@ export const api = {
 		request<void>(`/api/local-models/${id}/cancel`, { method: "POST" }),
 	deleteModel: (id: string) =>
 		request<void>(`/api/local-models/${id}`, { method: "DELETE" }),
+	settings: () => request<Settings>("/api/settings"),
+	saveSettings: (change: Partial<Settings>) =>
+		request<Settings>("/api/settings", send("PUT", change)),
 	moveModels: (path: string) =>
 		request<void>("/api/local-models/location", send("POST", { path })),
 	gallery: (query: string, before?: GalleryItem) => {

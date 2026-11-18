@@ -28,7 +28,9 @@ const windowsDir = `${localAppData}\\open-reel\\preview`;
 const dir = (await $`wslpath -u ${windowsDir}`.text()).trim();
 
 // A running preview holds its program open, so it is stopped first.
-await $`taskkill.exe /IM ${PROGRAM} /F`.quiet().nothrow();
+// With the engines it started (/T): a model kept loaded would otherwise
+// outlive it, holding memory and its files.
+await $`taskkill.exe /IM ${PROGRAM} /T /F`.quiet().nothrow();
 if (process.argv.includes("--stop")) {
 	console.log("Stopped.");
 	process.exit(0);
@@ -106,12 +108,14 @@ await step("Starting it", async () => {
 	// talks to Windows with (Start-Process with redirected output does) keeps
 	// the command from returning until it exits, which a server never does.
 	const command = `cmd.exe /c ""${program}" --port ${PORT} --resources "${windowsDir}\\resources" > "${log}" 2> "${log}.err""`;
+	// In PowerShell's single quotes, a quote is written twice (O'Brien).
+	const quoted = (text: string) => `'${text.replaceAll("'", "''")}'`;
 	const start = Bun.spawn(
 		[
 			"powershell.exe",
 			"-NoProfile",
 			"-Command",
-			`$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = '${command}'; CurrentDirectory = '${windowsDir}' }; exit $r.ReturnValue`,
+			`$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = ${quoted(command)}; CurrentDirectory = ${quoted(windowsDir)} }; if ($r -eq $null) { exit 1 }; exit $r.ReturnValue`,
 		],
 		{ stdin: "ignore", stdout: "ignore", stderr: "pipe" },
 	);
@@ -124,18 +128,26 @@ await step("Starting it", async () => {
 // Up when its API answers; otherwise, show what it said. Asked from the
 // Windows side: under WSL, Windows' localhost cannot be reached from Linux.
 const answered = await step("Waiting for it to answer", async () => {
-	for (let i = 0; i < 60; i++) {
+	const started = Date.now();
+	while (Date.now() - started < 60_000) {
 		const up =
 			await $`powershell.exe -NoProfile -Command ${`try { Invoke-RestMethod http://127.0.0.1:${PORT}/api/providers | Out-Null; 'up' } catch { 'down' }`}`
 				.quiet()
 				.nothrow()
 				.text();
 		if (up.includes("up")) return true;
-		const said = await Bun.file(errors)
-			.text()
-			.catch(() => "");
-		if (said.trim()) {
-			console.error(`\nopen-reel did not start: ${said.trim()}`);
+		// What it said counts only if it is gone: a warning is not a failure.
+		const running = await $`tasklist.exe /FI ${`IMAGENAME eq ${PROGRAM}`} /NH`
+			.quiet()
+			.nothrow()
+			.text();
+		if (!running.includes(PROGRAM)) {
+			const said = await Bun.file(errors)
+				.text()
+				.catch(() => "");
+			console.error(
+				`\nopen-reel stopped as it started${said.trim() ? `: ${said.trim()}` : `. See ${log}`}`,
+			);
 			process.exit(1);
 		}
 		await Bun.sleep(500);

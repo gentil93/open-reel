@@ -52,10 +52,13 @@ export interface JobEngineDeps {
 	/** The wait before the first try again; it doubles each time. */
 	retryDelayMs?: number;
 	/**
-	 * Puts prompts into English for models that read only English; the one
-	 * set up now, or null when none is. Without one, prompts go as written.
+	 * Puts prompts into English for models that read only English: the one
+	 * a user has chosen and can use now, or null when none. Without one,
+	 * prompts go as written.
 	 */
-	translator?: () => Translator | null;
+	translator?: (
+		userId: string,
+	) => Translator | null | Promise<Translator | null>;
 }
 
 /** A translation that takes longer is given up on; the prompt goes as written. */
@@ -68,6 +71,21 @@ const RETRY_DELAY_MS = 2_000;
 const MAX_RETRY_AFTER_MS = 60_000;
 
 /** Sleeps, rejecting as soon as the signal aborts. */
+/**
+ * Never resolves; rejects as soon as `signal` aborts. Its rejection after a
+ * race is over is expected, so it is never reported as unhandled.
+ */
+function rejectOnAbort(signal: AbortSignal): Promise<never> {
+	const aborted = new Promise<never>((_, reject) => {
+		if (signal.aborted) return reject(signal.reason);
+		signal.addEventListener("abort", () => reject(signal.reason), {
+			once: true,
+		});
+	});
+	aborted.catch(() => {});
+	return aborted;
+}
+
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
 	return new Promise((resolve, reject) => {
 		if (signal.aborted) return reject(signal.reason);
@@ -101,10 +119,14 @@ export class JobEngine {
 	/** Jobs queued or running here, so that none is ever run twice at once. */
 	private owned = new Set<string>();
 	/**
-	 * Translations in progress or just made, by prompt: the jobs of one turn
-	 * share their prompt, and it is translated once for all of them.
+	 * Translations in progress or just made, by translator and prompt: the
+	 * jobs of one turn share their prompt, and it is translated once for all
+	 * of them.
 	 */
-	private translations = new Map<string, Promise<string | null>>();
+	private translations = new WeakMap<
+		Translator,
+		Map<string, Promise<string | null>>
+	>();
 	private inflight = new Set<Promise<void>>();
 	private limit: number;
 
@@ -307,7 +329,7 @@ export class JobEngine {
 							job.params.maskAssetId != null
 								? await this.loadReferences(ctx, [job.params.maskAssetId])
 								: [];
-						const params = await this.inEnglish(job, model);
+						const params = await this.inEnglish(job, model, controller.signal);
 						handle = await adapter.submit(
 							{
 								model,
@@ -446,12 +468,13 @@ export class JobEngine {
 	private async inEnglish(
 		job: Job,
 		model: ModelSpec,
+		signal: AbortSignal,
 	): Promise<GenerationParams> {
 		if (!model.capabilities.englishPrompts) return job.params;
 		if (job.params.translatedPrompt) {
 			return { ...job.params, prompt: job.params.translatedPrompt };
 		}
-		const translator = this.deps.translator?.();
+		const translator = await this.deps.translator?.(job.userId);
 		if (!translator) return job.params;
 		const { prompt } = job.params;
 		this.emit(job.userId, {
@@ -460,7 +483,13 @@ export class JobEngine {
 			message: "Translating the prompt",
 			stage: "translating",
 		});
-		let pending = this.translations.get(prompt);
+		let made = this.translations.get(translator);
+		if (!made) {
+			made = new Map();
+			this.translations.set(translator, made);
+		}
+		const translations = made;
+		let pending = translations.get(prompt);
 		if (!pending) {
 			// Not tied to this job: the others of its turn wait on it too.
 			pending = translator
@@ -472,12 +501,19 @@ export class JobEngine {
 						return null;
 					},
 				);
-			this.translations.set(prompt, pending);
-			const forget = () => this.translations.delete(prompt);
-			// Kept for a moment, for the other jobs of the turn.
-			void pending.then(() => setTimeout(forget, 60_000).unref?.());
+			translations.set(prompt, pending);
+			const forget = () => translations.delete(prompt);
+			void pending.then((english) => {
+				// A failure is not kept: trying again translates again.
+				if (!english) forget();
+				// A translation is, for a moment, for the other jobs of the turn.
+				else setTimeout(forget, 60_000).unref?.();
+			});
 		}
-		const english = await pending;
+		// The translation goes on for the turn's other jobs; this one stops
+		// waiting as soon as it is canceled.
+		const english = await Promise.race([pending, rejectOnAbort(signal)]);
+		signal.throwIfAborted();
 		if (!english || sameWords(english, prompt)) return job.params;
 		const params = { ...job.params, translatedPrompt: english };
 		await this.update(job.id, { params });

@@ -549,3 +549,26 @@ export type LocalModelEvent =
 			size: number;
 			bytesPerSecond: number;
 	  };
+
+/**
+ * What puts prompts into English for the models that read only English: the
+ * model on this computer, a service reached with the person's key (it costs
+ * a fraction of a cent per prompt), or nothing.
+ */
+export const TRANSLATE_WITH = [
+	"local",
+	"openai",
+	"google",
+	"openrouter",
+	"off",
+] as const;
+export type TranslateWith = (typeof TRANSLATE_WITH)[number];
+
+export function isTranslateWith(value: unknown): value is TranslateWith {
+	return (TRANSLATE_WITH as readonly unknown[]).includes(value);
+}
+
+/** Choices a person makes that the server acts on. */
+export interface Settings {
+	translateWith: TranslateWith;
+}
