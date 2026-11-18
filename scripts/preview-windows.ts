@@ -73,9 +73,20 @@ async function step<T>(what: string, run: () => Promise<T>): Promise<T> {
 	} catch (error) {
 		clearInterval(ticker);
 		if (live) process.stdout.write("\n");
-		throw error;
+		// What the command said, not where in this script it was run from.
+		const said =
+			(error as { stderr?: { toString(): string } }).stderr
+				?.toString()
+				.trim() || (error instanceof Error ? error.message : String(error));
+		console.error(`${what} failed:\n${said}`);
+		process.exit(1);
 	}
 }
+
+// A pull may bring a new package: without this the build cannot find it.
+await step("Installing dependencies", () =>
+	$`bun install --frozen-lockfile`.cwd(root).quiet(),
+);
 
 await step("Building the interface", () =>
 	$`bun run --filter @open-reel/web build`.cwd(root).quiet(),
