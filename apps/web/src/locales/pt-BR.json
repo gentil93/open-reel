@@ -258,6 +258,7 @@
 	"progress.queuedAt": "Na fila (posição {position})",
 	"progress.starting": "Começando",
 	"progress.step": "Gerando · passo {step} de {steps}",
+	"progress.waitingGpu": "Esperando outro open-reel liberar a placa de vídeo",
 	"settings.keyConfigured": "chave configurada",
 	"settings.keyLabel": "Chave de API do {provider}",
 	"settings.language": "Idioma",

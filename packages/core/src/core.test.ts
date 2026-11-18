@@ -301,6 +301,34 @@ describe("job engine", () => {
 		await app.engine.idle();
 	});
 
+	test("a provider's lines each run their own jobs", async () => {
+		const provider = Object.assign(
+			new FakeProvider("fake", ["alpha", "beta", "gamma"]),
+			{
+				maxConcurrency: 1,
+				lineOf: (modelId: string) => (modelId === "fake/gamma" ? "b" : "a"),
+			},
+		);
+		const app = boot(await tempDir(), provider, 4);
+		const g = gate();
+		provider.gate = g.promise;
+		const { session } = await app.service.createTurn(LOCAL_USER, {
+			prompt: "x",
+			modelIds: ["fake/alpha", "fake/beta", "fake/gamma"],
+		});
+		await settle();
+		const during = (await app.service.getSession(LOCAL_USER, session.id))
+			.turns[0]?.jobs;
+		// The third job is in another line: it does not wait behind the second.
+		expect(during?.map((j) => j.status)).toEqual([
+			"running",
+			"queued",
+			"running",
+		]);
+		g.open();
+		await app.engine.idle();
+	});
+
 	test("reports progress and status changes to listeners", async () => {
 		const app = boot(await tempDir());
 		const seen: string[] = [];

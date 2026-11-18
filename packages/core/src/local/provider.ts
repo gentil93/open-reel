@@ -118,7 +118,7 @@ export async function engineArguments(
 	const video = runtime.model.media === "video";
 	const { width, height } = dimensions(
 		defaults.size,
-		params.aspectRatio,
+		params.aspectRatio ?? defaults.aspectRatios[0],
 		video ? 16 : 64,
 	);
 	const args = ["-M", video ? "vid_gen" : "img_gen"];
@@ -221,7 +221,8 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 	requiresKey = false;
 	// A job lives in the engine process, which dies with open-reel.
 	resumable = false;
-	// Every local model shares the one GPU.
+	// One picture and one video at a time (see lineOf), and both at once only
+	// when they fit in the GPU's memory: the GPU lock decides.
 	maxConcurrency = 1;
 	onChange: (() => void) | null = null;
 	private installed: string[] = [];
@@ -236,7 +237,9 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 		this.catalog = options.catalog;
 		this.spawn = options.spawn ?? spawnProcess;
 		this.windowsPath = options.windowsPath ?? windowsPath;
-		this.warm = options.warm ?? new WarmEngines({ spawn: this.spawn });
+		this.warm =
+			options.warm ??
+			new WarmEngines({ spawn: this.spawn, gpu: this.store.gpu });
 		this.store.subscribe((event) => {
 			if (event.type === "models.changed") void this.load();
 		});
@@ -253,6 +256,15 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 		if (installed.join() === this.installed.join()) return;
 		this.installed = installed;
 		this.onChange?.();
+	}
+
+	/**
+	 * Pictures and videos wait in separate lines: the loaded model is one, so
+	 * a second job of the same kind could only wait for it.
+	 */
+	lineOf(modelId: string): string {
+		const id = modelId.replace(/^local\//, "");
+		return this.catalog.find((model) => model.id === id)?.media ?? "image";
 	}
 
 	listModels(): ModelSpec[] {
@@ -315,7 +327,7 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 			const defaults = runtime.model.defaults;
 			const { width, height } = dimensions(
 				defaults.size,
-				handle.params.aspectRatio,
+				handle.params.aspectRatio ?? defaults.aspectRatios[0],
 			);
 			const argv = [server];
 			for (const [role, file] of Object.entries(runtime.files)) {
@@ -340,6 +352,7 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 						previewInterval: previewInterval(defaults.steps) ?? undefined,
 					},
 					ctx.signal,
+					runtime.variant.memoryBytes,
 				);
 				return;
 			} catch (error) {
@@ -347,6 +360,26 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 				// The server would not start; run the engine once instead.
 			}
 		}
+		const hold = yield* this.store.gpu.acquire(
+			runtime.variant.memoryBytes,
+			ctx.signal,
+		);
+		try {
+			yield* this.once(runtime, handle, ctx, output, path);
+		} finally {
+			hold.release();
+		}
+	}
+
+	/** Runs the engine once for this job. */
+	private async *once(
+		runtime: LocalRuntime,
+		handle: LocalHandle,
+		ctx: ProviderContext,
+		output: string,
+		path: PathMapper,
+	): AsyncIterable<ProviderEvent> {
+		const video = runtime.model.media === "video";
 		const argv = [
 			runtime.executable,
 			...(await engineArguments(
@@ -476,5 +509,6 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 	/** Unloads the model, so no engine outlives open-reel. */
 	close(): void {
 		if (this.warm) this.warm.stop();
+		this.store.gpu.close();
 	}
 }

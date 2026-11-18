@@ -65,9 +65,16 @@ export interface ProviderAdapter<Handle = unknown> {
 	resumable: boolean;
 	/**
 	 * How many of its jobs may run at once, when fewer than the engine's
-	 * default. Local models share one GPU, so they run one at a time.
+	 * default. Local models share one GPU, so they run one at a time per line.
 	 */
 	maxConcurrency?: number;
+	/**
+	 * Splits the provider's jobs into lines that each run up to
+	 * `maxConcurrency` jobs, so a job of one kind does not wait behind jobs of
+	 * another. Local pictures and videos are separate lines: each fits beside
+	 * the other when the GPU's memory allows.
+	 */
+	lineOf?(modelId: string): string;
 	/** Overrides `resumable` for providers where it depends on the request. */
 	isResumable?(handle: Handle): boolean;
 	listModels(): ModelSpec[];

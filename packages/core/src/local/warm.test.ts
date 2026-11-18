@@ -1,5 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ProviderEvent } from "../provider";
+import { GpuLock } from "./gpu";
 import type { Spawn } from "./provider";
 import { WarmEngines, type WarmRequest } from "./warm";
 
@@ -99,6 +103,11 @@ async function collect(
 	return all;
 }
 
+const roots: string[] = [];
+afterEach(async () => {
+	for (const root of roots.splice(0)) await rm(root, { recursive: true });
+});
+
 const engines = (spawn: Spawn, fetch: ReturnType<typeof fakeApi>["fetch"]) =>
 	new WarmEngines({ spawn, fetch, freePort: async () => 4242, idleMs: 60_000 });
 
@@ -175,6 +184,59 @@ describe("warm engines", () => {
 		expect(warm.loaded).toBe("b:v");
 		warm.stop();
 		expect(warm.loaded).toBeNull();
+	});
+
+	test("a loaded model keeps its memory reserved until another job wants it", async () => {
+		const root = await mkdtemp(join(tmpdir(), "open-reel-gpu-"));
+		roots.push(root);
+		const GB = 2 ** 30;
+		const gpu = new GpuLock({
+			root,
+			capacity: async () => 12 * GB,
+			pollMs: 5,
+		});
+		const warm = new WarmEngines({
+			spawn: fakeServers().spawn,
+			fetch: fakeApi().fetch,
+			freePort: async () => 4242,
+			idleMs: 60_000,
+			gpu,
+		});
+		const signal = new AbortController().signal;
+		await collect(warm.run("sdxl:v", ["sd-server"], request, signal, 8 * GB));
+		expect(warm.loaded).toBe("sdxl:v");
+		expect(gpu.reserved).toBe(8 * GB);
+		// A video needing 7 GB does not fit beside it: the idle model goes.
+		const video = gpu.acquire(7 * GB, signal);
+		let next = await video.next();
+		while (!next.done) next = await video.next();
+		expect(warm.loaded).toBeNull();
+		expect(gpu.reserved).toBe(7 * GB);
+		gpu.close();
+	});
+
+	test("a model failing to load gives its memory back", async () => {
+		const root = await mkdtemp(join(tmpdir(), "open-reel-gpu-"));
+		roots.push(root);
+		const gpu = new GpuLock({ root, capacity: async () => 2 ** 34 });
+		const warm = new WarmEngines({
+			spawn: fakeServers({ failToStart: true }).spawn,
+			fetch: fakeApi().fetch,
+			freePort: async () => 4242,
+			gpu,
+		});
+		await expect(
+			collect(
+				warm.run(
+					"a:v",
+					["sd-server"],
+					request,
+					new AbortController().signal,
+					1,
+				),
+			),
+		).rejects.toThrow();
+		expect(gpu.reserved).toBe(0);
 	});
 
 	test("say why a server would not start, so the job can run another way", async () => {

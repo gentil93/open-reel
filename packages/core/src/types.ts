@@ -4,7 +4,12 @@ import type { ErrorParams } from "./errors";
 export type Media = "image" | "video";
 
 /** Where a job is, in words every provider can say the same way. */
-export type ProgressStage = "queued" | "starting" | "loading" | "generating";
+export type ProgressStage =
+	| "queued"
+	| "waitingGpu"
+	| "starting"
+	| "loading"
+	| "generating";
 export type Operation = "generate" | "edit";
 
 /** Who an operation runs for. Local installs use a single fixed user. */

@@ -1,4 +1,5 @@
 import type { ProviderEvent } from "../provider";
+import type { GpuHold, GpuLock } from "./gpu";
 import type { Spawn } from "./provider";
 
 /**
@@ -7,8 +8,9 @@ import type { Spawn } from "./provider";
  * Loading a model takes seconds; with it loaded, SDXL Turbo makes a picture
  * in under half a second instead of about five.
  *
- * One model is loaded at a time, since they share the GPU's memory. The
- * server stops after a while unused, to give that memory back.
+ * One model is loaded at a time, and its memory stays reserved on the GPU
+ * lock while it is. The server stops after a while unused, or as soon as
+ * another job waits for that memory, to give it back.
  */
 
 /** How long a loaded model waits for another job before it is unloaded. */
@@ -64,6 +66,8 @@ export interface WarmEnginesOptions {
 	/** A free loopback port for a new server. */
 	freePort?: () => Promise<number>;
 	idleMs?: number;
+	/** Reserves the GPU's memory a loaded model takes. */
+	gpu?: GpuLock;
 }
 
 async function freeLoopbackPort(): Promise<number> {
@@ -85,12 +89,19 @@ export class WarmEngines {
 	private fetch: (url: string, init?: RequestInit) => Promise<Response>;
 	private freePort: () => Promise<number>;
 	private idleMs: number;
+	private gpu: GpuLock | undefined;
+	private hold: GpuHold | null = null;
+	/** The GPU memory the loaded model holds. */
+	private held = 0;
+	/** Jobs running or about to: a busy model is not given back. */
+	private busy = 0;
 
 	constructor(options: WarmEnginesOptions) {
 		this.spawn = options.spawn;
 		this.fetch = options.fetch ?? ((url, init) => fetch(url, init));
 		this.freePort = options.freePort ?? freeLoopbackPort;
 		this.idleMs = options.idleMs ?? IDLE_MS;
+		this.gpu = options.gpu;
 	}
 
 	/** The model loaded now, by the key it was started with. */
@@ -110,7 +121,9 @@ export class WarmEngines {
 		if (this.running?.key === key) return this.running;
 		if (this.starting) await this.starting.catch(() => {});
 		if (this.running?.key === key) return this.running;
-		this.stop();
+		// Another model: unload it, keeping the memory reserved for this one.
+		this.running?.stop();
+		this.running = null;
 		this.starting = this.start(key, argv, signal);
 		try {
 			this.running = await this.starting;
@@ -148,7 +161,8 @@ export class WarmEngines {
 		let exited = false;
 		void child.exited.then(() => {
 			exited = true;
-			if (this.running?.key === key) this.running = null;
+			// This server, not a newer one for the same model.
+			if (this.running?.exited === child.exited) this.stop();
 		});
 		const started = Date.now();
 		while (!up) {
@@ -169,34 +183,64 @@ export class WarmEngines {
 		clearTimeout(this.idle);
 		this.running?.stop();
 		this.running = null;
+		this.hold?.release();
+		this.hold = null;
+		this.held = 0;
 	}
 
 	/**
-	 * Runs one job on the server for `key`, starting it with `argv` if needed.
-	 * Throws if the server cannot be started, so the caller can fall back to
-	 * running the engine once for this job.
+	 * Runs one job on the server for `key`, starting it with `argv` if needed;
+	 * the model takes `bytes` of the GPU's memory. Throws if the server cannot
+	 * be started, so the caller can fall back to running the engine once.
 	 */
 	async *run(
 		key: string,
 		argv: string[],
 		request: WarmRequest,
 		signal: AbortSignal,
+		bytes = 0,
 	): AsyncIterable<ProviderEvent> {
 		clearTimeout(this.idle);
-		const fresh = this.running?.key !== key;
-		if (fresh) {
-			yield {
-				type: "progress",
-				message: "Loading the model",
-				stage: "loading",
-			};
-		}
-		const server = await this.server(key, argv, signal);
+		this.busy++;
 		try {
+			// A job waiting for the GPU that would fit without this model goes
+			// first, even if this job could run on it: it would wait forever
+			// behind a stream of pictures otherwise.
+			if (this.running?.key !== key || this.gpu?.wanted(this.held)) {
+				// The loaded model's memory goes back before this one's is asked.
+				this.stop();
+				if (this.gpu) {
+					this.hold = yield* this.gpu.acquire(bytes, signal, {
+						onWanted: () => {
+							if (this.busy === 0) this.stop();
+						},
+					});
+					this.held = bytes;
+				}
+				yield {
+					type: "progress",
+					message: "Loading the model",
+					stage: "loading",
+				};
+			}
+			let server: Running;
+			try {
+				server = await this.server(key, argv, signal);
+			} catch (error) {
+				// The caller runs the engine once instead, reserving for itself.
+				this.stop();
+				throw error;
+			}
 			yield* this.job(server, request, signal);
 		} finally {
+			this.busy--;
 			clearTimeout(this.idle);
-			this.idle = setTimeout(() => this.stop(), this.idleMs);
+			if (this.running) {
+				this.idle = setTimeout(() => this.stop(), this.idleMs);
+			} else if (this.busy === 0) {
+				// Ended before its server ran: nothing holds the memory for.
+				this.stop();
+			}
 		}
 	}
 

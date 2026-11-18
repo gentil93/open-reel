@@ -30,6 +30,7 @@ import type {
 	LocalModelVariant,
 } from "../types";
 import { type BuildChoice, chooseBuild, chooseVariant, fitOf } from "./engines";
+import { GpuLock } from "./gpu";
 import { detectHardware } from "./hardware";
 import { extractZip } from "./zip";
 
@@ -235,6 +236,9 @@ const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
  *   <root>/engines/<build>/      an extracted engine build
  *   <root>/demos/<sha256(url)>   a downloaded demo
  */
+/** The part of the GPU's memory local models may plan on using together. */
+const GPU_SHARE = 0.9;
+
 export class LocalModelStore {
 	private root: string;
 	private catalog: LocalModelSpec[];
@@ -253,6 +257,8 @@ export class LocalModelStore {
 	private demos = new Map<string, Promise<string>>();
 	/** One download at a time: they all compete for the same connection. */
 	private queue: Promise<void> = Promise.resolve();
+	/** Shares the GPU's memory between jobs, with other open-reels too. */
+	readonly gpu: GpuLock;
 
 	constructor(options: LocalModelStoreOptions) {
 		assertCatalog(options.catalog, options.engines);
@@ -262,6 +268,16 @@ export class LocalModelStore {
 		this.fetch = options.fetch ?? globalThis.fetch;
 		this.detect = options.hardware ?? (() => detectHardware());
 		this.checkEngine = options.checkEngine ?? runsWithHelp;
+		this.gpu = new GpuLock({
+			root: this.root,
+			capacity: async () => {
+				const { gpus } = await this.machine();
+				// The desktop and other programs keep some of it for themselves.
+				return gpus.length > 0
+					? Math.max(...gpus.map((gpu) => gpu.memoryBytes)) * GPU_SHARE
+					: null;
+			},
+		});
 	}
 
 	subscribe(listener: LocalModelListener): () => void {

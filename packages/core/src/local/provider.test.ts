@@ -14,6 +14,8 @@ import {
 	samplingProgress,
 } from "../index";
 
+import { GpuLock } from "./gpu";
+
 const dirs: string[] = [];
 afterEach(async () => {
 	for (const dir of dirs.splice(0)) await rm(dir, { recursive: true });
@@ -155,6 +157,8 @@ describe("engine arguments", () => {
 		expect(after("--flow-shift")).toBe("3");
 		expect(after("-n")).toBe("static");
 		expect(after("-W")).toBe("832");
+		// Without a ratio asked, the model's own first one, not a square.
+		expect(after("-H")).toBe("464");
 	});
 
 	test("a file with an unknown role is refused rather than guessed", async () => {
@@ -191,7 +195,8 @@ describe("running", () => {
 	/** A store that has one installed model, with its scratch in `dir`. */
 	async function setup(model = FLUX) {
 		const dir = await mkdtemp(join(tmpdir(), "open-reel-local-"));
-		dirs.push(dir);
+		const gpuRoot = await mkdtemp(join(tmpdir(), "open-reel-gpu-"));
+		dirs.push(dir, gpuRoot);
 		const listeners: ((event: { type: string }) => void)[] = [];
 		const store = {
 			list: async () => ({
@@ -202,6 +207,7 @@ describe("running", () => {
 				listeners.push(listener);
 				return () => {};
 			},
+			gpu: new GpuLock({ root: gpuRoot, capacity: async () => 12 * 2 ** 30 }),
 		};
 		const calls: string[][] = [];
 		let killed = 0;
@@ -237,7 +243,15 @@ describe("running", () => {
 				catalog: [model],
 				spawn,
 			});
-		return { dir, calls, fake, provider, killed: () => killed, listeners };
+		return {
+			dir,
+			gpuRoot,
+			calls,
+			fake,
+			provider,
+			killed: () => killed,
+			listeners,
+		};
 	}
 
 	async function run(
@@ -373,5 +387,36 @@ describe("running", () => {
 		expect(job).rejects.toThrow();
 		await Bun.sleep(10);
 		expect(killed()).toBeGreaterThan(0);
+	});
+
+	test("pictures and videos wait in separate lines", async () => {
+		const local = new LocalProvider({
+			store: { subscribe: () => () => {} } as never,
+			catalog: [FLUX, WAN],
+			warm: false,
+		});
+		expect(local.lineOf("local/flux")).toBe("image");
+		expect(local.lineOf("local/wan")).toBe("video");
+	});
+
+	test("a job waits while another open-reel holds the GPU's memory", async () => {
+		const { provider, fake, calls, gpuRoot } = await setup();
+		const other = new GpuLock({
+			root: gpuRoot,
+			capacity: async () => 12 * 2 ** 30,
+		});
+		const it = other.acquire(12 * 2 ** 30, new AbortController().signal);
+		let held = await it.next();
+		while (!held.done) held = await it.next();
+		const local = provider(fake(["  |====| 4/4 - 1.00s/it"]));
+		const job = run(local);
+		await Bun.sleep(30);
+		expect(calls.length).toBe(0);
+		held.value.release();
+		const events = await job;
+		expect(
+			events.some((e) => e.type === "progress" && e.stage === "waitingGpu"),
+		).toBe(true);
+		expect(events.at(-1)?.type).toBe("completed");
 	});
 });

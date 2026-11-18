@@ -61,6 +61,7 @@ export class JobEngine {
 		string,
 		{ userId: string; data: Uint8Array; mime: string; version: number }
 	>();
+	/** Jobs waiting and running, by line: a provider, or a line of one. */
 	private waiting = new Map<string, string[]>();
 	private active = new Map<string, number>();
 	private inflight = new Set<Promise<void>>();
@@ -98,11 +99,15 @@ export class JobEngine {
 		}
 	}
 
-	enqueue(job: Pick<Job, "id" | "providerId">): void {
-		const queue = this.waiting.get(job.providerId) ?? [];
+	enqueue(job: Pick<Job, "id" | "providerId" | "modelId">): void {
+		const adapter = this.deps.registry.adapter(job.providerId);
+		const line = adapter?.lineOf
+			? `${job.providerId}#${adapter.lineOf(job.modelId)}`
+			: job.providerId;
+		const queue = this.waiting.get(line) ?? [];
 		queue.push(job.id);
-		this.waiting.set(job.providerId, queue);
-		this.pump(job.providerId);
+		this.waiting.set(line, queue);
+		this.pump(line, job.providerId);
 	}
 
 	/** The latest picture of a running job, if it shows one, for its owner. */
@@ -136,14 +141,14 @@ export class JobEngine {
 		while (this.inflight.size > 0) await Promise.all(this.inflight);
 	}
 
-	private pump(providerId: string): void {
-		const queue = this.waiting.get(providerId) ?? [];
+	private pump(line: string, providerId: string): void {
+		const queue = this.waiting.get(line) ?? [];
 		const adapter = this.deps.registry.adapter(providerId);
 		const limit = Math.min(this.limit, adapter?.maxConcurrency ?? this.limit);
-		while ((this.active.get(providerId) ?? 0) < limit) {
+		while ((this.active.get(line) ?? 0) < limit) {
 			const jobId = queue.shift();
 			if (!jobId) return;
-			this.active.set(providerId, (this.active.get(providerId) ?? 0) + 1);
+			this.active.set(line, (this.active.get(line) ?? 0) + 1);
 			const run = this.run(jobId)
 				// run() records its own failures; this only catches a failure to record
 				// one (e.g. the database is unavailable). The job is settled on restart.
@@ -152,8 +157,8 @@ export class JobEngine {
 				)
 				.finally(() => {
 					this.inflight.delete(run);
-					this.active.set(providerId, (this.active.get(providerId) ?? 1) - 1);
-					this.pump(providerId);
+					this.active.set(line, (this.active.get(line) ?? 1) - 1);
+					this.pump(line, providerId);
 				});
 			this.inflight.add(run);
 		}

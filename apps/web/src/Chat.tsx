@@ -310,13 +310,15 @@ function describeProgress(
 			? progress.position != null
 				? i18n.t("progress.queuedAt", { position: progress.position })
 				: i18n.t("progress.queued")
-			: progress.stage === "starting"
-				? i18n.t("progress.starting")
-				: progress.stage === "loading"
-					? i18n.t("progress.loading")
-					: progress.stage === "generating"
-						? i18n.t("progress.generating")
-						: progress.message;
+			: progress.stage === "waitingGpu"
+				? i18n.t("progress.waitingGpu")
+				: progress.stage === "starting"
+					? i18n.t("progress.starting")
+					: progress.stage === "loading"
+						? i18n.t("progress.loading")
+						: progress.stage === "generating"
+							? i18n.t("progress.generating")
+							: progress.message;
 	return [stage, percent].filter(Boolean).join(" · ") || i18n.t("job.starting");
 }
 

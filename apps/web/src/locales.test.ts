@@ -55,7 +55,14 @@ describe("catalogs", () => {
 	});
 
 	test("every progress stage has a message", () => {
-		const stages = ["queued", "queuedAt", "starting", "loading", "generating"];
+		const stages = [
+			"queued",
+			"queuedAt",
+			"waitingGpu",
+			"starting",
+			"loading",
+			"generating",
+		];
 		expect(stages.filter((stage) => !(`progress.${stage}` in en))).toEqual([]);
 	});
 });
