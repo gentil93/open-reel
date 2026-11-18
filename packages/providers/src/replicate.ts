@@ -7,7 +7,14 @@ import type {
 	ProviderRequest,
 	ReferenceImage,
 } from "@open-reel/core";
-import { errorMessage, type Fetch, sleep, toDataUri } from "./http";
+import {
+	errorMessage,
+	type Fetch,
+	refusal,
+	send,
+	sleep,
+	toDataUri,
+} from "./http";
 
 const API = "https://api.replicate.com/v1";
 const MAX_POLL_FAILURES = 5;
@@ -179,7 +186,8 @@ export class ReplicateProvider implements ProviderAdapter<ReplicateHandle> {
 	): Promise<ReplicateHandle> {
 		const model = MODELS.find((m) => m.spec.id === request.model.id);
 		if (!model) throw new Error(`Unknown Replicate model: ${request.model.id}`);
-		const response = await this.fetch(
+		const response = await send(
+			this.fetch,
 			`${API}/models/${model.spec.providerModelId}/predictions`,
 			{
 				method: "POST",
@@ -189,8 +197,9 @@ export class ReplicateProvider implements ProviderAdapter<ReplicateHandle> {
 				}),
 				signal: ctx.signal,
 			},
+			this.name,
 		);
-		if (!response.ok) throw new Error(await errorMessage(response));
+		if (!response.ok) throw await refusal(response, this.name);
 		const prediction = (await response.json()) as Prediction;
 		return {
 			getUrl: apiUrl(prediction.urls?.get),
@@ -219,6 +228,9 @@ export class ReplicateProvider implements ProviderAdapter<ReplicateHandle> {
 						error: response
 							? await errorMessage(response)
 							: "Lost the connection to Replicate",
+						// The job may still finish there: trying again follows it.
+						code: "connectionLost",
+						params: { provider: this.name },
 					};
 					return;
 				}

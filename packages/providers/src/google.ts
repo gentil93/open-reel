@@ -5,7 +5,13 @@ import type {
 	ProviderEvent,
 	ProviderRequest,
 } from "@open-reel/core";
-import { errorMessage, type Fetch } from "./http";
+import {
+	BUSY_WHILE_WAITING,
+	type Fetch,
+	failedEvent,
+	refusal,
+	send,
+} from "./http";
 
 const API = "https://generativelanguage.googleapis.com/v1beta/models";
 const RATIOS = [
@@ -103,7 +109,8 @@ export class GoogleProvider implements ProviderAdapter<GoogleHandle> {
 		ctx: ProviderContext,
 	): AsyncIterable<ProviderEvent> {
 		yield { type: "progress", message: "Generating", stage: "generating" };
-		const response = await this.fetch(
+		const response = await send(
+			this.fetch,
 			`${API}/${handle.model}:generateContent`,
 			{
 				method: "POST",
@@ -114,9 +121,10 @@ export class GoogleProvider implements ProviderAdapter<GoogleHandle> {
 				body: JSON.stringify(handle.body),
 				signal: ctx.signal,
 			},
+			this.name,
 		);
 		if (!response.ok) {
-			yield { type: "failed", error: await errorMessage(response) };
+			yield failedEvent(await refusal(response, this.name, BUSY_WHILE_WAITING));
 			return;
 		}
 		const result = (await response.json()) as GenerateContentResponse;

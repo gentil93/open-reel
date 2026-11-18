@@ -184,6 +184,11 @@ export function createApp(options: AppOptions): Hono {
 		return c.body(null, 204);
 	});
 
+	app.post("/api/jobs/:id/retry", async (c) => {
+		await service.retryJob(user(c), c.req.param("id"));
+		return c.body(null, 204);
+	});
+
 	app.post(
 		"/api/assets",
 		bodyLimit({

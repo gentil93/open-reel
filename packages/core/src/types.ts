@@ -6,6 +6,7 @@ export type Media = "image" | "video";
 /** Where a job is, in words every provider can say the same way. */
 export type ProgressStage =
 	| "queued"
+	| "retrying"
 	| "waitingGpu"
 	| "starting"
 	| "loading"

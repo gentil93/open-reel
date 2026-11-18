@@ -212,7 +212,15 @@ test("a transient polling error is retried instead of losing the job", async () 
 	);
 	expect(
 		await collect(new FalProvider(down.fetch, 0).events(handle, ctx())),
-	).toEqual([{ type: "failed", error: "Unavailable" }]);
+	).toEqual([
+		{
+			type: "failed",
+			error: "Unavailable",
+			// The job may still finish at fal: trying again follows it.
+			code: "connectionLost",
+			params: { provider: "fal" },
+		},
+	]);
 	expect(down.calls).toHaveLength(6);
 });
 

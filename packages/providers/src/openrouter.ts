@@ -5,7 +5,16 @@ import type {
 	ProviderEvent,
 	ProviderRequest,
 } from "@open-reel/core";
-import { errorMessage, type Fetch, sleep, toDataUri } from "./http";
+import {
+	BUSY_WHILE_WAITING,
+	errorMessage,
+	type Fetch,
+	failedEvent,
+	refusal,
+	send,
+	sleep,
+	toDataUri,
+} from "./http";
 
 const API = "https://openrouter.ai/api/v1";
 const MAX_POLL_FAILURES = 5;
@@ -167,12 +176,17 @@ export class OpenRouterProvider implements ProviderAdapter<OpenRouterHandle> {
 	}
 
 	private post(path: string, body: unknown, ctx: ProviderContext) {
-		return this.fetch(`${API}/${path}`, {
-			method: "POST",
-			headers: { ...this.headers(ctx), "content-type": "application/json" },
-			body: JSON.stringify(body),
-			signal: ctx.signal,
-		});
+		return send(
+			this.fetch,
+			`${API}/${path}`,
+			{
+				method: "POST",
+				headers: { ...this.headers(ctx), "content-type": "application/json" },
+				body: JSON.stringify(body),
+				signal: ctx.signal,
+			},
+			this.name,
+		);
 	}
 
 	async submit(
@@ -209,7 +223,7 @@ export class OpenRouterProvider implements ProviderAdapter<OpenRouterHandle> {
 			{ ...body, ...params.extras },
 			ctx,
 		);
-		if (!response.ok) throw new Error(await errorMessage(response));
+		if (!response.ok) throw await refusal(response, this.name);
 		const job = (await response.json()) as VideoJob;
 		// The id becomes part of a URL the API key is sent to.
 		if (typeof job.id !== "string" || !/^[\w-]+$/.test(job.id)) {
@@ -234,7 +248,7 @@ export class OpenRouterProvider implements ProviderAdapter<OpenRouterHandle> {
 		yield { type: "progress", message: "Generating", stage: "generating" };
 		const response = await this.post("images", body, ctx);
 		if (!response.ok) {
-			yield { type: "failed", error: await errorMessage(response) };
+			yield failedEvent(await refusal(response, this.name, BUSY_WHILE_WAITING));
 			return;
 		}
 		const result = (await response.json()) as {
@@ -283,6 +297,9 @@ export class OpenRouterProvider implements ProviderAdapter<OpenRouterHandle> {
 						error: response
 							? await errorMessage(response)
 							: "Lost the connection to OpenRouter",
+						// The job may still finish there: trying again follows it.
+						code: "connectionLost",
+						params: { provider: this.name },
 					};
 					return;
 				}

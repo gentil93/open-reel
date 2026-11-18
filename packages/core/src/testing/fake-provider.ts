@@ -56,6 +56,8 @@ export class FakeProvider implements ProviderAdapter<FakeHandle> {
 	gate: Promise<void> | null = null;
 	/** When set, jobs fail with this message. */
 	failWith: string | null = null;
+	/** How the next runs fail, one each, before `failWith` applies. */
+	failures: Extract<ProviderEvent, { type: "failed" }>[] = [];
 	delayMs = 0;
 	/** When set, jobs answer with this URL instead of image bytes. */
 	outputUrl: string | null = null;
@@ -121,6 +123,11 @@ export class FakeProvider implements ProviderAdapter<FakeHandle> {
 				ctx.signal.addEventListener("abort", () => reject(ctx.signal.reason));
 			}),
 		]);
+		const failure = this.failures.shift();
+		if (failure) {
+			yield failure;
+			return;
+		}
 		if (this.failWith) {
 			yield { type: "failed", error: this.failWith };
 			return;

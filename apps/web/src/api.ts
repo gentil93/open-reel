@@ -62,6 +62,8 @@ export const api = {
 		),
 	cancelJob: (id: string) =>
 		request<void>(`/api/jobs/${id}/cancel`, { method: "POST" }),
+	retryJob: (id: string) =>
+		request<void>(`/api/jobs/${id}/retry`, { method: "POST" }),
 	upload: (file: File) =>
 		request<Asset>("/api/assets", {
 			method: "POST",

@@ -7,7 +7,14 @@ import type {
 	ProviderRequest,
 	ReferenceImage,
 } from "@open-reel/core";
-import { errorMessage, type Fetch, sleep, toDataUri } from "./http";
+import {
+	errorMessage,
+	type Fetch,
+	refusal,
+	send,
+	sleep,
+	toDataUri,
+} from "./http";
 
 const QUEUE = "https://queue.fal.run";
 const MAX_POLL_FAILURES = 5;
@@ -270,7 +277,8 @@ export class FalProvider implements ProviderAdapter<FalHandle> {
 	): Promise<FalHandle> {
 		const model = MODELS.find((m) => m.spec.id === request.model.id);
 		if (!model) throw new Error(`Unknown fal model: ${request.model.id}`);
-		const response = await this.fetch(
+		const response = await send(
+			this.fetch,
 			`${QUEUE}/${model.endpoint(request.references)}`,
 			{
 				method: "POST",
@@ -278,8 +286,9 @@ export class FalProvider implements ProviderAdapter<FalHandle> {
 				body: JSON.stringify(model.input(request.params, request.references)),
 				signal: ctx.signal,
 			},
+			this.name,
 		);
-		if (!response.ok) throw new Error(await errorMessage(response));
+		if (!response.ok) throw await refusal(response, this.name);
 		const body = (await response.json()) as Record<string, unknown>;
 		return {
 			statusUrl: queueUrl(body.status_url),
@@ -309,6 +318,9 @@ export class FalProvider implements ProviderAdapter<FalHandle> {
 						error: response
 							? await errorMessage(response)
 							: "Lost the connection to fal",
+						// The job may still finish there: trying again follows it.
+						code: "connectionLost",
+						params: { provider: this.name },
 					};
 					return;
 				}

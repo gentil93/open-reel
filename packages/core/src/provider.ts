@@ -1,4 +1,4 @@
-import type { ErrorCode, ErrorParams } from "./errors";
+import type { ErrorCode, ErrorParams, Retry } from "./errors";
 import type { GenerationParams, ModelSpec, ProgressStage } from "./types";
 
 export interface ReferenceImage {
@@ -45,6 +45,8 @@ export type ProviderEvent =
 			/** Set when the provider can say why in a way the interface translates. */
 			code?: ErrorCode;
 			params?: ErrorParams;
+			/** Set when trying the job again may work. */
+			retry?: Retry;
 	  };
 
 /**

@@ -224,6 +224,13 @@ test("a transient polling error is retried instead of losing the prediction", as
 	);
 	expect(
 		await collect(new ReplicateProvider(down.fetch, 0).events(HANDLE, ctx())),
-	).toEqual([{ type: "failed", error: "Unavailable" }]);
+	).toEqual([
+		{
+			type: "failed",
+			error: "Unavailable",
+			code: "connectionLost",
+			params: { provider: "Replicate" },
+		},
+	]);
 	expect(down.calls).toHaveLength(6);
 });

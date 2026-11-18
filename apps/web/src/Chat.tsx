@@ -67,6 +67,7 @@ function JobCard(props: {
 	const { t } = i18n;
 	const progress = useProgress(job.id);
 	const cancel = useMutation({ mutationFn: () => api.cancelJob(job.id) });
+	const retry = useMutation({ mutationFn: () => api.retryJob(job.id) });
 	const name = model?.name ?? job.modelId;
 	const pending = job.status === "queued" || job.status === "running";
 	// Pictures that finish while watched develop; ones already done just appear.
@@ -153,17 +154,31 @@ function JobCard(props: {
 						</div>
 					</>
 				)}
-				{job.status === "failed" && (
-					<p className="p-2 text-sm leading-relaxed text-danger">
-						{i18n.explain({
-							message: job.error ?? "",
-							code: job.errorCode,
-							params: job.errorParams,
-						})}
-					</p>
-				)}
-				{job.status === "canceled" && (
-					<p className="p-2 text-sm text-dim">{t("job.canceledEarly")}</p>
+				{(job.status === "failed" || job.status === "canceled") && (
+					<div className="flex items-start justify-between gap-3 p-2">
+						{job.status === "failed" ? (
+							<p className="text-sm leading-relaxed text-danger">
+								{i18n.explain({
+									message: job.error ?? "",
+									code: job.errorCode,
+									params: job.errorParams,
+								})}
+							</p>
+						) : (
+							<p className="text-sm text-dim">{t("job.canceledEarly")}</p>
+						)}
+						{retry.error && (
+							<p className="text-sm text-danger">{i18n.explain(retry.error)}</p>
+						)}
+						<button
+							type="button"
+							onClick={() => retry.mutate()}
+							disabled={retry.isPending}
+							className="shrink-0 rounded-full border border-line-strong px-3 py-1 text-xs text-ink hover:border-ink"
+						>
+							{t("job.retry")}
+						</button>
+					</div>
 				)}
 				<div
 					className={
@@ -310,15 +325,17 @@ function describeProgress(
 			? progress.position != null
 				? i18n.t("progress.queuedAt", { position: progress.position })
 				: i18n.t("progress.queued")
-			: progress.stage === "waitingGpu"
-				? i18n.t("progress.waitingGpu")
-				: progress.stage === "starting"
-					? i18n.t("progress.starting")
-					: progress.stage === "loading"
-						? i18n.t("progress.loading")
-						: progress.stage === "generating"
-							? i18n.t("progress.generating")
-							: progress.message;
+			: progress.stage === "retrying"
+				? i18n.t("progress.retrying")
+				: progress.stage === "waitingGpu"
+					? i18n.t("progress.waitingGpu")
+					: progress.stage === "starting"
+						? i18n.t("progress.starting")
+						: progress.stage === "loading"
+							? i18n.t("progress.loading")
+							: progress.stage === "generating"
+								? i18n.t("progress.generating")
+								: progress.message;
 	return [stage, percent].filter(Boolean).join(" · ") || i18n.t("job.starting");
 }
 

@@ -86,6 +86,7 @@ function boot(dir: string, provider = new FakeProvider(), concurrency = 4) {
 		registry,
 		keys,
 		concurrencyPerProvider: concurrency,
+		retryDelayMs: 1,
 	});
 	const service = new ReelService({ repo, assets, registry, keys, engine });
 	return { repo, assets, keys, engine, service, provider };
@@ -327,6 +328,177 @@ describe("job engine", () => {
 		]);
 		g.open();
 		await app.engine.idle();
+	});
+
+	test("a passing failure is tried again, and the job then succeeds", async () => {
+		const app = boot(await tempDir());
+		app.provider.failures = [
+			{ type: "failed", error: "busy", code: "providerBusy", retry: {} },
+		];
+		const stages: unknown[] = [];
+		app.engine.subscribe((_, event) => {
+			if (event.type === "job.progress") stages.push(event.stage);
+		});
+		const { session } = await app.service.createTurn(LOCAL_USER, {
+			prompt: "x",
+			modelIds: ["fake/alpha"],
+		});
+		await app.engine.idle();
+		const [job] =
+			(await app.service.getSession(LOCAL_USER, session.id)).turns[0]?.jobs ??
+			[];
+		expect(job?.status).toBe("succeeded");
+		expect(stages).toContain("retrying");
+		// Tried again on the same request: nothing was sent twice.
+		expect(app.provider.submitted).toHaveLength(1);
+	});
+
+	test("a failure that is not passing is not tried again", async () => {
+		const app = boot(await tempDir());
+		app.provider.failures = [
+			{ type: "failed", error: "content refused" },
+			{ type: "failed", error: "never reached" },
+		];
+		const { session } = await app.service.createTurn(LOCAL_USER, {
+			prompt: "x",
+			modelIds: ["fake/alpha"],
+		});
+		await app.engine.idle();
+		const [job] =
+			(await app.service.getSession(LOCAL_USER, session.id)).turns[0]?.jobs ??
+			[];
+		expect(job?.status).toBe("failed");
+		expect(job?.error).toBe("content refused");
+		expect(app.provider.failures).toHaveLength(1);
+	});
+
+	test("trying again stops at the failure's limit", async () => {
+		const app = boot(await tempDir());
+		const crash = {
+			type: "failed" as const,
+			error: "crashed",
+			code: "engineExitCode" as const,
+			params: { code: 1 },
+			retry: { attempts: 2 },
+		};
+		app.provider.failures = [crash, crash, crash];
+		const { session } = await app.service.createTurn(LOCAL_USER, {
+			prompt: "x",
+			modelIds: ["fake/alpha"],
+		});
+		await app.engine.idle();
+		const [job] =
+			(await app.service.getSession(LOCAL_USER, session.id)).turns[0]?.jobs ??
+			[];
+		expect(job?.status).toBe("failed");
+		expect(app.provider.failures).toHaveLength(1);
+	});
+
+	test("a failed job can be tried again by hand, as it was asked", async () => {
+		const app = boot(await tempDir());
+		app.provider.failWith = "down";
+		const { session } = await app.service.createTurn(LOCAL_USER, {
+			prompt: "x",
+			modelIds: ["fake/alpha"],
+			seed: 42,
+		});
+		await app.engine.idle();
+		const failed = (await app.service.getSession(LOCAL_USER, session.id))
+			.turns[0]?.jobs[0];
+		expect(failed?.status).toBe("failed");
+
+		app.provider.failWith = null;
+		await app.service.retryJob(LOCAL_USER, failed?.id as string);
+		await app.engine.idle();
+		const again = (await app.service.getSession(LOCAL_USER, session.id))
+			.turns[0]?.jobs[0];
+		expect(again?.id).toBe(failed?.id);
+		expect(again?.status).toBe("succeeded");
+		expect(again?.error).toBeNull();
+		expect(again?.params.seed).toBe(42);
+		expect(again?.assets).toHaveLength(1);
+	});
+
+	test("trying again follows a job the provider took, instead of paying again", async () => {
+		const provider = Object.assign(new FakeProvider(), { resumable: true });
+		const app = boot(await tempDir(), provider);
+		provider.failures = [
+			{
+				type: "failed",
+				error: "Lost the connection to fake",
+				code: "connectionLost",
+				params: { provider: "fake" },
+			},
+		];
+		const { session } = await app.service.createTurn(LOCAL_USER, {
+			prompt: "x",
+			modelIds: ["fake/alpha"],
+		});
+		await app.engine.idle();
+		const lost = (await app.service.getSession(LOCAL_USER, session.id)).turns[0]
+			?.jobs[0];
+		expect(lost?.status).toBe("failed");
+
+		await app.service.retryJob(LOCAL_USER, lost?.id as string);
+		await app.engine.idle();
+		const found = (await app.service.getSession(LOCAL_USER, session.id))
+			.turns[0]?.jobs[0];
+		expect(found?.status).toBe("succeeded");
+		expect(provider.submitted).toHaveLength(1);
+	});
+
+	test("trying again sends anew once the provider said the job failed", async () => {
+		const provider = Object.assign(new FakeProvider(), { resumable: true });
+		const app = boot(await tempDir(), provider);
+		provider.failures = [{ type: "failed", error: "content refused" }];
+		const { session } = await app.service.createTurn(LOCAL_USER, {
+			prompt: "x",
+			modelIds: ["fake/alpha"],
+		});
+		await app.engine.idle();
+		const failed = (await app.service.getSession(LOCAL_USER, session.id))
+			.turns[0]?.jobs[0];
+		await app.service.retryJob(LOCAL_USER, failed?.id as string);
+		await app.engine.idle();
+		expect(provider.submitted).toHaveLength(2);
+	});
+
+	test("trying again twice at once runs the job once", async () => {
+		const app = boot(await tempDir());
+		app.provider.failWith = "down";
+		const { session } = await app.service.createTurn(LOCAL_USER, {
+			prompt: "x",
+			modelIds: ["fake/alpha"],
+		});
+		await app.engine.idle();
+		const failed = (await app.service.getSession(LOCAL_USER, session.id))
+			.turns[0]?.jobs[0];
+		app.provider.failWith = null;
+		const id = failed?.id as string;
+		await Promise.all([
+			app.service.retryJob(LOCAL_USER, id),
+			app.service.retryJob(LOCAL_USER, id),
+		]);
+		await app.engine.idle();
+		// One submit for the first run, one for the retry.
+		expect(app.provider.submitted).toHaveLength(2);
+	});
+
+	test("only a job that failed or was canceled can be tried again", async () => {
+		const app = boot(await tempDir());
+		const { session } = await app.service.createTurn(LOCAL_USER, {
+			prompt: "x",
+			modelIds: ["fake/alpha"],
+		});
+		await app.engine.idle();
+		const done = (await app.service.getSession(LOCAL_USER, session.id)).turns[0]
+			?.jobs[0];
+		await expect(
+			app.service.retryJob(LOCAL_USER, done?.id as string),
+		).rejects.toMatchObject({ code: "jobNotRetryable" });
+		await expect(
+			app.service.retryJob({ userId: "someone-else" }, done?.id as string),
+		).rejects.toMatchObject({ code: "jobNotFound" });
 	});
 
 	test("reports progress and status changes to listeners", async () => {

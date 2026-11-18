@@ -6,6 +6,7 @@ export type ErrorParams = Record<string, string | number>;
  */
 export const ERROR_CODES = [
 	"assetNotFound",
+	"connectionLost",
 	"downloadCutShort",
 	"downloadFailed",
 	"downloadTooLarge",
@@ -19,13 +20,16 @@ export const ERROR_CODES = [
 	"hashMismatch",
 	"interrupted",
 	"jobNotFound",
+	"jobNotRetryable",
 	"modelDoesNotRun",
 	"modelUnavailable",
 	"noApiKey",
 	"noModel",
 	"noReferences",
 	"noResult",
+	"providerBusy",
 	"notEnoughDisk",
+	"noConnection",
 	"notInstalled",
 	"referenceNotFound",
 	"referenceNotImage",
@@ -54,9 +58,23 @@ export class CodedError extends Error {
 		message: string,
 		readonly code?: ErrorCode,
 		readonly params: ErrorParams = {},
+		/** Set when trying again may work: the failure was passing. */
+		readonly retry?: Retry,
 	) {
 		super(message);
 	}
+}
+
+/**
+ * A failure worth trying again, because nothing was done and nothing was
+ * charged (a provider refusing for now, a connection never made) or because
+ * it costs nothing (a local engine that crashed).
+ */
+export interface Retry {
+	/** How long the provider asked to wait, when it said. */
+	afterMs?: number;
+	/** Tries in all, the first included; the engine's default otherwise. */
+	attempts?: number;
 }
 
 /** The request is malformed or asks for something a model cannot do. */

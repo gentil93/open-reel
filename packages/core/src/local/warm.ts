@@ -360,6 +360,8 @@ export class WarmEngines {
 						error: `The engine stopped: ${reason}`,
 						code: "engineStopped",
 						params: { reason },
+						// As when the engine runs once: worth one more try.
+						retry: { attempts: 2 },
 					};
 					return;
 				}

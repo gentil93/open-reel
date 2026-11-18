@@ -476,6 +476,8 @@ describe("running", () => {
 			error: "The engine stopped: failed to load model: out of memory",
 			code: "engineStopped",
 			params: { reason: "failed to load model: out of memory" },
+			// A crash is worth one more try.
+			retry: { attempts: 2 },
 		});
 		const silent = await run(provider(fake([], 3, null)));
 		expect(silent.at(-1)).toEqual({
@@ -483,6 +485,7 @@ describe("running", () => {
 			error: "The engine stopped with code 3",
 			code: "engineExitCode",
 			params: { code: 3 },
+			retry: { attempts: 2 },
 		});
 		const empty = await run(provider(fake([], 0, null)));
 		expect(empty.at(-1)).toEqual({

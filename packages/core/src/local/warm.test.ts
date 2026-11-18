@@ -264,6 +264,7 @@ describe("warm engines", () => {
 			error: "The engine stopped: out of memory",
 			code: "engineStopped",
 			params: { reason: "out of memory" },
+			retry: { attempts: 2 },
 		});
 		warm.stop();
 	});

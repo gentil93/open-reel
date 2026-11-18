@@ -61,6 +61,7 @@ describe("catalogs", () => {
 		const stages = [
 			"queued",
 			"queuedAt",
+			"retrying",
 			"waitingGpu",
 			"starting",
 			"loading",

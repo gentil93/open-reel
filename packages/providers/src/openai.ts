@@ -5,7 +5,14 @@ import type {
 	ProviderEvent,
 	ProviderRequest,
 } from "@open-reel/core";
-import { errorMessage, type Fetch, toDataUri } from "./http";
+import {
+	BUSY_WHILE_WAITING,
+	type Fetch,
+	failedEvent,
+	refusal,
+	send,
+	toDataUri,
+} from "./http";
 
 const API = "https://api.openai.com/v1/images";
 
@@ -78,17 +85,22 @@ export class OpenAIProvider implements ProviderAdapter<OpenAIHandle> {
 		ctx: ProviderContext,
 	): AsyncIterable<ProviderEvent> {
 		yield { type: "progress", message: "Generating", stage: "generating" };
-		const response = await this.fetch(`${API}/${handle.path}`, {
-			method: "POST",
-			headers: {
-				authorization: `Bearer ${ctx.apiKey}`,
-				"content-type": "application/json",
+		const response = await send(
+			this.fetch,
+			`${API}/${handle.path}`,
+			{
+				method: "POST",
+				headers: {
+					authorization: `Bearer ${ctx.apiKey}`,
+					"content-type": "application/json",
+				},
+				body: JSON.stringify(handle.body),
+				signal: ctx.signal,
 			},
-			body: JSON.stringify(handle.body),
-			signal: ctx.signal,
-		});
+			this.name,
+		);
 		if (!response.ok) {
-			yield { type: "failed", error: await errorMessage(response) };
+			yield failedEvent(await refusal(response, this.name, BUSY_WHILE_WAITING));
 			return;
 		}
 		const result = (await response.json()) as {

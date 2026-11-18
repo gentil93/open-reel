@@ -1,6 +1,6 @@
 import type { AssetStore } from "./assets";
 import type { JobPatch, Repository } from "./db/repository";
-import { CodedError, describeError } from "./errors";
+import { CodedError, describeError, ValidationError } from "./errors";
 import { newId } from "./ids";
 import type { KeyStore } from "./keys";
 import { sniffMime } from "./mime";
@@ -14,6 +14,7 @@ import {
 	type EngineEvent,
 	type GenerationParams,
 	type Job,
+	type JobView,
 	type ModelSpec,
 	TERMINAL_STATUSES,
 	type UserContext,
@@ -47,6 +48,30 @@ export interface JobEngineDeps {
 	keys: KeyStore;
 	/** Jobs running at once per provider. Defaults to 4. */
 	concurrencyPerProvider?: number;
+	/** The wait before the first try again; it doubles each time. */
+	retryDelayMs?: number;
+}
+
+/** Tries in all for a passing failure, unless the failure says otherwise. */
+const ATTEMPTS = 3;
+const RETRY_DELAY_MS = 2_000;
+/** A provider asking to wait longer than this is not waited for. */
+const MAX_RETRY_AFTER_MS = 60_000;
+
+/** Sleeps, rejecting as soon as the signal aborts. */
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+	return new Promise((resolve, reject) => {
+		if (signal.aborted) return reject(signal.reason);
+		const timer = setTimeout(() => {
+			signal.removeEventListener("abort", stop);
+			resolve();
+		}, ms);
+		const stop = () => {
+			clearTimeout(timer);
+			reject(signal.reason);
+		};
+		signal.addEventListener("abort", stop, { once: true });
+	});
 }
 
 /**
@@ -64,6 +89,8 @@ export class JobEngine {
 	/** Jobs waiting and running, by line: a provider, or a line of one. */
 	private waiting = new Map<string, string[]>();
 	private active = new Map<string, number>();
+	/** Jobs queued or running here, so that none is ever run twice at once. */
+	private owned = new Set<string>();
 	private inflight = new Set<Promise<void>>();
 	private limit: number;
 
@@ -100,6 +127,12 @@ export class JobEngine {
 	}
 
 	enqueue(job: Pick<Job, "id" | "providerId" | "modelId">): void {
+		if (this.owned.has(job.id)) return;
+		this.owned.add(job.id);
+		this.schedule(job);
+	}
+
+	private schedule(job: Pick<Job, "id" | "providerId" | "modelId">): void {
 		const adapter = this.deps.registry.adapter(job.providerId);
 		const line = adapter?.lineOf
 			? `${job.providerId}#${adapter.lineOf(job.modelId)}`
@@ -131,9 +164,44 @@ export class JobEngine {
 			const index = queue.indexOf(jobId);
 			if (index === -1) continue;
 			queue.splice(index, 1);
+			this.owned.delete(jobId);
 			await this.update(jobId, { status: "canceled", finishedAt: Date.now() });
 			return;
 		}
+	}
+
+	/**
+	 * Runs a job that failed or was canceled again, as it was asked: same
+	 * model, same parameters (the same seed, when it had one). A job the
+	 * provider took and may have finished (and charged for) is followed again
+	 * rather than sent anew; it keeps its handle unless the provider said the
+	 * job itself failed.
+	 */
+	async retry(job: Job): Promise<void> {
+		if (job.status !== "failed" && job.status !== "canceled") {
+			throw new ValidationError(
+				"Only a job that failed or was canceled can be tried again",
+				"jobNotRetryable",
+			);
+		}
+		// A second click, or a second tab, must not run it twice.
+		if (this.owned.has(job.id)) return;
+		this.owned.add(job.id);
+		try {
+			await this.update(job.id, {
+				status: "queued",
+				error: null,
+				errorCode: null,
+				errorParams: null,
+				costUsd: null,
+				startedAt: null,
+				finishedAt: null,
+			});
+		} catch (error) {
+			this.owned.delete(job.id);
+			throw error;
+		}
+		this.schedule(job);
 	}
 
 	/** Resolves once no job is queued or running. */
@@ -156,6 +224,7 @@ export class JobEngine {
 					console.error(`Job ${jobId} could not be settled`, error),
 				)
 				.finally(() => {
+					this.owned.delete(jobId);
 					this.inflight.delete(run);
 					this.active.set(line, (this.active.get(line) ?? 1) - 1);
 					this.pump(line, providerId);
@@ -170,6 +239,7 @@ export class JobEngine {
 
 		const controller = new AbortController();
 		this.controllers.set(jobId, controller);
+		let providerFailed = false;
 		const { registry, keys } = this.deps;
 		const adapter = registry.adapter(job.providerId);
 		const ctx: UserContext = { userId: job.userId };
@@ -200,62 +270,111 @@ export class JobEngine {
 			}
 			pctx = { apiKey, signal: controller.signal };
 
-			if (handle == null) {
-				await this.update(jobId, { status: "running", startedAt: Date.now() });
-				const references = await this.loadReferences(
-					ctx,
-					job.params.referenceAssetIds,
-				);
-				handle = await adapter.submit(
-					{ model, params: job.params, references },
-					pctx,
-				);
-				// Only a resumable handle is worth storing; others can embed whole images.
-				if (isResumable(adapter, handle)) await this.update(jobId, { handle });
-			}
-
-			for await (const event of adapter.events(handle, pctx)) {
-				if (event.type === "progress") {
-					let preview: number | undefined;
-					if (event.preview) {
-						preview = (this.previews.get(jobId)?.version ?? 0) + 1;
-						this.previews.set(jobId, {
-							userId: job.userId,
-							...event.preview,
-							version: preview,
+			for (let attempt = 1; ; attempt++) {
+				providerFailed = false;
+				try {
+					if (handle != null && attempt === 1 && job.status === "queued") {
+						// Tried again by hand: the provider's job is followed again.
+						await this.update(jobId, {
+							status: "running",
+							startedAt: Date.now(),
 						});
+					}
+					if (handle == null) {
+						await this.update(jobId, {
+							status: "running",
+							startedAt: Date.now(),
+						});
+						const references = await this.loadReferences(
+							ctx,
+							job.params.referenceAssetIds,
+						);
+						handle = await adapter.submit(
+							{ model, params: job.params, references },
+							pctx,
+						);
+						// Only a resumable handle is worth storing; others can embed whole images.
+						if (isResumable(adapter, handle))
+							await this.update(jobId, { handle });
+					}
+
+					for await (const event of adapter.events(handle, pctx)) {
+						if (event.type === "progress") {
+							let preview: number | undefined;
+							if (event.preview) {
+								preview = (this.previews.get(jobId)?.version ?? 0) + 1;
+								this.previews.set(jobId, {
+									userId: job.userId,
+									...event.preview,
+									version: preview,
+								});
+							}
+							this.emit(job.userId, {
+								type: "job.progress",
+								jobId,
+								fraction: event.fraction,
+								message: event.message,
+								stage: event.stage,
+								position: event.position,
+								step: event.step,
+								steps: event.steps,
+								...(preview != null && { preview }),
+							});
+						} else if (event.type === "failed") {
+							// Losing sight of the job is not the job failing.
+							providerFailed = event.code !== "connectionLost";
+							throw new CodedError(
+								event.error,
+								event.code,
+								event.params,
+								event.retry,
+							);
+						} else {
+							for (const output of event.outputs) {
+								await this.storeOutput(ctx, job, output, controller.signal);
+							}
+							await this.update(jobId, {
+								status: "succeeded",
+								error: null,
+								errorCode: null,
+								errorParams: null,
+								finishedAt: Date.now(),
+								costUsd:
+									event.costUsd ??
+									estimateCost(model, job.params, event.outputs.length),
+							});
+							return;
+						}
+					}
+					throw new CodedError(
+						"The provider ended without a result",
+						"noResult",
+					);
+				} catch (error) {
+					// A passing failure (a provider refusing for now, a connection
+					// never made, a local engine that crashed) is tried again.
+					const retry = error instanceof CodedError ? error.retry : undefined;
+					if (
+						!retry ||
+						controller.signal.aborted ||
+						attempt >= (retry.attempts ?? ATTEMPTS) ||
+						(retry.afterMs ?? 0) > MAX_RETRY_AFTER_MS
+					) {
+						throw error;
 					}
 					this.emit(job.userId, {
 						type: "job.progress",
 						jobId,
-						fraction: event.fraction,
-						message: event.message,
-						stage: event.stage,
-						position: event.position,
-						step: event.step,
-						steps: event.steps,
-						...(preview != null && { preview }),
+						message: "Trying again",
+						stage: "retrying",
 					});
-				} else if (event.type === "failed") {
-					throw new CodedError(event.error, event.code, event.params);
-				} else {
-					for (const output of event.outputs) {
-						await this.storeOutput(ctx, job, output, controller.signal);
-					}
-					await this.update(jobId, {
-						status: "succeeded",
-						error: null,
-						errorCode: null,
-						errorParams: null,
-						finishedAt: Date.now(),
-						costUsd:
-							event.costUsd ??
-							estimateCost(model, job.params, event.outputs.length),
-					});
-					return;
+					await sleep(
+						retry.afterMs ??
+							(this.deps.retryDelayMs ?? RETRY_DELAY_MS) * 2 ** (attempt - 1),
+						controller.signal,
+					);
 				}
 			}
-			throw new CodedError("The provider ended without a result", "noResult");
 		} catch (error) {
 			if (controller.signal.aborted) {
 				if (handle != null) {
@@ -279,11 +398,18 @@ export class JobEngine {
 					errorCode: code,
 					errorParams: params,
 					finishedAt: Date.now(),
+					// Trying a job again follows its handle, so the result of work
+					// already paid for is collected. Only once the provider says the
+					// job itself failed is there nothing left to follow.
+					...(providerFailed && { handle: null }),
 				});
 			}
 		} finally {
-			this.controllers.delete(jobId);
-			this.previews.delete(jobId);
+			// Only this run's: a job tried again may already have its own.
+			if (this.controllers.get(jobId) === controller) {
+				this.controllers.delete(jobId);
+				this.previews.delete(jobId);
+			}
 		}
 	}
 
@@ -305,7 +431,7 @@ export class JobEngine {
 
 	private async storeOutput(
 		ctx: UserContext,
-		job: Job,
+		job: JobView,
 		output: ProviderOutput,
 		signal: AbortSignal,
 	): Promise<void> {
@@ -348,6 +474,8 @@ export class JobEngine {
 			);
 		}
 		const stored = await this.deps.assets.put(ctx, data);
+		// Collected again when a job is tried again after storing part of it.
+		if (job.assets.some((asset) => asset.hash === stored.hash)) return;
 		await this.deps.repo.createAsset({
 			id: newId("ast"),
 			userId: ctx.userId,

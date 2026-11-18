@@ -242,6 +242,14 @@ export class ReelService {
 		await this.deps.engine.cancel(jobId);
 	}
 
+	/** Runs a job that failed or was canceled again. */
+	async retryJob(ctx: UserContext, jobId: string): Promise<void> {
+		const job = await this.deps.repo.findJob(jobId);
+		if (!job || job.userId !== ctx.userId)
+			throw new NotFoundError("Job not found", "jobNotFound");
+		await this.deps.engine.retry(job);
+	}
+
 	/** The picture a running job shows as it forms. */
 	jobPreview(
 		ctx: UserContext,

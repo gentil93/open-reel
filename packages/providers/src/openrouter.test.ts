@@ -218,6 +218,13 @@ test("a transient polling error is retried instead of losing the video", async (
 	);
 	expect(
 		await collect(new OpenRouterProvider(down.fetch, 0).events(VIDEO, ctx())),
-	).toEqual([{ type: "failed", error: "Unavailable" }]);
+	).toEqual([
+		{
+			type: "failed",
+			error: "Unavailable",
+			code: "connectionLost",
+			params: { provider: "OpenRouter" },
+		},
+	]);
 	expect(down.calls).toHaveLength(6);
 });

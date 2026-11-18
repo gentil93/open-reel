@@ -524,18 +524,23 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 			if (code !== 0) {
 				const reason = tail.filter((l) => /error|fail/i.test(l)).at(-1);
 				const detail = reason?.replace(/^\[\w\]\s*/, "");
+				// A crash may not happen twice (memory another program held, a
+				// driver hiccup), and trying again costs nothing but time: once.
+				const retry = { attempts: 2 };
 				yield detail
 					? {
 							type: "failed",
 							error: `The engine stopped: ${detail}`,
 							code: "engineStopped",
 							params: { reason: detail },
+							retry,
 						}
 					: {
 							type: "failed",
 							error: `The engine stopped with code ${code}`,
 							code: "engineExitCode",
 							params: { code },
+							retry,
 						};
 				return;
 			}
