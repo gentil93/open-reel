@@ -570,12 +570,27 @@ export class LocalModelStore {
 				.filter(([id, variant]) => id !== except && variant.engine === engine)
 				.map(([id]) => id);
 
+		/**
+		 * The variant an install would get: the one that runs best here, or
+		 * one whose files are already on disk (another model shares them)
+		 * when it runs as well.
+		 */
+		const propose = (variants: LocalModelVariant[]) => {
+			const best = chooseVariant(variants, hardware, choose);
+			const there = chooseVariant(
+				variants.filter((v) =>
+					v.files.every((file) => disk.complete.has(file.sha256)),
+				),
+				hardware,
+				choose,
+			);
+			return (there && there.fit === best?.fit ? there : best)?.variant;
+		};
 		const models = this.catalog.map((model): LocalModelStatus => {
 			const { variants, demos, defaults: _, ...rest } = model;
 			const install = this.installs.get(model.id);
 			const own = install?.variant ?? installed.get(model.id);
-			const variant =
-				own ?? chooseVariant(variants, hardware, choose)?.variant ?? null;
+			const variant = own ?? propose(variants) ?? null;
 			const build = variant ? choose(variant.engine)?.build : undefined;
 			const engineMissing = build != null && !builds.has(build.id);
 			const files = variant ? unique(variant.files) : [];
@@ -1011,7 +1026,8 @@ export class LocalModelStore {
 				);
 			}
 		} else {
-			variant = chooseVariant(model.variants, hardware, choose)?.variant;
+			// The one the list proposes, so what is shown is what installs.
+			variant = model.variants.find((v) => v.id === status.variant);
 			if (!variant) {
 				throw new ValidationError(
 					`${model.name} does not run on this machine`,

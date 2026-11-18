@@ -287,6 +287,21 @@ test("lists each model with the variant this machine runs best", async () => {
 	expect(view.disk.usedBytes).toBe(0);
 });
 
+test("a variant whose files are already here is proposed when it runs as well", async () => {
+	// No graphics card: every variant runs on the processor, so the smaller
+	// would be proposed...
+	const { store, status, root } = await setup({ hardware: machine(null, 64) });
+	expect((await status("a")).variant).toBe("small");
+	// ...unless the larger one's files are already on disk.
+	await mkdir(join(root, "blobs"), { recursive: true });
+	await Bun.write(join(root, "blobs", sha256(UNET_A)), UNET_A);
+	await Bun.write(join(root, "blobs", sha256(ENCODER)), ENCODER);
+	expect((await status("a")).variant).toBe("full");
+	await store.install("a");
+	await store.idle();
+	expect(await status("a")).toMatchObject({ installed: true, variant: "full" });
+});
+
 test("a smaller card gets the smaller variant, and says what the larger needs", async () => {
 	const { store, status } = await setup({ hardware: machine(8) });
 	const a = await status("a");

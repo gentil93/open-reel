@@ -1,13 +1,11 @@
-import type { LocalModelSpec } from "@open-reel/core";
-import { APACHE_2, file, GB, type Repo } from "./shared";
+import type { LocalModelFile, LocalModelSpec } from "@open-reel/core";
+import { APACHE_2, GB, SHARED } from "./shared";
 
-/** Repositories and the revision each is pinned to. */
-const REPO = {
-	qwen: [
-		"Qwen/Qwen2.5-1.5B-Instruct-GGUF",
-		"91cad51170dc346986eccefdc2dd33a9da36ead9",
-	],
-} as const satisfies Record<string, Repo>;
+/** One of Z-Image's files, as the model the translator runs. */
+const asModel = (file: LocalModelFile): LocalModelFile => ({
+	...file,
+	role: "model",
+});
 
 /**
  * Models that help the others rather than make pictures: set up in
@@ -16,31 +14,33 @@ const REPO = {
 export function textModels(): LocalModelSpec[] {
 	return [
 		{
-			id: "qwen2.5-1.5b-instruct",
-			name: "Qwen2.5 1.5B Instruct",
+			// Smaller ones (Qwen2.5 1.5B, Qwen3 1.7B) were tried: they turned
+			// "laranja" into "yellow", "roxos" into "red", "romãs" into
+			// "oranges". This one gets colors and most words right.
+			id: "qwen3-4b-instruct",
+			name: "Qwen3 4B Instruct",
 			author: "Qwen (Alibaba)",
 			media: "text",
 			tasks: ["prompt-translation"],
 			summary:
-				"A small language model that puts prompts into English, for the models that read only English. It runs on the processor, in a second or two per prompt.",
+				"A language model that puts prompts into English, for the models that read only English. It runs on the processor, in a few seconds per prompt, and is the same file Z-Image reads prompts with: with Z-Image installed, nothing more is downloaded.",
 			...APACHE_2,
-			homepage: "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct",
+			homepage: "https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507",
 			variants: [
+				{
+					id: "q8",
+					label: "8-bit",
+					engine: "llama-cpp",
+					// In the computer's memory: it runs on the processor.
+					memoryBytes: 6 * GB,
+					files: [asModel(SHARED.qwen3InstructQ8)],
+				},
 				{
 					id: "q4",
 					label: "4-bit",
 					engine: "llama-cpp",
-					// In the computer's memory: it runs on the processor.
-					memoryBytes: 2 * GB,
-					files: [
-						file(
-							REPO.qwen,
-							"qwen2.5-1.5b-instruct-q4_k_m.gguf",
-							1_117_320_736,
-							"6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e",
-							"model",
-						),
-					],
+					memoryBytes: 4 * GB,
+					files: [asModel(SHARED.qwen3InstructQ4)],
 				},
 			],
 			// A text model makes no pictures: these are never read.
