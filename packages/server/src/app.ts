@@ -1,5 +1,6 @@
 import {
 	CodedError,
+	type ErrorCode,
 	isDemoSize,
 	isTranslateWith,
 	type JobEngine,
@@ -45,6 +46,16 @@ export interface AppOptions {
  * the answer, it must fit the local language model's context.
  */
 const MAX_IDEA_LENGTH = 1000;
+/** More models than any composer offers at once. */
+const MAX_IDEA_MODELS = 50;
+
+/** Codes for a service the server relies on that failed: a bad gateway. */
+const UPSTREAM_CODES = new Set<ErrorCode>([
+	"connectionLost",
+	"improveFailed",
+	"noConnection",
+	"providerBusy",
+]);
 
 const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -143,7 +154,10 @@ export function createApp(options: AppOptions): Hono {
 		if (error instanceof NotFoundError) return c.json(body(error), 404);
 		// Something the server relies on failed in a way a person can be told.
 		if (error instanceof CodedError && error.code) {
-			return c.json(body(error), 502);
+			if (UPSTREAM_CODES.has(error.code)) return c.json(body(error), 502);
+			// Our own failure, still told in the reader's language.
+			console.error(error);
+			return c.json(body(error), 500);
 		}
 		console.error(error);
 		return c.json({ error: "Internal error" }, 500);
@@ -284,6 +298,7 @@ export function createApp(options: AppOptions): Hono {
 		}
 		if (
 			!Array.isArray(modelIds) ||
+			modelIds.length > MAX_IDEA_MODELS ||
 			!modelIds.every((id) => typeof id === "string")
 		) {
 			throw new ValidationError("modelIds must be a list of model ids");

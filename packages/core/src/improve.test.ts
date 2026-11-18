@@ -134,6 +134,77 @@ describe("improving a prompt", () => {
 		expect(calls).toBe(1);
 	});
 
+	test("finds text in single quotes and corner brackets, not apostrophes", async () => {
+		const shown = [
+			"a shop sign that says 'OPEN'",
+			"a shop sign that says ‘OPEN’",
+			"「営業中」と書かれた看板",
+			"『ようこそ』の看板",
+		];
+		for (const idea of shown) {
+			let told = "";
+			await improvePrompt(
+				{
+					reply: async (instructions) => {
+						told = instructions;
+						return idea;
+					},
+				},
+				idea,
+				promptStyle([]),
+				signal(),
+			);
+			expect(told).toContain("Keep the text in quotes");
+		}
+
+		let calls = 0;
+		const writer: LanguageModel = {
+			reply: async () => {
+				calls++;
+				return "it's the dogs' favourite park at dawn";
+			},
+		};
+		await improvePrompt(writer, "the dog's park", promptStyle([]), signal());
+		expect(calls).toBe(1);
+	});
+
+	test("keeps the first answer when asking once more fails", async () => {
+		let calls = 0;
+		const writer: LanguageModel = {
+			reply: async () => {
+				calls++;
+				if (calls === 2) throw new Error("engine crashed");
+				return 'a fox under a sign saying "Snow"';
+			},
+		};
+		expect(
+			await improvePrompt(writer, "a fox", promptStyle([]), signal()),
+		).toBe('a fox under a sign saying "Snow"');
+		expect(calls).toBe(2);
+	});
+
+	test("stops when given up on, even while asking once more", async () => {
+		const controller = new AbortController();
+		let calls = 0;
+		const writer: LanguageModel = {
+			reply: async () => {
+				calls++;
+				if (calls === 2) {
+					controller.abort();
+					throw new Error("aborted");
+				}
+				return 'a fox under a sign saying "Snow"';
+			},
+		};
+		const error = await improvePrompt(
+			writer,
+			"a fox",
+			promptStyle([]),
+			controller.signal,
+		).catch((e) => e);
+		expect(error.message).toBe("aborted");
+	});
+
 	test("tells the model about words in pictures only when the idea has some", () => {
 		const style = promptStyle([
 			model("z-image-turbo", {

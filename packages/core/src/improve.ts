@@ -66,9 +66,11 @@ export function promptStyle(
 
 /**
  * Text in quotes: words meant to appear in the picture. A pair, so an inch
- * mark (a 12" record) is not taken for one.
+ * mark (a 12" record) is not taken for one; single quotes only around whole
+ * words, so an apostrophe (it's, the dogs' toys) is not either.
  */
-const QUOTED = /["“«„][^"“”«»„]+["”»“]/;
+const QUOTED =
+	/["“«„][^"“”«»„]+["”»“]|‘[^‘’]+’|「[^「」]+」|『[^『』]+』|(?<![\p{L}\p{N}])'[^'\n]+'(?![\p{L}\p{N}])/u;
 
 /**
  * What a language model is told, to make a short idea into a good prompt.
@@ -87,7 +89,7 @@ export function improveInstructions(
 		"Do not change what the idea says and do not add a second subject. Give the subject the look people usually picture, unless the idea says otherwise.",
 		quoted
 			? "Keep the text in quotes exactly as written, in quotes, and add no other words to the picture."
-			: "The idea has no text to show: put no words, letters, signs, captions or quotes in the prompt.",
+			: "The idea has no text to show: put no words, letters, captions or quotes in the prompt.",
 		style.phrases
 			? "This model reads short phrases best: write 15 to 40 words as phrases separated by commas, the most important first, no full sentences."
 			: "This model reads plain language best: write two to four sentences, 40 to 90 words in all.",
@@ -147,9 +149,6 @@ export async function improvePrompt(
 	let reply: string;
 	try {
 		reply = await ask();
-		// Words the person never asked for would be drawn into the picture:
-		// asked once more, then taken as it is.
-		if (!quoted && QUOTED.test(cleanTranslation(reply))) reply = await ask();
 	} catch (error) {
 		// Given up on, or a service's refusal (no key, busy) that says it
 		// better than we could.
@@ -160,6 +159,15 @@ export async function improvePrompt(
 			`Could not improve the prompt: ${error instanceof Error ? error.message : String(error)}`,
 			"improveFailed",
 		);
+	}
+	// Words the person never asked for would be drawn into the picture:
+	// asked once more. When that fails, the first answer is still usable.
+	if (!quoted && QUOTED.test(cleanTranslation(reply))) {
+		try {
+			reply = await ask();
+		} catch (error) {
+			if (signal.aborted) throw error;
+		}
 	}
 	const text = cleanTranslation(reply);
 	if (!text) {

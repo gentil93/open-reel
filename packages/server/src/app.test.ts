@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+	CodedError,
 	FakeProvider,
 	type LocalEngineSpec,
 	type LocalModelSpec,
@@ -496,7 +497,36 @@ test("a prompt is improved by the language model, and refused without one", asyn
 		{ prompt: "a fox", modelIds: "fake/alpha" },
 		{ prompt: "x".repeat(1001), modelIds: [] },
 		{ prompt: "a fox", modelIds: [], language: "<script>" },
+		{ prompt: "a fox", modelIds: Array(51).fill("fake/alpha") },
 	]) {
 		expect((await improve(bad)).status).toBe(400);
+	}
+});
+
+test("a coded failure is a bad gateway only when a service failed", async () => {
+	const { runtime } = await setup();
+	for (const [thrown, status] of [
+		[new CodedError("Could not", "improveFailed"), 502],
+		[new CodedError("Busy", "providerBusy"), 502],
+		[new CodedError("Full", "notEnoughDisk", { neededBytes: 1 }), 500],
+	] as const) {
+		const app = createApp({
+			...runtime,
+			improvePrompt: async () => {
+				throw thrown;
+			},
+		});
+		const response = await app.request(
+			"http://localhost:4096/api/prompts/improve",
+			{
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ prompt: "a fox", modelIds: [] }),
+			},
+		);
+		expect(response.status).toBe(status);
+		expect(((await response.json()) as { code: string }).code).toBe(
+			thrown.code as string,
+		);
 	}
 });
