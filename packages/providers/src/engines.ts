@@ -96,5 +96,43 @@ export function builtinEngines(): LocalEngineSpec[] {
 				]),
 			],
 		},
+		LLAMA_CPP,
 	];
 }
+
+const LLAMA_CPP_VERSION = "b12034";
+
+/**
+ * Runs the small language model that puts prompts into English. Only on the
+ * processor, on purpose: a prompt is a few words, and the graphics card
+ * stays for pictures. Windows only for now, as its archives are zip; under
+ * WSL the Windows build runs through it.
+ */
+const LLAMA_CPP: LocalEngineSpec = {
+	id: "llama-cpp",
+	name: "llama.cpp",
+	homepage: "https://github.com/ggml-org/llama.cpp",
+	license: "MIT",
+	builds: [
+		{
+			id: "llama-cpp-win32-x64-cpu",
+			engine: "llama-cpp",
+			version: LLAMA_CPP_VERSION,
+			backend: "cpu",
+			os: "win32",
+			arch: "x64",
+			files: [
+				{
+					name: `llama-${LLAMA_CPP_VERSION}-bin-win-cpu-x64.zip`,
+					url: `https://github.com/ggml-org/llama.cpp/releases/download/${LLAMA_CPP_VERSION}/llama-${LLAMA_CPP_VERSION}-bin-win-cpu-x64.zip`,
+					size: 24_582_890,
+					sha256:
+						"16c38cd9ff7487bf118a37808784245a2d639d844110f21fe9b373aaa40ff511",
+				},
+			],
+			// Keeps the model loaded between prompts; `llama-completion.exe`,
+			// next to it, translates once where the server cannot be reached.
+			executable: "llama-server.exe",
+		},
+	],
+};

@@ -11,6 +11,7 @@ import {
 	type LocalModelSpec,
 	LocalModelStore,
 	LocalProvider,
+	LocalTranslator,
 	type ProviderAdapter,
 	ProviderRegistry,
 	ReelService,
@@ -129,7 +130,30 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 	);
 	const assets = new FsAssetStore(join(options.dataDir, "assets"));
 	const keys = new FileKeyStore(join(options.dataDir, "auth.json"));
-	const engine = new JobEngine({ repo, assets, registry, keys });
+	// Puts prompts into English for the models that read only English, once
+	// its model is installed.
+	const translatorModel = catalog.find((m) =>
+		m.tasks.includes("prompt-translation"),
+	);
+	const translator = new LocalTranslator({
+		store: models,
+		model: translatorModel?.id ?? "",
+	});
+	let translatorReady = translatorModel ? await translator.ready() : false;
+	models.subscribe((event) => {
+		if (event.type !== "models.changed") return;
+		void translator.ready().then((ready) => {
+			translatorReady = ready;
+			if (!ready) translator.stop();
+		});
+	});
+	const engine = new JobEngine({
+		repo,
+		assets,
+		registry,
+		keys,
+		translator: () => (translatorReady ? translator : null),
+	});
 	const service = new ReelService({ repo, assets, registry, keys, engine });
 	return {
 		service,
@@ -145,6 +169,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 			// Downloads stop with the process; what they fetched is resumed later.
 			void models.close();
 			local.close();
+			translator.stop();
 			repo.close();
 			unlock();
 		},

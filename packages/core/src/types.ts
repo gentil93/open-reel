@@ -408,7 +408,9 @@ export type LocalModelTask =
 	/** A video from words. */
 	| "text-to-video"
 	/** A video that starts from a picture. */
-	| "image-to-video";
+	| "image-to-video"
+	/** A prompt put into English, for the models that read only English. */
+	| "prompt-translation";
 
 /** What a model's license allows, in the terms people choose by. */
 export type CommercialUse =
@@ -424,7 +426,11 @@ export interface LocalModelSpec {
 	id: string;
 	name: string;
 	author: string;
-	media: Media;
+	/**
+	 * What it makes. A text model helps the others (it puts prompts into
+	 * English) and is not offered for generating.
+	 */
+	media: Media | "text";
 	/** What it does, the first being what it is mainly for. */
 	tasks: LocalModelTask[];
 	summary: string;

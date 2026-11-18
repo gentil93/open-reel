@@ -43,7 +43,7 @@ export type Spawn = (argv: string[]) => {
 	kill(): void;
 };
 
-const spawnProcess: Spawn = (argv) => {
+export const spawnProcess: Spawn = (argv) => {
 	const child = Bun.spawn(argv, {
 		stdin: "ignore",
 		stdout: "pipe",
@@ -86,7 +86,7 @@ const spawnProcess: Spawn = (argv) => {
 	return { output: lines(), exited: child.exited, kill: () => child.kill() };
 };
 
-const windowsPath: PathMapper = async (path) => {
+export const windowsPath: PathMapper = async (path) => {
 	const child = Bun.spawn(["wslpath", "-w", path], { stdout: "pipe" });
 	const text = (await new Response(child.stdout).text()).trim();
 	if ((await child.exited) !== 0 || !text) {
@@ -374,6 +374,10 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 	listModels(): ModelSpec[] {
 		return this.catalog
 			.filter((model) => this.installed.includes(model.id))
+			.flatMap((model) =>
+				// A text model helps the others; it makes no pictures itself.
+				model.media === "text" ? [] : [{ ...model, media: model.media }],
+			)
 			.map((model) => ({
 				id: `local/${model.id}`,
 				providerId: this.id,

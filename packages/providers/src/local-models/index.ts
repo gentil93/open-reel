@@ -4,6 +4,7 @@ import { flux2Models } from "./flux2";
 import { newerModels } from "./newer";
 import { qwenModels } from "./qwen";
 import { starterModels } from "./starter";
+import { textModels } from "./text";
 import { upscaleModels } from "./upscale";
 import { videoModels } from "./video";
 import { zimageModels } from "./zimage";
@@ -26,5 +27,6 @@ export function builtinLocalModels(): LocalModelSpec[] {
 		...classicModels(),
 		...videoModels(),
 		...upscaleModels(),
+		...textModels(),
 	];
 }

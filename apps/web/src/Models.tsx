@@ -239,6 +239,8 @@ function taskText(t: I18n["t"], task: LocalModelTask): string {
 			return t("models.task.textToVideo");
 		case "image-to-video":
 			return t("models.task.imageToVideo");
+		case "prompt-translation":
+			return t("models.task.promptTranslation");
 	}
 }
 
@@ -680,12 +682,14 @@ const chip =
 function Catalog({ view }: { view: LocalModelsView }) {
 	const { t } = useI18n();
 	const [filter, setFilter] = useState<LocalFilter>(NO_FILTER);
-	const recommended = recommendedLocal(view.models);
-	const shown = sortLocal(filterLocal(view.models, filter));
+	// The prompt translator is set up in Settings, not offered here.
+	const makers = view.models.filter((model) => model.media !== "text");
+	const recommended = recommendedLocal(makers);
+	const shown = sortLocal(filterLocal(makers, filter));
 	const set = (change: Partial<LocalFilter>) =>
 		setFilter((current) => ({ ...current, ...change }));
 	const count = (category: LocalCategory | "all") =>
-		filterLocal(view.models, { ...filter, category }).length;
+		filterLocal(makers, { ...filter, category }).length;
 	// All shelves at once group models by their main use; one shelf lists
 	// every model that can do its job.
 	const shelves =

@@ -8,6 +8,7 @@ export * from "./local/engines";
 export * from "./local/hardware";
 export * from "./local/provider";
 export * from "./local/store";
+export * from "./local/translator";
 export * from "./mime";
 export * from "./paths";
 export * from "./provider";

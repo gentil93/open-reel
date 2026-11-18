@@ -20,8 +20,10 @@ describe("model profiles", () => {
 		expect(profiledModelIds().filter((id) => !ids.has(id))).toEqual([]);
 	});
 
-	test("every local model has a profile", () => {
+	test("every local model that makes pictures or videos has a profile", () => {
 		for (const model of builtinLocalModels()) {
+			// A text model helps the others and is never compared with them.
+			if (model.media === "text") continue;
 			expect(model.profile).toBeDefined();
 		}
 	});
