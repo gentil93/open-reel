@@ -261,10 +261,17 @@ function JobCard(props: {
 					})}
 				</div>
 				{job.params.translatedPrompt && (
-					<p className="px-1 text-xs leading-relaxed text-dim">
-						{t("job.translated")}{" "}
-						<span className="text-ink">{job.params.translatedPrompt}</span>
-					</p>
+					// What the model was sent, in a language the person may not
+					// read: there for the curious, out of the way otherwise.
+					<details className="px-1 text-xs leading-relaxed text-dim">
+						<summary className="w-fit cursor-pointer hover:text-ink">
+							{t("job.details")}
+						</summary>
+						<p className="mt-1">
+							{t("job.translated")}{" "}
+							<span className="text-ink">{job.params.translatedPrompt}</span>
+						</p>
+					</details>
 				)}
 			</div>
 		</section>
