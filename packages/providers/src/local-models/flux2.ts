@@ -279,6 +279,7 @@ export function flux2Models(): LocalModelSpec[] {
 		},
 		{
 			id: "chroma1-hd",
+			englishPrompts: true,
 			profile: {
 				family: "chroma1-hd",
 				name: "Chroma1-HD",
@@ -368,6 +369,7 @@ export function flux2Models(): LocalModelSpec[] {
 		},
 		{
 			id: "chroma1-radiance",
+			englishPrompts: true,
 			profile: {
 				family: "chroma1-radiance",
 				name: "Chroma1-Radiance",

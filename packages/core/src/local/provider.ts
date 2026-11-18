@@ -398,6 +398,7 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 					...(model.defaults.durations && {
 						durations: model.defaults.durations,
 					}),
+					...(model.englishPrompts && { englishPrompts: true }),
 				},
 				pricing: { usdPerOutput: 0 },
 				...(model.profile && { profile: model.profile }),

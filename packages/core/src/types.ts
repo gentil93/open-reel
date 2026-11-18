@@ -7,6 +7,7 @@ export type Media = "image" | "video";
 export type ProgressStage =
 	| "queued"
 	| "retrying"
+	| "translating"
 	| "waitingGpu"
 	| "starting"
 	| "loading"
@@ -53,7 +54,14 @@ export const generationParamsSchema = z.object({
 	extras: z.record(z.string(), z.unknown()).default({}),
 });
 
-export type GenerationParams = z.infer<typeof generationParamsSchema>;
+export type GenerationParams = z.infer<typeof generationParamsSchema> & {
+	/**
+	 * The prompt as sent, in English, when the model reads only English and
+	 * the prompt was in another language. Set by open-reel, never asked for:
+	 * `prompt` stays as written.
+	 */
+	translatedPrompt?: string;
+};
 export type GenerationParamsInput = z.input<typeof generationParamsSchema>;
 
 export interface ModelCapabilities {
@@ -83,6 +91,12 @@ export interface ModelCapabilities {
 	 * means the length cannot be chosen.
 	 */
 	durations?: number[];
+	/**
+	 * Set when the model reads prompts well only in English (its text
+	 * encoder is CLIP or T5): a prompt in another language is translated
+	 * before it is sent.
+	 */
+	englishPrompts?: boolean;
 }
 
 /** What a model is good at, shown as tags; the interface translates each. */
@@ -426,6 +440,8 @@ export interface LocalModelSpec {
 	demos: LocalModelDemo[];
 	defaults: LocalModelDefaults;
 	profile?: ModelProfile;
+	/** Reads prompts well only in English; see `ModelCapabilities`. */
+	englishPrompts?: boolean;
 }
 
 export type LocalModelState =

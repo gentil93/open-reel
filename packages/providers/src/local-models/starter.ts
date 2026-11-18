@@ -48,6 +48,7 @@ export function starterModels(): LocalModelSpec[] {
 	return [
 		{
 			id: "sdxl-turbo",
+			englishPrompts: true,
 			profile: PROFILES.sdxlTurbo,
 			name: "SDXL Turbo",
 			author: "Stability AI",
@@ -94,6 +95,7 @@ export function starterModels(): LocalModelSpec[] {
 		},
 		{
 			id: "sdxl-base",
+			englishPrompts: true,
 			profile: PROFILES.sdxl,
 			name: "Stable Diffusion XL",
 			author: "Stability AI",
@@ -141,6 +143,7 @@ export function starterModels(): LocalModelSpec[] {
 		},
 		{
 			id: "flux-schnell",
+			englishPrompts: true,
 			profile: PROFILES.fluxSchnell,
 			name: "FLUX.1 schnell",
 			author: "Black Forest Labs",

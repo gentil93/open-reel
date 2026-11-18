@@ -38,6 +38,7 @@ export function classicModels(): LocalModelSpec[] {
 	return [
 		{
 			id: "sd-1.5",
+			englishPrompts: true,
 			profile: {
 				family: "sd-1.5",
 				name: "Stable Diffusion 1.5",
@@ -101,6 +102,7 @@ export function classicModels(): LocalModelSpec[] {
 		},
 		{
 			id: "pixart-sigma",
+			englishPrompts: true,
 			profile: {
 				family: "pixart-sigma",
 				name: "PixArt-Σ",
@@ -228,6 +230,7 @@ export function classicModels(): LocalModelSpec[] {
 		},
 		{
 			id: "minit2i-b-16",
+			englishPrompts: true,
 			profile: {
 				family: "minit2i",
 				name: "MiniT2I",

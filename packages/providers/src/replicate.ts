@@ -90,6 +90,7 @@ const MODELS: ReplicateModel[] = [
 			seed: true,
 			maxCount: 4,
 			maxReferenceImages: 0,
+			englishPrompts: true,
 		}),
 		input: (params) => ({
 			...common(params),
@@ -104,6 +105,7 @@ const MODELS: ReplicateModel[] = [
 			seed: true,
 			maxCount: 1,
 			maxReferenceImages: 0,
+			englishPrompts: true,
 		}),
 		input: (params) => ({
 			...common(params),

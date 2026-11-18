@@ -125,6 +125,8 @@ function flux(endpoint: string, name: string): FalModel {
 				seed: true,
 				maxCount: 4,
 				maxReferenceImages: 0,
+				// Its T5 and CLIP encoders read English.
+				englishPrompts: true,
 			},
 		}),
 		endpoint: () => endpoint,

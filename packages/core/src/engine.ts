@@ -10,6 +10,7 @@ import type {
 	ProviderRegistry,
 	ReferenceImage,
 } from "./provider";
+import { cleanTranslation, type Translator } from "./translate";
 import {
 	type EngineEvent,
 	type GenerationParams,
@@ -50,7 +51,15 @@ export interface JobEngineDeps {
 	concurrencyPerProvider?: number;
 	/** The wait before the first try again; it doubles each time. */
 	retryDelayMs?: number;
+	/**
+	 * Puts prompts into English for models that read only English; the one
+	 * set up now, or null when none is. Without one, prompts go as written.
+	 */
+	translator?: () => Translator | null;
 }
+
+/** A translation that takes longer is given up on; the prompt goes as written. */
+const TRANSLATE_TIMEOUT_MS = 60_000;
 
 /** Tries in all for a passing failure, unless the failure says otherwise. */
 const ATTEMPTS = 3;
@@ -91,6 +100,11 @@ export class JobEngine {
 	private active = new Map<string, number>();
 	/** Jobs queued or running here, so that none is ever run twice at once. */
 	private owned = new Set<string>();
+	/**
+	 * Translations in progress or just made, by prompt: the jobs of one turn
+	 * share their prompt, and it is translated once for all of them.
+	 */
+	private translations = new Map<string, Promise<string | null>>();
 	private inflight = new Set<Promise<void>>();
 	private limit: number;
 
@@ -293,10 +307,11 @@ export class JobEngine {
 							job.params.maskAssetId != null
 								? await this.loadReferences(ctx, [job.params.maskAssetId])
 								: [];
+						const params = await this.inEnglish(job, model);
 						handle = await adapter.submit(
 							{
 								model,
-								params: job.params,
+								params,
 								references,
 								...(mask && { mask }),
 							},
@@ -420,6 +435,53 @@ export class JobEngine {
 				this.previews.delete(jobId);
 			}
 		}
+	}
+
+	/**
+	 * The parameters to send: for a model that reads only English, with the
+	 * prompt in English. The translation is kept with the job, which shows
+	 * it; the prompt as written stays. When nothing can translate, or the
+	 * translation fails, the prompt goes as written.
+	 */
+	private async inEnglish(
+		job: Job,
+		model: ModelSpec,
+	): Promise<GenerationParams> {
+		if (!model.capabilities.englishPrompts) return job.params;
+		if (job.params.translatedPrompt) {
+			return { ...job.params, prompt: job.params.translatedPrompt };
+		}
+		const translator = this.deps.translator?.();
+		if (!translator) return job.params;
+		const { prompt } = job.params;
+		this.emit(job.userId, {
+			type: "job.progress",
+			jobId: job.id,
+			message: "Translating the prompt",
+			stage: "translating",
+		});
+		let pending = this.translations.get(prompt);
+		if (!pending) {
+			// Not tied to this job: the others of its turn wait on it too.
+			pending = translator
+				.toEnglish(prompt, AbortSignal.timeout(TRANSLATE_TIMEOUT_MS))
+				.then(
+					(text) => cleanTranslation(text) || null,
+					(error) => {
+						console.error("Could not translate a prompt", error);
+						return null;
+					},
+				);
+			this.translations.set(prompt, pending);
+			const forget = () => this.translations.delete(prompt);
+			// Kept for a moment, for the other jobs of the turn.
+			void pending.then(() => setTimeout(forget, 60_000).unref?.());
+		}
+		const english = await pending;
+		if (!english || english === prompt) return job.params;
+		const params = { ...job.params, translatedPrompt: english };
+		await this.update(job.id, { params });
+		return { ...params, prompt: english };
 	}
 
 	private async loadReferences(

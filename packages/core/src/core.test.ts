@@ -15,6 +15,7 @@ import {
 	ReelService,
 	SqliteRepository,
 	sniffMime,
+	type Translator,
 	ValidationError,
 } from "./index";
 
@@ -75,7 +76,12 @@ class PerHandleProvider extends FakeProvider {
 }
 
 /** Builds the whole core on `dir`, as a fresh process would. */
-function boot(dir: string, provider = new FakeProvider(), concurrency = 4) {
+function boot(
+	dir: string,
+	provider = new FakeProvider(),
+	concurrency = 4,
+	translator?: Translator,
+) {
 	const repo = new SqliteRepository(join(dir, "db.sqlite"));
 	const assets = new FsAssetStore(join(dir, "assets"));
 	const keys = new FileKeyStore(join(dir, "auth.json"));
@@ -87,6 +93,7 @@ function boot(dir: string, provider = new FakeProvider(), concurrency = 4) {
 		keys,
 		concurrencyPerProvider: concurrency,
 		retryDelayMs: 1,
+		translator: () => translator ?? null,
 	});
 	const service = new ReelService({ repo, assets, registry, keys, engine });
 	return { repo, assets, keys, engine, service, provider };
@@ -571,6 +578,83 @@ describe("job engine", () => {
 		await expect(
 			app.service.retryJob({ userId: "someone-else" }, done?.id as string),
 		).rejects.toMatchObject({ code: "jobNotFound" });
+	});
+
+	test("a model that reads only English gets the prompt in English, once per turn", async () => {
+		const asked: string[] = [];
+		const translator: Translator = {
+			toEnglish: async (prompt) => {
+				asked.push(prompt);
+				return "Translation: a red fox in the snow";
+			},
+		};
+		const provider = new FakeProvider("fake", ["alpha", "beta", "beta2"]);
+		const english = Object.assign(provider, {
+			listModels: () =>
+				FakeProvider.prototype.listModels.call(provider).map((m) =>
+					m.id === "fake/beta2"
+						? {
+								...m,
+								capabilities: { ...m.capabilities, englishPrompts: true },
+							}
+						: m,
+				),
+		});
+		const app = boot(await tempDir(), english, 4, translator);
+		const { session } = await app.service.createTurn(LOCAL_USER, {
+			prompt: "uma raposa vermelha na neve",
+			modelIds: ["fake/alpha", "fake/beta", "fake/beta2"],
+		});
+		await app.engine.idle();
+		// Translated once for both models that need it.
+		expect(asked).toEqual(["uma raposa vermelha na neve"]);
+		const sent = new Map(provider.submitted.map((h) => [h.model, h.prompt]));
+		expect(sent.get("fake/alpha")).toBe("uma raposa vermelha na neve");
+		expect(sent.get("fake/beta")).toBe("a red fox in the snow");
+		const jobs = (await app.service.getSession(LOCAL_USER, session.id)).turns[0]
+			?.jobs;
+		const beta = jobs?.find((j) => j.modelId === "fake/beta");
+		// The prompt as written stays; the translation is shown with the job.
+		expect(beta?.params.prompt).toBe("uma raposa vermelha na neve");
+		expect(beta?.params.translatedPrompt).toBe("a red fox in the snow");
+		expect(
+			jobs?.find((j) => j.modelId === "fake/alpha")?.params.translatedPrompt,
+		).toBeUndefined();
+	});
+
+	test("without a translator, or when it fails, the prompt goes as written", async () => {
+		const failing: Translator = {
+			toEnglish: async () => {
+				throw new Error("not installed");
+			},
+		};
+		for (const translator of [undefined, failing]) {
+			const app = boot(await tempDir(), new FakeProvider(), 4, translator);
+			const { session } = await app.service.createTurn(LOCAL_USER, {
+				prompt: "uma raposa",
+				modelIds: ["fake/beta"],
+			});
+			await app.engine.idle();
+			expect(app.provider.submitted[0]?.prompt).toBe("uma raposa");
+			const job = (await app.service.getSession(LOCAL_USER, session.id))
+				.turns[0]?.jobs[0];
+			expect(job?.status).toBe("succeeded");
+			expect(job?.params.translatedPrompt).toBeUndefined();
+		}
+	});
+
+	test("a prompt already in English is sent as it is, and nothing is shown", async () => {
+		const app = boot(await tempDir(), new FakeProvider(), 4, {
+			toEnglish: async (prompt) => prompt,
+		});
+		const { session } = await app.service.createTurn(LOCAL_USER, {
+			prompt: "a red fox",
+			modelIds: ["fake/beta"],
+		});
+		await app.engine.idle();
+		const job = (await app.service.getSession(LOCAL_USER, session.id)).turns[0]
+			?.jobs[0];
+		expect(job?.params.translatedPrompt).toBeUndefined();
 	});
 
 	test("reports progress and status changes to listeners", async () => {

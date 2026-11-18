@@ -62,6 +62,7 @@ describe("catalogs", () => {
 			"queued",
 			"queuedAt",
 			"retrying",
+			"translating",
 			"waitingGpu",
 			"starting",
 			"loading",

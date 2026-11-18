@@ -27,6 +27,7 @@ export type JobPatch = Partial<
 		| "costUsd"
 		| "startedAt"
 		| "finishedAt"
+		| "params"
 	>
 >;
 

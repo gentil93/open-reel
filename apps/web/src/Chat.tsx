@@ -260,6 +260,12 @@ function JobCard(props: {
 						);
 					})}
 				</div>
+				{job.params.translatedPrompt && (
+					<p className="px-1 text-xs leading-relaxed text-dim">
+						{t("job.translated")}{" "}
+						<span className="text-ink">{job.params.translatedPrompt}</span>
+					</p>
+				)}
 			</div>
 		</section>
 	);
@@ -343,15 +349,17 @@ function describeProgress(
 				: i18n.t("progress.queued")
 			: progress.stage === "retrying"
 				? i18n.t("progress.retrying")
-				: progress.stage === "waitingGpu"
-					? i18n.t("progress.waitingGpu")
-					: progress.stage === "starting"
-						? i18n.t("progress.starting")
-						: progress.stage === "loading"
-							? i18n.t("progress.loading")
-							: progress.stage === "generating"
-								? i18n.t("progress.generating")
-								: progress.message;
+				: progress.stage === "translating"
+					? i18n.t("progress.translating")
+					: progress.stage === "waitingGpu"
+						? i18n.t("progress.waitingGpu")
+						: progress.stage === "starting"
+							? i18n.t("progress.starting")
+							: progress.stage === "loading"
+								? i18n.t("progress.loading")
+								: progress.stage === "generating"
+									? i18n.t("progress.generating")
+									: progress.message;
 	return [stage, percent].filter(Boolean).join(" · ") || i18n.t("job.starting");
 }
 

@@ -13,4 +13,5 @@ export * from "./paths";
 export * from "./provider";
 export * from "./service";
 export * from "./testing/fake-provider";
+export * from "./translate";
 export * from "./types";

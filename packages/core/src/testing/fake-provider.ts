@@ -87,6 +87,8 @@ export class FakeProvider implements ProviderAdapter<FakeHandle> {
 				maxCount: 2,
 				maxReferenceImages: name === "alpha" ? 2 : 0,
 				...(name === "alpha" && { mask: 0.85 }),
+				// Like FLUX, it reads prompts in English.
+				...(name === "beta" && { englishPrompts: true }),
 			},
 			pricing: { usdPerOutput: 0.01 },
 		}));
