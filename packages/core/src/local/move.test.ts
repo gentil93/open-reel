@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+	link,
 	mkdir,
 	mkdtemp,
 	readdir,
@@ -130,6 +131,46 @@ describe("moving models", () => {
 		await writeFile(join(root, "from", ".clock-1"), "");
 		await mirrorInto(join(root, "from"), join(root, "to"), empty(), options());
 		expect(await readdir(join(root, "to"))).toEqual(["a"]);
+	});
+
+	test("a file left with two names by an earlier move counts as there", async () => {
+		const root = await folder();
+		await mkdir(join(root, "from"));
+		await mkdir(join(root, "to"));
+		await writeFile(join(root, "from", "a"), "a");
+		await link(join(root, "from", "a"), join(root, "to", "a"));
+		const mirror = empty();
+		await mirrorInto(join(root, "from"), join(root, "to"), mirror, options());
+		await cleanUp(mirror, root);
+		expect(await read(join(root, "to", "a"))).toBe("a");
+	});
+
+	test("a half-made engine there is made again whole", async () => {
+		const root = await folder();
+		await mkdir(join(root, "engines", "build"), { recursive: true });
+		await writeFile(join(root, "engines", "build", "run"), "program");
+		await writeFile(join(root, "engines", "build", "lib"), "library");
+		await mkdir(join(root, "new", "build"), { recursive: true });
+		await writeFile(join(root, "new", "build", "run"), "program");
+		const mirror = empty();
+		await mirrorInto(join(root, "engines"), join(root, "new"), mirror, {
+			...options(),
+			whole: (path) => path.endsWith("build"),
+		});
+		expect((await readdir(join(root, "new", "build"))).sort()).toEqual([
+			"lib",
+			"run",
+		]);
+	});
+
+	test("of two interrupted downloads, the one further along is kept", async () => {
+		const root = await folder();
+		await mkdir(join(root, "from"));
+		await mkdir(join(root, "to"));
+		await writeFile(join(root, "from", "x.part"), "further along");
+		await writeFile(join(root, "to", "x.part"), "less");
+		await mirrorInto(join(root, "from"), join(root, "to"), empty(), options());
+		expect(await read(join(root, "to", "x.part"))).toBe("further along");
 	});
 
 	test("cleaning up leaves a folder something new was written to", async () => {

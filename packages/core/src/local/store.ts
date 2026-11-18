@@ -64,14 +64,14 @@ function samePath(a: string, b: string): boolean {
  */
 async function inside(
 	path: string,
-	outer: { dev: number; ino: number },
+	outer: { dev: bigint; ino: bigint },
 ): Promise<boolean> {
-	for (let dir = dirname(resolve(path)); dir !== dirname(dir); ) {
-		const info = await stat(dir).catch(() => null);
+	// Up to the root of the disk, which counts too.
+	for (let dir = dirname(resolve(path)); ; dir = dirname(dir)) {
+		const info = await stat(dir, { bigint: true }).catch(() => null);
 		if (info && info.dev === outer.dev && info.ino === outer.ino) return true;
-		dir = dirname(dir);
+		if (dir === dirname(dir)) return false;
 	}
-	return false;
 }
 
 function movingError(): ValidationError {
@@ -760,7 +760,10 @@ export class LocalModelStore {
 		await mkdir(this.root, { recursive: true });
 		// Compared on disk, not as text: the same folder has many names (case,
 		// links, short names), and moving a folder onto itself would delete it.
-		const [from, to] = await Promise.all([stat(this.root), stat(here)]);
+		const [from, to] = await Promise.all([
+			stat(this.root, { bigint: true }),
+			stat(here, { bigint: true }),
+		]);
 		if (from.dev === to.dev && from.ino === to.ino) return;
 		if ((await inside(here, from)) || (await inside(this.root, to))) {
 			throw new ValidationError(
@@ -769,28 +772,37 @@ export class LocalModelStore {
 				{ path: here },
 			);
 		}
-		const locked = async (dir: string) =>
-			(await readdir(join(this.root, dir)).catch(() => [])).some(
-				(name) =>
-					name.endsWith(".lock") && isLocked(join(this.root, dir, name)),
-			);
-		const busy =
-			this.installs.size > 0 ||
-			this.gpu.inUse() ||
-			(await locked("blobs")) ||
-			(await locked("engines")) ||
-			(await locked("installed"));
-		if (busy) {
-			throw new ValidationError(
-				"Models are in use; try again once nothing is installing or generating",
-				"modelsBusy",
-			);
+		// Held in both folders until the old files are gone: no open-reel
+		// installs, removes, runs or moves models meanwhile. Taken before
+		// looking whether anything runs, so nothing starts in between.
+		const holdOld = tryFileLock(join(this.root, "moving.lock"));
+		const holdNew = holdOld && tryFileLock(join(here, "moving.lock"));
+		const release = () => {
+			holdOld?.();
+			holdNew?.();
+		};
+		if (!holdOld || !holdNew) {
+			release();
+			throw movingError();
 		}
-		// Held through the move: no open-reel installs, removes, runs or moves
-		// models meanwhile.
-		const release = tryFileLock(join(this.root, "moving.lock"));
-		if (!release) throw movingError();
 		try {
+			const locked = async (dir: string) =>
+				(await readdir(join(this.root, dir)).catch(() => [])).some(
+					(name) =>
+						name.endsWith(".lock") && isLocked(join(this.root, dir, name)),
+				);
+			const busy =
+				this.installs.size > 0 ||
+				this.gpu.inUse() ||
+				(await locked("blobs")) ||
+				(await locked("engines")) ||
+				(await locked("installed"));
+			if (busy) {
+				throw new ValidationError(
+					"Models are in use; try again once nothing is installing or generating",
+					"modelsBusy",
+				);
+			}
 			let totalBytes = 0;
 			for (const entry of MOVED_ENTRIES) {
 				totalBytes += await treeSize(join(this.root, entry));
@@ -870,16 +882,22 @@ export class LocalModelStore {
 			this.emit({ type: "models.changed" });
 			return;
 		}
-		this.moving = null;
 		this.switchTo(here);
-		release();
-		// Only now do the old files go.
+		// Only now do the old files go. Still moving until they are gone: a
+		// move back meanwhile would find files about to be deleted.
 		await cleanUp(mirror, old);
+		this.moving = null;
+		release();
+		this.emit({ type: "models.changed" });
 	}
 
 	/** Refuses to touch models while they move to another folder. */
 	private notMoving(): void {
-		if (this.moving || isLocked(join(this.root, "moving.lock"))) {
+		if (
+			this.moving ||
+			this.relocating ||
+			isLocked(join(this.root, "moving.lock"))
+		) {
 			throw movingError();
 		}
 	}
@@ -1173,19 +1191,23 @@ export class LocalModelStore {
 		const now = Date.now();
 		if (!force && now - install.lastProgress < PROGRESS_INTERVAL_MS) return;
 		install.lastProgress = now;
-		void this.list().then((view) => {
-			const status = view.models.find((m) => m.id === model.id);
-			if (!status || this.installs.get(model.id) !== install) return;
-			const seconds = Math.max((now - install.startedAt) / 1000, 0.001);
-			this.emit({
-				type: "model.progress",
-				id: model.id,
-				state: install.state,
-				receivedBytes: status.receivedBytes,
-				size: status.size,
-				bytesPerSecond: Math.round(install.transferred / seconds),
+		void this.list()
+			// The folder may be gone (moved, or deleted): no progress to tell.
+			.catch(() => null)
+			.then((view) => {
+				if (!view) return;
+				const status = view.models.find((m) => m.id === model.id);
+				if (!status || this.installs.get(model.id) !== install) return;
+				const seconds = Math.max((now - install.startedAt) / 1000, 0.001);
+				this.emit({
+					type: "model.progress",
+					id: model.id,
+					state: install.state,
+					receivedBytes: status.receivedBytes,
+					size: status.size,
+					bytesPerSecond: Math.round(install.transferred / seconds),
+				});
 			});
-		});
 	}
 
 	/**

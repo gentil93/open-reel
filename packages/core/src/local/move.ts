@@ -76,23 +76,33 @@ export async function mirrorInto(
 	options: MirrorOptions & { whole?: (path: string) => boolean },
 ): Promise<void> {
 	options.signal?.throwIfAborted();
-	const source = await stat(from).catch(() => null);
+	// Compared in full: NTFS file ids do not fit in a plain number.
+	const source = await stat(from, { bigint: true }).catch(() => null);
 	if (!source) return;
-	const there = await stat(to).catch(() => null);
-	// The same file under another name (case, a link, a short name): cleaning
-	// up would delete the only copy.
+	let there = await stat(to, { bigint: true }).catch(() => null);
 	if (there && there.dev === source.dev && there.ino === source.ino) {
-		throw new Error(`${to} is ${from} itself`);
+		// A folder under another name (case, a link, a short name): cleaning
+		// up would delete the only copy.
+		if (source.isDirectory()) throw new Error(`${to} is ${from} itself`);
+		// One file with two names, left by an earlier move: it is there, and
+		// deleting the old name keeps it.
+		mirror.old.push(from);
+		options.report(Number(source.size));
+		return;
 	}
 	if (source.isDirectory()) {
 		if (there && !there.isDirectory()) {
 			throw new Error(`${to} is in the way`);
 		}
 		if (there && options.whole?.(from)) {
-			// Already complete there (it is only renamed into place whole).
-			mirror.old.push(from);
-			options.report(await treeSize(from));
-			return;
+			if (await sameTree(from, to)) {
+				mirror.old.push(from);
+				options.report(await treeSize(from));
+				return;
+			}
+			// Left half made by an earlier move that failed: made again whole.
+			await rm(to, { recursive: true, force: true });
+			there = null;
 		}
 		if (!there && options.whole?.(from)) {
 			const aside = `${to}.${crypto.randomUUID()}.moving`;
@@ -119,9 +129,12 @@ export async function mirrorInto(
 		}
 		return;
 	}
-	if (there && options.keep(from)) {
+	// Of two interrupted downloads, the one further along is kept.
+	const fartherHere =
+		from.endsWith(".part") && there && source.size > there.size;
+	if (there && options.keep(from) && !fartherHere) {
 		mirror.old.push(from);
-		options.report(source.size);
+		options.report(Number(source.size));
 		return;
 	}
 	// Placed under another name first, so a copy cut short is never taken for
@@ -147,7 +160,22 @@ export async function mirrorInto(
 		throw error;
 	}
 	mirror.old.push(from);
-	options.report(source.size);
+	options.report(Number(source.size));
+}
+
+/** Whether two folders hold the same names with the same sizes. */
+async function sameTree(a: string, b: string): Promise<boolean> {
+	const [left, right] = await Promise.all([stat(a), stat(b)]);
+	if (left.isDirectory() !== right.isDirectory()) return false;
+	if (!left.isDirectory()) return left.size === right.size;
+	const names = (dir: string) =>
+		readdir(dir).then((all) => all.filter((n) => !passing(n)).sort());
+	const [here, there] = await Promise.all([names(a), names(b)]);
+	if (here.join("/") !== there.join("/")) return false;
+	for (const name of here) {
+		if (!(await sameTree(join(a, name), join(b, name)))) return false;
+	}
+	return true;
 }
 
 /** Deletes what `mirrorInto` made, leaving the old folder as it was. */

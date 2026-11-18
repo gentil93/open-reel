@@ -1,4 +1,5 @@
 import {
+	linkSync,
 	readFileSync,
 	renameSync,
 	rmSync,
@@ -77,13 +78,15 @@ function take(lock: string, owner: string, staleMs: number): boolean {
 	} catch {
 		return false; // Another took it over first.
 	}
-	// Renewed between the look and the rename: put it back.
+	// Renewed between the look and the rename: put it back, unless another has
+	// taken the name meanwhile (a link, unlike a rename, never replaces).
 	if (fresh(aside, staleMs)) {
 		try {
-			renameSync(aside, lock);
+			linkSync(aside, lock);
 		} catch {
-			rmSync(aside, { force: true });
+			// Taken by another: theirs stands.
 		}
+		rmSync(aside, { force: true });
 		return false;
 	}
 	rmSync(aside, { force: true });

@@ -378,7 +378,7 @@ test("models share files and the engine; the engine goes with the last one", asy
 		[sha256(UNET_B), sha256(ENCODER)].sort(),
 	);
 	expect(await engines()).toEqual(["run-linux-x64-cuda"]);
-	expect(store.runtime("a")).rejects.toBeInstanceOf(ValidationError);
+	await expect(store.runtime("a")).rejects.toBeInstanceOf(ValidationError);
 
 	// The last model takes its engine with it.
 	const b = await status("b");
@@ -395,10 +395,12 @@ test("another variant can be asked for, unless it cannot run here", async () => 
 		"none",
 		"cpu",
 	]);
-	expect(store.install("a", "full")).rejects.toThrow(
+	await expect(store.install("a", "full")).rejects.toThrow(
 		"does not run on this machine",
 	);
-	expect(store.install("a", "nope")).rejects.toBeInstanceOf(NotFoundError);
+	await expect(store.install("a", "nope")).rejects.toBeInstanceOf(
+		NotFoundError,
+	);
 
 	await store.install("a", "small");
 	await store.idle();
@@ -410,7 +412,9 @@ test("another variant can be asked for, unless it cannot run here", async () => 
 test("a model no variant of which fits is refused", async () => {
 	const { store, status } = await setup({ hardware: machine(null, 2) });
 	expect((await status("a")).variant).toBeNull();
-	expect(store.install("a")).rejects.toThrow("does not run on this machine");
+	await expect(store.install("a")).rejects.toThrow(
+		"does not run on this machine",
+	);
 });
 
 test("a model installed before variants existed keeps working", async () => {
@@ -432,7 +436,7 @@ test("an installed model without its engine gets the engine on install", async (
 	await store.idle();
 	await rm(join(root, "engines"), { recursive: true });
 	expect(await status("a")).toMatchObject({ installed: true, ready: false });
-	expect(store.runtime("a")).rejects.toThrow("engine");
+	await expect(store.runtime("a")).rejects.toThrow("engine");
 
 	requests.length = 0;
 	await store.install("a");
@@ -603,7 +607,7 @@ test("refuses a model that does not fit on the disk", async () => {
 	const { store, requests } = await setup({
 		catalog: [model("huge", [variant("full", 1, [huge])])],
 	});
-	expect(store.install("huge")).rejects.toThrow("Not enough disk space");
+	await expect(store.install("huge")).rejects.toThrow("Not enough disk space");
 	const refusal = await store.install("huge").catch((error) => error);
 	expect(refusal.code).toBe("notEnoughDisk");
 	// The model, plus the engine it would bring.
@@ -614,8 +618,8 @@ test("refuses a model that does not fit on the disk", async () => {
 
 test("unknown models and malformed catalogs are refused", async () => {
 	const { store, root } = await setup();
-	expect(store.install("nope")).rejects.toBeInstanceOf(NotFoundError);
-	expect(store.remove("nope")).rejects.toBeInstanceOf(NotFoundError);
+	await expect(store.install("nope")).rejects.toBeInstanceOf(NotFoundError);
+	await expect(store.remove("nope")).rejects.toBeInstanceOf(NotFoundError);
 
 	const invalid =
 		(catalog: LocalModelSpec[], engines: LocalEngineSpec[] = ENGINES) =>
@@ -835,6 +839,10 @@ test("models move to another folder, and stay there for every open-reel", async 
 		if (event.type === "models.moving") moving.push(event.movedBytes);
 	});
 	await store.relocate(target);
+	// Moving back is refused until the old files are gone.
+	await expect(store.relocate(first.root)).rejects.toMatchObject({
+		code: "modelsMoving",
+	});
 	await store.idle();
 
 	const view = await store.list();
