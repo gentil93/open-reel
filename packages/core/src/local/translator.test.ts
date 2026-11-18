@@ -112,7 +112,7 @@ describe("the local translator", () => {
 			promptText = await Bun.file(
 				argv[argv.indexOf("-f") + 1] as string,
 			).text();
-			return { code: 0, stdout: "a red fox\n", stderr: "" };
+			return { code: 0, stdout: "\na red fox [end of text]\n", stderr: "" };
 		};
 		const translator = new LocalTranslator({
 			store,
@@ -124,9 +124,12 @@ describe("the local translator", () => {
 			"uma raposa",
 			new AbortController().signal,
 		);
-		expect(english).toBe("a red fox\n");
+		// Without the mark of where the model stopped.
+		expect(english).toBe("a red fox");
 		expect(runs[0]?.[0]).toBe("/engines/llama/llama-completion.exe");
 		expect(runs[0]).toContain("-no-cnv");
+		// It would silence the translation too.
+		expect(runs[0]).not.toContain("--log-disable");
 		expect(promptText).toBe(chatPrompt(TRANSLATE_INSTRUCTIONS, "uma raposa"));
 		// The prompt file goes once read.
 		expect(await readdir(scratch)).toEqual([]);

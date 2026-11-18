@@ -1,5 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import { cleanTranslation } from "./translate";
+import { cleanTranslation, sameWords } from "./translate";
+
+describe("a translation that says the same as its prompt", () => {
+	test("differs only in case, spaces or punctuation", () => {
+		expect(
+			sameWords(
+				"a red fox curled up in fresh snow",
+				"A red fox curled up in fresh snow.",
+			),
+		).toBe(true);
+		expect(sameWords("uma raposa", "a fox")).toBe(false);
+		expect(sameWords("café, à noite", "Café à noite")).toBe(true);
+	});
+});
 
 describe("a translation as a language model replies it", () => {
 	test("is taken without what models add around it", () => {

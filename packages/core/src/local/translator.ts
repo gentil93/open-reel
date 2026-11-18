@@ -257,8 +257,9 @@ export class LocalTranslator implements Translator {
 					String(MAX_TOKENS),
 					"-c",
 					String(CONTEXT),
+					// Not --log-disable: in llama-completion it silences the
+					// generated text too.
 					"--no-perf",
-					"--log-disable",
 				],
 				signal,
 			);
@@ -266,7 +267,8 @@ export class LocalTranslator implements Translator {
 				const reason = stderr.trim().split(/\r?\n/).at(-1);
 				throw new Error(`The translator stopped: ${reason ?? `code ${code}`}`);
 			}
-			return stdout;
+			// It marks where the model stopped.
+			return stdout.replace(/\s*\[end of text\]\s*$/, "").trim();
 		} finally {
 			await rm(file, { force: true });
 		}

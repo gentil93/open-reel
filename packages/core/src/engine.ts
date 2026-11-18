@@ -10,7 +10,7 @@ import type {
 	ProviderRegistry,
 	ReferenceImage,
 } from "./provider";
-import { cleanTranslation, type Translator } from "./translate";
+import { cleanTranslation, sameWords, type Translator } from "./translate";
 import {
 	type EngineEvent,
 	type GenerationParams,
@@ -478,7 +478,7 @@ export class JobEngine {
 			void pending.then(() => setTimeout(forget, 60_000).unref?.());
 		}
 		const english = await pending;
-		if (!english || english === prompt) return job.params;
+		if (!english || sameWords(english, prompt)) return job.params;
 		const params = { ...job.params, translatedPrompt: english };
 		await this.update(job.id, { params });
 		return { ...params, prompt: english };

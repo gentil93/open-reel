@@ -15,11 +15,26 @@ export interface Translator {
 /** What a language model is told, to translate a prompt and nothing more. */
 export const TRANSLATE_INSTRUCTIONS = [
 	"You translate prompts for an image and video generator into English.",
-	"Reply with the English prompt only: no notes, no quotes around it, no explanations.",
-	"Keep the meaning, the details and the order of the description.",
+	"Translate word for word, as literally as reads naturally: do not add words, adjectives or details, and do not leave any out.",
+	"Keep every color, number and detail exactly as given, in the same order.",
 	"Keep names, brands and any text in quotes exactly as written: the quoted text is meant to appear in the picture.",
+	"Reply with the English prompt only: no notes, no quotes around it, no explanations.",
 	"If the prompt is already in English, reply with it unchanged.",
+	'Example: "um carro azul numa rua molhada à noite" becomes "a blue car on a wet street at night".',
 ].join(" ");
+
+/**
+ * Whether a translation says the same as the prompt, but for case, spaces
+ * and punctuation: a prompt that was already in English.
+ */
+export function sameWords(a: string, b: string): boolean {
+	const words = (text: string) =>
+		text
+			.toLowerCase()
+			.replace(/[^\p{L}\p{N}]+/gu, " ")
+			.trim();
+	return words(a) === words(b);
+}
 
 /**
  * The translation from a language model's reply: without the reasoning some
