@@ -31,6 +31,8 @@ export interface WarmRequest {
 	flowShift?: number;
 	frames?: number;
 	fps?: number;
+	/** Steps between pictures shown while it forms; none when absent. */
+	previewInterval?: number;
 }
 
 interface Running {
@@ -47,6 +49,7 @@ interface JobStatus {
 		total?: number | null;
 		unit?: string;
 	};
+	preview?: { step?: number; b64_json?: string } | null;
 	result?: {
 		images?: { b64_json: string }[];
 		b64_json?: string;
@@ -221,6 +224,12 @@ export class WarmEngines {
 						output_format: "webm",
 					}
 				: { batch_count: 1, output_format: "png" }),
+			// Only these two forms are known to work: an object here stops the
+			// server altogether.
+			...(request.previewInterval != null && {
+				preview: "vae",
+				preview_interval: request.previewInterval,
+			}),
 		};
 		const submitted = await this.fetch(
 			`${server.url}/sdcpp/v1/${request.video ? "vid_gen" : "img_gen"}`,
@@ -241,19 +250,22 @@ export class WarmEngines {
 		signal.addEventListener("abort", cancel, { once: true });
 		try {
 			let last = -1;
+			let lastPreview = -1;
 			for (;;) {
 				if (signal.aborted) return;
 				const response = await this.fetch(`${server.url}/sdcpp/v1/jobs/${id}`);
 				const job = (await response.json()) as JobStatus;
 				const { completed, total, unit } = job.progress ?? {};
+				const shown = job.preview?.b64_json && job.preview.step !== lastPreview;
 				if (
 					job.status === "generating" &&
 					unit === "steps" &&
 					total &&
 					completed != null &&
-					completed !== last
+					(completed !== last || shown)
 				) {
 					last = completed;
+					if (shown) lastPreview = job.preview?.step ?? lastPreview;
 					yield {
 						type: "progress",
 						fraction: Math.min(1, completed / total),
@@ -261,6 +273,14 @@ export class WarmEngines {
 						stage: "generating",
 						step: Math.min(completed, total),
 						steps: total,
+						...(shown && {
+							preview: {
+								data: Uint8Array.from(
+									Buffer.from(job.preview?.b64_json ?? "", "base64"),
+								),
+								mime: "image/png",
+							},
+						}),
 					};
 				}
 				if (job.status === "completed") {

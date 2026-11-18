@@ -56,6 +56,11 @@ export interface JobEngineDeps {
 export class JobEngine {
 	private listeners = new Set<EngineListener>();
 	private controllers = new Map<string, AbortController>();
+	/** The latest picture of each running job that shows one. */
+	private previews = new Map<
+		string,
+		{ userId: string; data: Uint8Array; mime: string; version: number }
+	>();
 	private waiting = new Map<string, string[]>();
 	private active = new Map<string, number>();
 	private inflight = new Set<Promise<void>>();
@@ -98,6 +103,17 @@ export class JobEngine {
 		queue.push(job.id);
 		this.waiting.set(job.providerId, queue);
 		this.pump(job.providerId);
+	}
+
+	/** The latest picture of a running job, if it shows one, for its owner. */
+	preview(
+		userId: string,
+		jobId: string,
+	): { data: Uint8Array; mime: string } | undefined {
+		const found = this.previews.get(jobId);
+		return found?.userId === userId
+			? { data: found.data, mime: found.mime }
+			: undefined;
 	}
 
 	async cancel(jobId: string): Promise<void> {
@@ -195,6 +211,15 @@ export class JobEngine {
 
 			for await (const event of adapter.events(handle, pctx)) {
 				if (event.type === "progress") {
+					let preview: number | undefined;
+					if (event.preview) {
+						preview = (this.previews.get(jobId)?.version ?? 0) + 1;
+						this.previews.set(jobId, {
+							userId: job.userId,
+							...event.preview,
+							version: preview,
+						});
+					}
 					this.emit(job.userId, {
 						type: "job.progress",
 						jobId,
@@ -204,6 +229,7 @@ export class JobEngine {
 						position: event.position,
 						step: event.step,
 						steps: event.steps,
+						...(preview != null && { preview }),
 					});
 				} else if (event.type === "failed") {
 					throw new CodedError(event.error, event.code, event.params);
@@ -252,6 +278,7 @@ export class JobEngine {
 			}
 		} finally {
 			this.controllers.delete(jobId);
+			this.previews.delete(jobId);
 		}
 	}
 

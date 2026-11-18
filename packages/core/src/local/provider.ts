@@ -183,6 +183,26 @@ export interface LocalProviderOptions {
 	warm?: WarmEngines | false;
 }
 
+/** At most this many pictures are shown while one forms: each costs a decode. */
+const PREVIEWS_PER_JOB = 4;
+
+/**
+ * How many sampling steps go between pictures of a job in progress, or null
+ * when there is nothing worth showing (a single step is the final picture).
+ */
+export function previewInterval(steps: number): number | null {
+	return steps > 1 ? Math.ceil(steps / PREVIEWS_PER_JOB) : null;
+}
+
+/** A PNG the engine has finished writing: it ends with its IEND chunk. */
+function completePng(data: Uint8Array): boolean {
+	const end = [0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82];
+	return (
+		data.length > end.length &&
+		end.every((byte, i) => data[data.length - end.length + i] === byte)
+	);
+}
+
 /** The engine's server program, next to its one-shot program. */
 function serverProgram(executable: string): string {
 	return join(
@@ -317,6 +337,7 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 						cfgScale: defaults.cfgScale,
 						sampler: defaults.sampler,
 						flowShift: defaults.flowShift,
+						previewInterval: previewInterval(defaults.steps) ?? undefined,
 					},
 					ctx.signal,
 				);
@@ -336,6 +357,24 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 				path,
 			)),
 		];
+		// The engine writes the picture as it forms, numbered from 000.
+		const interval = video
+			? null
+			: previewInterval(runtime.model.defaults.steps);
+		const previewBase = output.replace(/\.png$/, "");
+		const previewFile = (index: number) =>
+			`${previewBase}-${String(index).padStart(3, "0")}.png`;
+		let nextPreview = 0;
+		if (interval != null) {
+			argv.push(
+				"--preview",
+				"vae",
+				"--preview-interval",
+				String(interval),
+				"--preview-path",
+				await path(`${previewBase}-%03d.png`),
+			);
+		}
 
 		yield { type: "progress", message: "Loading the model", stage: "loading" };
 		const child = this.spawn(argv);
@@ -368,6 +407,16 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 					Math.floor(fraction * 100) !== last
 				) {
 					last = Math.floor(fraction * 100);
+					// The newest picture the engine has finished writing, if any.
+					let preview: { data: Uint8Array; mime: string } | undefined;
+					while (interval != null) {
+						const data = await Bun.file(previewFile(nextPreview))
+							.bytes()
+							.catch(() => null);
+						if (!data || !completePng(data)) break;
+						preview = { data, mime: "image/png" };
+						nextPreview++;
+					}
 					yield {
 						type: "progress",
 						fraction,
@@ -375,6 +424,7 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 						stage: "generating",
 						step: sampling.step,
 						steps: sampling.steps,
+						...(preview && { preview }),
 					};
 				}
 			}
@@ -413,6 +463,9 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 		} finally {
 			child.kill();
 			await rm(output, { force: true });
+			for (let i = 0; i <= nextPreview + PREVIEWS_PER_JOB; i++) {
+				await rm(previewFile(i), { force: true });
+			}
 		}
 	}
 

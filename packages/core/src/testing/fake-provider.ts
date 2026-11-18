@@ -102,7 +102,15 @@ export class FakeProvider implements ProviderAdapter<FakeHandle> {
 		handle: FakeHandle,
 		ctx: ProviderContext,
 	): AsyncIterable<ProviderEvent> {
-		yield { type: "progress", fraction: 0.5 };
+		// Halfway, it shows the first picture as it stands, as local models do.
+		yield {
+			type: "progress",
+			fraction: 0.5,
+			preview: {
+				data: swatch(`${handle.model} ${handle.prompt} 0`, handle.aspectRatio),
+				mime: "image/bmp",
+			},
+		};
 		const waits: Promise<void>[] = [];
 		if (this.gate) waits.push(this.gate);
 		if (this.delayMs > 0) waits.push(Bun.sleep(this.delayMs));

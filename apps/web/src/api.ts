@@ -91,5 +91,8 @@ export const api = {
 
 export const GALLERY_PAGE = 60;
 export const assetUrl = (id: string) => `/api/assets/${id}`;
+/** A running job's latest picture; `version` changes the address per picture. */
+export const previewUrl = (jobId: string, version: number) =>
+	`/api/jobs/${jobId}/preview?v=${version}`;
 export const demoUrl = (modelId: string, index: number) =>
 	`/api/local-models/${modelId}/demos/${index}`;

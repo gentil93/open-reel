@@ -9,6 +9,7 @@ import {
 	LocalProvider,
 	type LocalRuntime,
 	type ProviderEvent,
+	previewInterval,
 	type Spawn,
 	samplingProgress,
 } from "../index";
@@ -161,6 +162,13 @@ describe("engine arguments", () => {
 		expect(
 			engineArguments(odd, FLUX.defaults, params(), "/o.png", windows),
 		).rejects.toThrow("No engine option for a lora file");
+	});
+
+	test("a forming picture is shown about four times, never for one step", () => {
+		expect(previewInterval(1)).toBeNull();
+		expect(previewInterval(4)).toBe(1);
+		expect(previewInterval(8)).toBe(2);
+		expect(previewInterval(30)).toBe(8);
 	});
 
 	test("progress is read from the sampling bar only", () => {

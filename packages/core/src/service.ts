@@ -242,6 +242,16 @@ export class ReelService {
 		await this.deps.engine.cancel(jobId);
 	}
 
+	/** The picture a running job shows as it forms. */
+	jobPreview(
+		ctx: UserContext,
+		jobId: string,
+	): { data: Uint8Array; mime: string } {
+		const preview = this.deps.engine.preview(ctx.userId, jobId);
+		if (!preview) throw new NotFoundError("No preview", "jobNotFound");
+		return preview;
+	}
+
 	async uploadAsset(ctx: UserContext, data: Uint8Array): Promise<Asset> {
 		// The claimed type is ignored; the bytes decide.
 		const mime = sniffMime(data);

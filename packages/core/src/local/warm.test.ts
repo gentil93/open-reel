@@ -47,7 +47,9 @@ function fakeServers(options: { failToStart?: boolean } = {}) {
 }
 
 /** A fake server API: a job runs its steps over a few polls, then completes. */
-function fakeApi(options: { steps?: number; fail?: string } = {}) {
+function fakeApi(
+	options: { steps?: number; fail?: string; preview?: boolean } = {},
+) {
 	const calls: string[] = [];
 	const bodies: unknown[] = [];
 	let polls = 0;
@@ -73,6 +75,12 @@ function fakeApi(options: { steps?: number; fail?: string } = {}) {
 			return Response.json({
 				status: "generating",
 				progress: { completed: polls, total: steps, unit: "steps" },
+				...(options.preview && {
+					preview: {
+						step: polls,
+						b64_json: Buffer.from(PNG).toString("base64"),
+					},
+				}),
 			});
 		}
 		return Response.json({
@@ -218,4 +226,25 @@ describe("warm engines", () => {
 		expect(warm.loaded).toBe("a:v");
 		warm.stop();
 	});
+});
+
+test("show the picture as it forms when asked", async () => {
+	const api = fakeApi({ preview: true });
+	const warm = engines(fakeServers().spawn, api.fetch);
+	const events = await collect(
+		warm.run(
+			"a:v",
+			["sd-server"],
+			{ ...request, previewInterval: 1 },
+			new AbortController().signal,
+		),
+	);
+	expect(api.bodies[0]).toMatchObject({ preview: "vae", preview_interval: 1 });
+	const shown = events.filter((e) => e.type === "progress" && e.preview);
+	expect(shown).toHaveLength(2);
+	expect(shown[0]).toMatchObject({
+		step: 1,
+		preview: { data: PNG, mime: "image/png" },
+	});
+	warm.stop();
 });

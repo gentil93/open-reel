@@ -171,6 +171,13 @@ export function createApp(options: AppOptions): Hono {
 		return c.json(result, 201);
 	});
 
+	app.get("/api/jobs/:id/preview", (c) => {
+		const { data, mime } = service.jobPreview(user(c), c.req.param("id"));
+		return new Response(data, {
+			headers: { "content-type": mime, "cache-control": "no-store" },
+		});
+	});
+
 	app.post("/api/jobs/:id/cancel", async (c) => {
 		await service.cancelJob(user(c), c.req.param("id"));
 		return c.body(null, 204);

@@ -34,6 +34,8 @@ export type ProviderEvent =
 			/** Sampling steps done and in all, when the model reports them. */
 			step?: number;
 			steps?: number;
+			/** The picture as it stands at this step, when the model shows it. */
+			preview?: { data: Uint8Array; mime: string };
 	  }
 	| { type: "completed"; outputs: ProviderOutput[]; costUsd?: number }
 	| {

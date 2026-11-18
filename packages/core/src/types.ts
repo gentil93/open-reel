@@ -209,6 +209,11 @@ export type EngineEvent =
 			position?: number;
 			step?: number;
 			steps?: number;
+			/**
+			 * Counts the pictures shown while generating; the latest is fetched
+			 * from the job's preview, so events stay small.
+			 */
+			preview?: number;
 	  };
 
 export type GpuVendor = "nvidia" | "amd" | "apple" | "intel";

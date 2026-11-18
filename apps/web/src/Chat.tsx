@@ -8,7 +8,7 @@ import {
 	useRef,
 	useState,
 } from "react";
-import { api, assetUrl, type SessionDetail } from "./api";
+import { api, assetUrl, previewUrl, type SessionDetail } from "./api";
 import { Composer, type Draft } from "./Composer";
 import { DevelopedImage, LatentFrame } from "./Develop";
 import { duration, usd } from "./format";
@@ -71,6 +71,10 @@ function JobCard(props: {
 	const pending = job.status === "queued" || job.status === "running";
 	// Pictures that finish while watched develop; ones already done just appear.
 	const watched = useRef(pending);
+	// Once the model has shown the picture forming, the final one continues
+	// from there rather than starting over from noise.
+	const shown = useRef(false);
+	if (progress?.preview) shown.current = true;
 	const [width, height] = (
 		job.params.aspectRatio ?? (model?.media === "video" ? "16:9" : "1:1")
 	)
@@ -112,6 +116,11 @@ function JobCard(props: {
 					<LatentFrame
 						ratio={(width || 1) / (height || 1)}
 						fraction={job.status === "running" ? progress?.fraction : undefined}
+						preview={
+							progress?.preview
+								? previewUrl(job.id, progress.preview)
+								: undefined
+						}
 					>
 						<p
 							className="flex items-center gap-2 rounded-full border border-white/10 bg-bg/70 px-3 py-1.5 text-sm font-medium text-ink backdrop-blur"
@@ -197,6 +206,7 @@ function JobCard(props: {
 										src={assetUrl(asset.id)}
 										alt={`${name}: ${props.prompt}`}
 										fresh={watched.current}
+										from={shown.current ? 0.85 : 0}
 										ratio={(width || 1) / (height || 1)}
 										className="w-full rounded-md"
 									/>

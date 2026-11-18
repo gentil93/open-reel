@@ -229,6 +229,37 @@ describe("job engine", () => {
 		expect(app.provider.canceled).toHaveLength(1);
 	});
 
+	test("a job shows the picture as it forms, only to its owner and only while running", async () => {
+		const app = boot(await tempDir());
+		const g = gate();
+		app.provider.gate = g.promise;
+		const progress: unknown[] = [];
+		app.engine.subscribe((_, event) => {
+			if (event.type === "job.progress") progress.push(event);
+		});
+		const { turn } = await app.service.createTurn(LOCAL_USER, {
+			prompt: "a red fox",
+			modelIds: ["fake/alpha"],
+		});
+		const jobId = turn.jobs[0]?.id as string;
+		await settle();
+
+		// The event only counts pictures; the picture itself is fetched.
+		expect(progress).toEqual([
+			expect.objectContaining({ jobId, fraction: 0.5, preview: 1 }),
+		]);
+		const preview = app.service.jobPreview(LOCAL_USER, jobId);
+		expect(preview.mime).toBe("image/bmp");
+		expect(preview.data.length).toBeGreaterThan(54);
+		expect(() =>
+			app.service.jobPreview({ userId: "someone-else" }, jobId),
+		).toThrow();
+
+		g.open();
+		await app.engine.idle();
+		expect(() => app.service.jobPreview(LOCAL_USER, jobId)).toThrow();
+	});
+
 	test("runs at most the configured number of jobs per provider", async () => {
 		const app = boot(await tempDir(), new FakeProvider(), 1);
 		const g = gate();
