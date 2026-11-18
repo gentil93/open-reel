@@ -1,6 +1,13 @@
 import type { Media, ModelSpec, ProviderStatus } from "@open-reel/core/types";
 import { useMutation } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import {
+	type Dispatch,
+	type SetStateAction,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
+import { Adjust } from "./Adjust";
 import { api, assetUrl } from "./api";
 import { useI18n } from "./i18n";
 import { MaskPainter } from "./MaskPainter";
@@ -22,7 +29,7 @@ interface Props {
 	models: ModelSpec[];
 	providers: ProviderStatus[];
 	references: string[];
-	setReferences(next: string[]): void;
+	setReferences: Dispatch<SetStateAction<string[]>>;
 	busy: boolean;
 	error: string | null;
 	onSubmit(draft: Draft): void;
@@ -70,6 +77,8 @@ export function Composer(props: Props) {
 		marks: string;
 	} | null>(null);
 	const [painting, setPainting] = useState(false);
+	// The reference being turned or cropped.
+	const [adjusting, setAdjusting] = useState<string | null>(null);
 	const [only] = references.length === 1 ? references : [];
 	const marked = only != null && mask?.reference === only ? mask : null;
 	const maskId = marked?.id ?? null;
@@ -248,17 +257,25 @@ export function Composer(props: Props) {
 					>
 						{references.map((id) => (
 							<li key={id} className="relative">
-								<img
-									src={assetUrl(id)}
-									alt={t("common.reference")}
-									className="size-16 rounded-md border border-line object-cover"
-								/>
+								<button
+									type="button"
+									onClick={() => setAdjusting(id)}
+									aria-label={t("composer.adjust")}
+									title={t("composer.adjust")}
+									className="block rounded-md"
+								>
+									<img
+										src={assetUrl(id)}
+										alt={t("common.reference")}
+										className="size-16 rounded-md border border-line object-cover transition-opacity hover:opacity-80"
+									/>
+								</button>
 								{id === only && marked && (
 									// The marked area, as it was painted.
 									<img
 										src={marked.marks}
 										alt=""
-										className="absolute inset-0 size-16 rounded-md object-cover opacity-55"
+										className="pointer-events-none absolute inset-0 size-16 rounded-md object-cover opacity-55"
 									/>
 								)}
 								<button
@@ -434,6 +451,22 @@ export function Composer(props: Props) {
 					</button>
 				</div>
 			</div>
+			{adjusting != null && (
+				<Adjust
+					src={assetUrl(adjusting)}
+					onDone={async (picture) => {
+						const asset = await api.upload(
+							new File([picture], "adjusted", { type: picture.type }),
+						);
+						// Takes the old one's place; a mask drawn on it no longer fits.
+						setReferences((current) =>
+							current.map((id) => (id === adjusting ? asset.id : id)),
+						);
+						setAdjusting(null);
+					}}
+					onClose={() => setAdjusting(null)}
+				/>
+			)}
 			{painting && only != null && (
 				<MaskPainter
 					src={assetUrl(only)}
