@@ -1,51 +1,14 @@
 /**
- * The effects the site and the app share: pictures that come out of noise the
- * way a diffusion model shows them partway through, under the Aurora light.
+ * The effects the site and the app share: a picture coming into focus as a
+ * model makes it, under the Aurora light. No grain: the picture is blurred
+ * and dim at first, and sharpens as it forms.
  */
-
-const NOISE_SIZE = 256;
-let noise: HTMLCanvasElement | null = null;
-
-/** Grain shared by every developing picture, made once. */
-function noiseTexture(): HTMLCanvasElement {
-	if (noise) return noise;
-	noise = document.createElement("canvas");
-	noise.width = noise.height = NOISE_SIZE;
-	const ctx = noise.getContext("2d") as CanvasRenderingContext2D;
-	const data = ctx.createImageData(NOISE_SIZE, NOISE_SIZE);
-	for (let i = 0; i < data.data.length; i += 4) {
-		const value = Math.random() * 255;
-		data.data[i] = value;
-		data.data[i + 1] = value * 0.92;
-		data.data[i + 2] = value * 0.96;
-		data.data[i + 3] = 255;
-	}
-	ctx.putImageData(data, 0, 0);
-	return noise;
-}
-
-/** Covers the canvas with grain at `alpha`, shifted at random so it flickers. */
-function grain(ctx: CanvasRenderingContext2D, alpha: number): void {
-	const { width, height } = ctx.canvas;
-	ctx.globalAlpha = alpha;
-	ctx.fillStyle = ctx.createPattern(noiseTexture(), "repeat") as CanvasPattern;
-	ctx.save();
-	ctx.translate(Math.random() * NOISE_SIZE, Math.random() * NOISE_SIZE);
-	ctx.fillRect(
-		-NOISE_SIZE,
-		-NOISE_SIZE,
-		width + NOISE_SIZE * 2,
-		height + NOISE_SIZE * 2,
-	);
-	ctx.restore();
-	ctx.globalAlpha = 1;
-}
 
 const clamp = (value: number) => Math.min(1, Math.max(0, value));
 
 /**
- * Draws `image` the way a diffusion model shows it partway through:
- * `progress` 0 is pure static, 1 is the finished picture.
+ * Draws `image` as it looks partway through: `progress` 0 is a soft blur of
+ * its colors, 1 is the finished picture.
  */
 export function develop(
 	canvas: HTMLCanvasElement,
@@ -56,8 +19,15 @@ export function develop(
 	if (!ctx) return;
 	const p = clamp(progress);
 	const { width, height } = canvas;
-	const scale = Math.max(width / image.width, height / image.height);
-	ctx.filter = `blur(${(1 - p) * 26}px) saturate(${0.4 + p * 0.6})`;
+	// Eased, so the last details settle slowly rather than snapping in.
+	const rest = (1 - p) ** 1.6;
+	const blur = rest * Math.max(width, height) * 0.06;
+	// A slight zoom hides the soft edges a blur leaves at the borders.
+	const zoom = 1 + rest * 0.08;
+	const scale = Math.max(width / image.width, height / image.height) * zoom;
+	ctx.fillStyle = "#0d0d10";
+	ctx.fillRect(0, 0, width, height);
+	ctx.filter = `blur(${blur}px) saturate(${0.55 + p * 0.45}) brightness(${0.75 + p * 0.25})`;
 	ctx.drawImage(
 		image,
 		(width - image.width * scale) / 2,
@@ -66,14 +36,12 @@ export function develop(
 		image.height * scale,
 	);
 	ctx.filter = "none";
-	if (p < 1) grain(ctx, (1 - p) ** 1.4);
 }
 
 /**
- * Draws a picture that does not exist yet: noise under Aurora light that
- * drifts with `time` (in milliseconds) and grows brighter and calmer as
- * `progress` goes from 0 to 1. Without a progress, the light breathes so the
- * frame still looks alive.
+ * Draws a picture that does not exist yet: soft Aurora light that drifts with
+ * `time` (in milliseconds) and grows brighter as `progress` goes from 0 to 1.
+ * Without a progress, the light breathes so the frame still looks alive.
  */
 export function latent(
 	canvas: HTMLCanvasElement,
@@ -109,7 +77,6 @@ export function latent(
 		ctx.fillStyle = glow;
 		ctx.fillRect(0, 0, width, height);
 	}
-	grain(ctx, 0.3 - p * 0.14);
 }
 
 export function loadImage(src: string): Promise<HTMLImageElement> {

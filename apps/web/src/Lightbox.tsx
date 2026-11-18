@@ -37,7 +37,14 @@ export function Lightbox({ item, onClose, onUseAsReference }: Props) {
 				t("format.seconds", { seconds: item.params.durationSeconds }),
 		],
 		[t("lightbox.seed"), item.params?.seed],
-		[t("lightbox.cost"), item.costUsd == null ? null : usd(i18n, item.costUsd)],
+		[
+			t("lightbox.cost"),
+			item.costUsd == null
+				? null
+				: item.costUsd === 0
+					? t("picker.free")
+					: usd(i18n, item.costUsd),
+		],
 	].filter(([, value]) => value != null);
 
 	return (

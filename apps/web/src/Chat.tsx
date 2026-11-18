@@ -101,7 +101,8 @@ function JobCard(props: {
 					{job.status === "succeeded" && job.startedAt && job.finishedAt && (
 						<>
 							{duration(i18n, job.finishedAt - job.startedAt)}
-							{job.costUsd != null && ` · ${usd(i18n, job.costUsd)}`}
+							{job.costUsd != null &&
+								` · ${job.costUsd === 0 ? t("picker.free") : usd(i18n, job.costUsd)}`}
 						</>
 					)}
 					{job.status === "failed" && (
@@ -113,36 +114,44 @@ function JobCard(props: {
 
 			<div className="flex flex-1 flex-col gap-2 p-2">
 				{pending && (
-					<LatentFrame
-						ratio={(width || 1) / (height || 1)}
-						fraction={job.status === "running" ? progress?.fraction : undefined}
-						preview={
-							progress?.preview
-								? previewUrl(job.id, progress.preview)
-								: undefined
-						}
-					>
-						<p
-							className="flex items-center gap-2 rounded-full border border-white/10 bg-bg/70 px-3 py-1.5 text-sm font-medium text-ink backdrop-blur"
-							aria-live="polite"
-						>
-							<i
-								aria-hidden="true"
-								className={`breathe size-2 rounded-full ${job.status === "queued" ? "bg-dim" : "bg-accent shadow-[0_0_10px_var(--accent)]"}`}
-							/>
-							{job.status === "queued"
-								? t("job.waiting")
-								: describeProgress(i18n, progress)}
-						</p>
-						<button
-							type="button"
-							onClick={() => cancel.mutate()}
-							disabled={cancel.isPending}
-							className="rounded-full border border-line-strong bg-bg/70 px-3 py-1 text-xs text-dim backdrop-blur hover:text-ink"
-						>
-							{t("common.cancel")}
-						</button>
-					</LatentFrame>
+					<>
+						<LatentFrame
+							ratio={(width || 1) / (height || 1)}
+							fraction={
+								job.status === "running" ? progress?.fraction : undefined
+							}
+							preview={
+								progress?.preview
+									? previewUrl(job.id, progress.preview)
+									: undefined
+							}
+						/>
+						{/* Below the picture, so nothing covers it while it forms. */}
+						<div className="flex items-center justify-between gap-3 px-1">
+							<p
+								className="flex min-w-0 items-center gap-2 text-sm font-medium text-ink"
+								aria-live="polite"
+							>
+								<i
+									aria-hidden="true"
+									className={`breathe size-2 shrink-0 rounded-full ${job.status === "queued" ? "bg-dim" : "bg-accent shadow-[0_0_10px_var(--accent)]"}`}
+								/>
+								<span className="truncate">
+									{job.status === "queued"
+										? t("job.waiting")
+										: describeProgress(i18n, progress)}
+								</span>
+							</p>
+							<button
+								type="button"
+								onClick={() => cancel.mutate()}
+								disabled={cancel.isPending}
+								className="shrink-0 rounded-full border border-line-strong px-3 py-1 text-xs text-dim hover:text-ink"
+							>
+								{t("common.cancel")}
+							</button>
+						</div>
+					</>
 				)}
 				{job.status === "failed" && (
 					<p className="p-2 text-sm leading-relaxed text-danger">
