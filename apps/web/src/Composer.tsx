@@ -9,6 +9,7 @@ import {
 } from "react";
 import { Adjust } from "./Adjust";
 import { api, assetUrl } from "./api";
+import { Extend } from "./Extend";
 import { useI18n } from "./i18n";
 import { MaskPainter } from "./MaskPainter";
 import { PickerDialog } from "./Picker";
@@ -77,6 +78,7 @@ export function Composer(props: Props) {
 		marks: string;
 	} | null>(null);
 	const [painting, setPainting] = useState(false);
+	const [extending, setExtending] = useState(false);
 	// The reference being turned or cropped.
 	const [adjusting, setAdjusting] = useState<string | null>(null);
 	const [only] = references.length === 1 ? references : [];
@@ -292,13 +294,22 @@ export function Composer(props: Props) {
 						))}
 						{only != null && canMask && (
 							<li className="flex flex-col items-start justify-center gap-1 text-sm">
-								<button
-									type="button"
-									onClick={() => setPainting(true)}
-									className="rounded-md border border-line px-2.5 py-1 text-dim hover:border-dim hover:text-ink"
-								>
-									{maskId ? t("composer.editArea") : t("composer.markArea")}
-								</button>
+								<div className="flex gap-1.5">
+									<button
+										type="button"
+										onClick={() => setPainting(true)}
+										className="rounded-md border border-line px-2.5 py-1 text-dim hover:border-dim hover:text-ink"
+									>
+										{maskId ? t("composer.editArea") : t("composer.markArea")}
+									</button>
+									<button
+										type="button"
+										onClick={() => setExtending(true)}
+										className="rounded-md border border-line px-2.5 py-1 text-dim hover:border-dim hover:text-ink"
+									>
+										{t("composer.extend")}
+									</button>
+								</div>
 								{maskId && (
 									<button
 										type="button"
@@ -465,6 +476,27 @@ export function Composer(props: Props) {
 						setAdjusting(null);
 					}}
 					onClose={() => setAdjusting(null)}
+				/>
+			)}
+			{extending && only != null && (
+				<Extend
+					src={assetUrl(only)}
+					onDone={async (picture, area, marks) => {
+						const [larger, mask] = await Promise.all([
+							api.upload(
+								new File([picture], "extended", { type: picture.type }),
+							),
+							api.upload(new File([area], "mask.png", { type: area.type })),
+						]);
+						// The larger picture takes the old one's place, its new part
+						// marked to be drawn.
+						setReferences((current) =>
+							current.map((id) => (id === only ? larger.id : id)),
+						);
+						setMask({ reference: larger.id, id: mask.id, marks });
+						setExtending(false);
+					}}
+					onClose={() => setExtending(false)}
 				/>
 			)}
 			{painting && only != null && (
