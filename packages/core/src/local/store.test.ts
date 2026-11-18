@@ -777,3 +777,46 @@ test("a model installed by another open-reel on the same folder is noticed", asy
 	await other.store.list();
 	expect(events).toEqual(["models.changed"]);
 });
+
+test("two open-reels installing the same model download each file once", async () => {
+	const first = await setup();
+	const second = await setup({ root: first.root });
+	const held = gate();
+	first.control.hold = held.promise;
+	await first.store.install("a");
+	// The first is in the middle of its first download...
+	await until(async () =>
+		(await first.blobs()).some((name) => name.endsWith(".part")),
+	);
+	// ...when the second asks for the same model, and waits for it.
+	await second.store.install("a");
+	await Bun.sleep(50);
+	expect(second.requests).toEqual([]);
+
+	held.open();
+	first.control.hold = null;
+	await Promise.all([first.store.idle(), second.store.idle()]);
+	expect((await first.status("a")).ready).toBe(true);
+	expect((await second.status("a")).ready).toBe(true);
+	const fetched = [...first.requests, ...second.requests].map((r) => r.url);
+	expect(fetched.sort()).toEqual(
+		[
+			url("engine.zip"),
+			url("a.safetensors"),
+			url("encoder.safetensors"),
+		].sort(),
+	);
+	// No lock is left behind.
+	expect((await first.blobs()).filter((n) => n.endsWith(".lock"))).toEqual([]);
+});
+
+test("removing a model leaves a file another open-reel is downloading", async () => {
+	const first = await setup();
+	await first.store.install("a");
+	await first.store.idle();
+	const blob = (await first.blobs()).find((n) => /^[a-f0-9]{64}$/.test(n));
+	// Another open-reel holds a download of one of its files.
+	await Bun.write(join(first.root, "blobs", `${blob}.lock`), "other");
+	await first.store.remove("a");
+	expect(await first.blobs()).toContain(blob as string);
+});

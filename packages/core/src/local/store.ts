@@ -31,6 +31,7 @@ import type {
 	LocalModelVariant,
 } from "../types";
 import { type BuildChoice, chooseBuild, chooseVariant, fitOf } from "./engines";
+import { isLocked, withFileLock } from "./file-lock";
 import { GpuLock } from "./gpu";
 import { detectHardware } from "./hardware";
 import { extractZip } from "./zip";
@@ -806,8 +807,28 @@ export class LocalModelStore {
 		this.queue = this.queue.then(run);
 	}
 
-	/** Downloads a build's archives, extracts them, and drops the archives. */
+	/**
+	 * Downloads a build's archives, extracts them, and drops the archives.
+	 * Another open-reel sharing the folder may be installing the same build:
+	 * this one waits for it and uses what it installed.
+	 */
 	private async installEngine(
+		model: LocalModelSpec,
+		build: EngineBuild,
+		install: Install,
+	): Promise<void> {
+		await mkdir(join(this.root, "engines"), { recursive: true });
+		await withFileLock(
+			`${this.engineDir(build.id)}.lock`,
+			install.controller.signal,
+			async () => {
+				if ((await this.installedBuilds()).has(build.id)) return;
+				await this.unpackEngine(model, build, install);
+			},
+		);
+	}
+
+	private async unpackEngine(
 		model: LocalModelSpec,
 		build: EngineBuild,
 		install: Install,
@@ -871,15 +892,46 @@ export class LocalModelStore {
 		});
 	}
 
+	/**
+	 * Downloads one file, unless it is there. Another open-reel sharing the
+	 * folder may be downloading it: this one waits, showing that download's
+	 * progress, and uses the file it leaves.
+	 */
 	private async download(
+		model: LocalModelSpec,
+		file: LocalModelFile,
+		install: Install,
+	): Promise<void> {
+		const path = this.blob(file.sha256);
+		if (await Bun.file(path).exists()) return;
+		await mkdir(join(this.root, "blobs"), { recursive: true });
+		await withFileLock(
+			`${path}.lock`,
+			install.controller.signal,
+			async () => {
+				if (await Bun.file(path).exists()) return;
+				await this.fetchFile(model, file, install);
+			},
+			{
+				onWait: async () => {
+					install.state = "downloading";
+					install.current = {
+						sha256: file.sha256,
+						bytes: await sizeOf(`${path}.part`),
+					};
+					this.progress(model, install, true);
+				},
+			},
+		);
+	}
+
+	private async fetchFile(
 		model: LocalModelSpec,
 		file: LocalModelFile,
 		install: Install,
 	): Promise<void> {
 		const { signal } = install.controller;
 		const path = this.blob(file.sha256);
-		if (await Bun.file(path).exists()) return;
-		await mkdir(join(this.root, "blobs"), { recursive: true });
 		const part = `${path}.part`;
 
 		let have = await sizeOf(part);
@@ -993,6 +1045,8 @@ export class LocalModelStore {
 		const needed = await this.neededHashes();
 		for (const file of unique(model.variants.flatMap((v) => v.files))) {
 			if (needed.has(file.sha256)) continue;
+			// Another open-reel sharing the folder is downloading it.
+			if (isLocked(`${this.blob(file.sha256)}.lock`)) continue;
 			await rm(this.blob(file.sha256), { force: true });
 			await rm(`${this.blob(file.sha256)}.part`, { force: true });
 		}
@@ -1011,6 +1065,8 @@ export class LocalModelStore {
 		for (const engine of this.engines) {
 			if (inUse.has(engine.id)) continue;
 			for (const build of engine.builds) {
+				// Another open-reel sharing the folder is installing it.
+				if (isLocked(`${this.engineDir(build.id)}.lock`)) continue;
 				await rm(this.engineDir(build.id), { recursive: true, force: true });
 				for (const file of build.files) {
 					await rm(this.blob(file.sha256), { force: true });
