@@ -4,10 +4,12 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 import {
 	chosenModelsDir,
+	clearServerInfo,
 	defaultDataDir,
 	defaultModelsDir,
 	modelsLocationFile,
 	plainPath,
+	writeServerInfo,
 } from "@open-reel/core";
 import {
 	createApp,
@@ -16,9 +18,17 @@ import {
 	serveWeb,
 } from "@open-reel/server";
 
+// An agent's connection: it has its own options, and never serves the app.
+if (process.argv[2] === "mcp") {
+	const { mcp } = await import("./mcp");
+	await mcp(process.argv.slice(3));
+	process.exit(0);
+}
+
 const HELP = `open-reel — one interface for many image generation models
 
 Usage: open-reel [options]
+       open-reel mcp [options]   Connect an AI agent (see open-reel mcp --help)
 
   --port <n>       Port to listen on (default 4096; 0 picks a free one)
   --data-dir <p>   Where sessions, images and keys are stored
@@ -129,6 +139,13 @@ const server = listen();
 // Only now that this process owns the port and the data directory.
 await runtime.start();
 const url = `http://localhost:${server.port}`;
+// Other processes, such as `open-reel mcp`, find this server here.
+await writeServerInfo(dataDir, {
+	pid: process.pid,
+	url: `http://127.0.0.1:${server.port}`,
+}).catch((error) => {
+	console.error(`Agents will not find this server: ${error.message}`);
+});
 // Written straight to the descriptor, so the line is out at once: the
 // desktop app waits for it before opening the window on this address.
 const say = (line: string) => writeSync(1, `${line}\n`);
@@ -152,8 +169,13 @@ if (!values.dev && !values["no-open"]) {
 	}
 }
 
-function shutdown(): never {
+let stopping = false;
+async function shutdown(): Promise<void> {
+	// Input closing, the parent going and a signal can each ask; once is enough.
+	if (stopping) return;
+	stopping = true;
 	server.stop(true);
+	await clearServerInfo(dataDir).catch(() => {});
 	runtime.close();
 	process.exit(0);
 }
@@ -170,13 +192,13 @@ if (parentPid != null) {
 		for await (const _ of Bun.stdin.stream()) {
 			// Nothing is sent; only the end matters.
 		}
-		shutdown();
+		void shutdown();
 	})();
 	setInterval(() => {
 		try {
 			process.kill(parentPid, 0);
 		} catch (error) {
-			if ((error as NodeJS.ErrnoException).code !== "EPERM") shutdown();
+			if ((error as NodeJS.ErrnoException).code !== "EPERM") void shutdown();
 		}
 	}, 2000);
 }

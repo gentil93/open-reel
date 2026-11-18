@@ -1,0 +1,20 @@
+{
+	"name": "@open-reel/mcp",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsc -p ."
+	},
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "1.32.2",
+		"@open-reel/core": "workspace:*",
+		"zod": "^4.0.0"
+	},
+	"devDependencies": {
+		"@open-reel/server": "workspace:*"
+	}
+}

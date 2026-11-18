@@ -9,6 +9,7 @@
 		"typecheck": "tsc -p ."
 	},
 	"dependencies": {
+		"@open-reel/mcp": "workspace:*",
 		"@open-reel/server": "workspace:*",
 		"@open-reel/core": "workspace:*"
 	}

@@ -12,6 +12,7 @@ export * from "./local/translator";
 export * from "./mime";
 export * from "./paths";
 export * from "./provider";
+export * from "./server-info";
 export * from "./service";
 export * from "./testing/fake-provider";
 export * from "./translate";

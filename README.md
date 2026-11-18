@@ -48,6 +48,24 @@ picture: download a model that runs on your computer, or paste an API key.
 environment: `FAL_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`,
 `REPLICATE_API_TOKEN`, `OPENROUTER_API_KEY`.
 
+## Use it from an AI agent
+
+`open-reel mcp` lets an agent that speaks the
+[Model Context Protocol](https://modelcontextprotocol.io), such as Claude Code
+or Claude Desktop, make pictures and videos with your models: list them,
+generate and compare, redraw a picture, upscale it, and search and save from
+your gallery. With Claude Code, from the open-reel folder:
+
+```sh
+claude mcp add open-reel -- bun "$PWD/packages/cli/src/index.ts" mcp
+```
+
+It uses the open-reel already running, or starts one that stops with the
+agent. By default only models on your computer are used, so it costs nothing;
+`--allow-paid --spend-limit 5` also lets it use your cloud keys, up to $5 per
+connection. Agents cannot install models: you do, in the app. See
+`bun run start mcp --help`.
+
 ## Your data
 
 Sessions, pictures, keys and models stay on your computer, in a directory
