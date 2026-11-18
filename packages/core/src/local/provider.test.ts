@@ -4,6 +4,7 @@ import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+	DEFAULT_STRENGTH,
 	dimensions,
 	engineArguments,
 	type LocalModelSpec,
@@ -11,11 +12,13 @@ import {
 	type LocalRuntime,
 	type ProviderEvent,
 	previewInterval,
+	redrawSteps,
 	type Spawn,
 	samplingProgress,
 } from "../index";
 
 import { GpuLock } from "./gpu";
+import { picture } from "./testing";
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -67,6 +70,13 @@ const WAN: LocalModelSpec = {
 		durations: [2, 5],
 		negativePrompt: "static",
 	},
+};
+
+/** A picture model that can also redraw a picture. */
+const REDRAW: LocalModelSpec = {
+	...FLUX,
+	tasks: ["text-to-image", "image-to-image"],
+	defaults: { ...FLUX.defaults, references: { as: "init", max: 1 } },
 };
 
 const runtime = (
@@ -212,6 +222,47 @@ describe("engine arguments", () => {
 		);
 		expect(args[args.indexOf("-i") + 1]).toBe("/s/first.png");
 		expect(args).not.toContain("-r");
+	});
+
+	test("a picture model redraws its picture, as much as asked, at its size", async () => {
+		const after = (args: string[], flag: string) =>
+			args[args.indexOf(flag) + 1];
+		const redraw = async (steps: number, strength?: number) =>
+			engineArguments(
+				runtime(REDRAW),
+				{ ...REDRAW.defaults, steps },
+				params({ aspectRatio: "1:1", ...(strength && { strength }) }),
+				"/o.png",
+				async (p) => p,
+				["/s/old.png"],
+				{ width: 1024, height: 768 },
+			);
+		const turbo = await redraw(4, 0.5);
+		expect(after(turbo, "-i")).toBe("/s/old.png");
+		expect(after(turbo, "--strength")).toBe("0.5");
+		// The engine runs steps × strength: four, as the model was made for.
+		expect(after(turbo, "--steps")).toBe("8");
+		// The redrawn picture's shape, not the ratio asked.
+		expect(after(turbo, "-W")).toBe("1024");
+		expect(after(turbo, "-H")).toBe("768");
+		// One step at most strengths would make them all alike: about four.
+		expect(after(await redraw(1, 0.6), "--steps")).toBe("7");
+		expect(after(await redraw(1, 0.85), "--steps")).toBe("5");
+		expect(after(await redraw(30, 0.6), "--steps")).toBe("30");
+		const unsaid = await redraw(4);
+		expect(after(unsaid, "--strength")).toBe(String(DEFAULT_STRENGTH));
+		// Without a picture it makes one from words, as before.
+		const words = await engineArguments(
+			runtime(REDRAW),
+			REDRAW.defaults,
+			params({ strength: 0.3 }),
+			"/o.png",
+			async (p) => p,
+		);
+		expect(words).not.toContain("--strength");
+		expect(words).not.toContain("-i");
+		expect(after(words, "--steps")).toBe("4");
+		expect(redrawSteps(4, 1)).toBe(4);
 	});
 
 	test("a model that does not fit the graphics card keeps part in memory", async () => {
@@ -458,6 +509,52 @@ describe("running", () => {
 		expect(calls[0]?.[calls[0].indexOf("-r") + 1]).toEndWith(".jpeg");
 		expect(given).toEqual(new Uint8Array([9, 8, 7]));
 		expect(await readdir(dir)).toEqual([]);
+	});
+
+	test("a picture to redraw keeps its shape and reaches the engine at its size", async () => {
+		const { provider, fake, calls, dir } = await setup(REDRAW);
+		let given: Uint8Array = new Uint8Array();
+		const spawn: Spawn = (argv) => {
+			const path = argv[argv.indexOf("-i") + 1] as string;
+			given = new Uint8Array(readFileSync(path));
+			return fake([])(argv);
+		};
+		const local = provider(spawn);
+		await local.load();
+		const [listed] = local.listModels();
+		expect(listed?.operations).toEqual(["generate", "edit"]);
+		expect(listed?.capabilities).toMatchObject({
+			maxReferenceImages: 1,
+			strength: DEFAULT_STRENGTH,
+		});
+		const events = await run(local, undefined, [
+			{ data: picture(1600, 900), mime: "image/png" },
+		]);
+		expect(events.at(-1)?.type).toBe("completed");
+		const argv = calls[0] ?? [];
+		const after = (flag: string) => argv[argv.indexOf(flag) + 1];
+		// 16:9 at the model's 1024, in steps of 64.
+		expect([after("-W"), after("-H")]).toEqual(["1024", "576"]);
+		expect(await new Bun.Image(given).metadata()).toMatchObject({
+			width: 1024,
+			height: 576,
+		});
+		expect(after("--strength")).toBe(String(DEFAULT_STRENGTH));
+		expect(await readdir(dir)).toEqual([]);
+	});
+
+	test("a picture to redraw that cannot be read is refused, saying so", async () => {
+		const { provider, fake } = await setup(REDRAW);
+		const local = provider(fake([]));
+		await local.load();
+		const [model] = local.listModels();
+		expect(
+			local.submit({
+				model: model as never,
+				params: params(),
+				references: [{ data: new Uint8Array([1, 2, 3]), mime: "image/png" }],
+			}),
+		).rejects.toMatchObject({ code: "referenceUnreadable" });
 	});
 
 	test("a failing engine reports its last error line", async () => {

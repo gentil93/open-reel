@@ -63,11 +63,19 @@ export function adaptParams(
 				: durations.reduce((best, d) =>
 						Math.abs(d - wanted) < Math.abs(best - wanted) ? d : best,
 					),
+		// A redrawn picture keeps its reference's shape, whatever was asked.
 		aspectRatio:
-			params.aspectRatio && caps.aspectRatios.includes(params.aspectRatio)
+			params.aspectRatio &&
+			caps.aspectRatios.includes(params.aspectRatio) &&
+			!(caps.strength != null && params.referenceAssetIds.length > 0)
 				? params.aspectRatio
 				: undefined,
 		seed: caps.seed ? params.seed : undefined,
+		// Only what was used: a strength means something only when redrawing.
+		strength:
+			caps.strength != null && params.referenceAssetIds.length > 0
+				? params.strength
+				: undefined,
 	};
 }
 

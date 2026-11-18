@@ -33,6 +33,7 @@ export const ERROR_CODES = [
 	"notInstalled",
 	"referenceNotFound",
 	"referenceNotImage",
+	"referenceUnreadable",
 	"resultDownloadFailed",
 	"resultNotHttps",
 	"resultTooLarge",

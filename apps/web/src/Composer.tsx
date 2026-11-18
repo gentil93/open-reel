@@ -11,6 +11,8 @@ export interface Draft {
 	aspectRatio?: string;
 	count: number;
 	durationSeconds?: number;
+	/** How much a model that redraws the reference changes it. */
+	strength?: number;
 }
 
 interface Props {
@@ -45,7 +47,7 @@ function savedModels(): string[] {
 
 export function Composer(props: Props) {
 	const { models, providers, references, setReferences } = props;
-	const { t, explain } = useI18n();
+	const { t, explain, number } = useI18n();
 	const [prompt, setPrompt] = useState("");
 	const [chosen, setChosen] = useState<string[]>(savedModels);
 	const [aspectRatio, setAspectRatio] = useState("");
@@ -54,6 +56,8 @@ export function Composer(props: Props) {
 	// The picker window, to find and set up another model.
 	const [picking, setPicking] = useState(false);
 	const [seconds, setSeconds] = useState<number | null>(null);
+	// Unset, the slider shows the chosen models' own strength.
+	const [moved, setStrength] = useState<number | null>(null);
 	const fileInput = useRef<HTMLInputElement>(null);
 
 	const ready = new Set(
@@ -78,13 +82,22 @@ export function Composer(props: Props) {
 	// magnitude, and nobody compares one against the other.
 	const offered = models.filter((m) => m.media === media);
 	const selected = offered.filter((m) => chosen.includes(m.id) && !blocked(m));
-	const ratios = [
+	const offeredRatios = [
 		...new Set(selected.flatMap((m) => m.capabilities.aspectRatios)),
 	];
 	const maxCount = Math.max(1, ...selected.map((m) => m.capabilities.maxCount));
 	const durations = [
 		...new Set(selected.flatMap((m) => m.capabilities.durations ?? [])),
 	].sort((a, b) => a - b);
+	// Some models redraw the reference picture: how much is up to the person.
+	const redrawer = selected.find((m) => m.capabilities.strength != null);
+	const redrawing = references.length > 0 && redrawer != null;
+	const strength = moved ?? redrawer?.capabilities.strength;
+	// A redrawn picture keeps the reference's shape: no ratio to choose.
+	const ratios =
+		redrawing && selected.every((m) => m.capabilities.strength != null)
+			? []
+			: offeredRatios;
 
 	// Without storage, the selection lasts for this visit only.
 	useEffect(() => rememberModels(chosen), [chosen]);
@@ -117,6 +130,8 @@ export function Composer(props: Props) {
 			// Unset, each model uses its shortest length.
 			durationSeconds:
 				seconds != null && durations.includes(seconds) ? seconds : undefined,
+			// Unmoved, each model redraws by its own.
+			strength: redrawing && moved != null ? moved : undefined,
 		});
 		setPrompt("");
 	};
@@ -268,6 +283,26 @@ export function Composer(props: Props) {
 							))}
 						</select>
 					</label>
+					{redrawing && strength != null && (
+						<label className="flex items-center gap-2 text-sm text-dim">
+							{t("composer.strength")}
+							<input
+								type="range"
+								min={0.1}
+								max={1}
+								step={0.05}
+								value={strength}
+								onChange={(event) => setStrength(Number(event.target.value))}
+								aria-valuetext={t("composer.strengthValue", {
+									amount: number(strength, { style: "percent" }),
+								})}
+								className="w-28 accent-accent"
+							/>
+							<span className="w-10 font-mono text-xs">
+								{number(strength, { style: "percent" })}
+							</span>
+						</label>
+					)}
 					{durations.length > 0 && (
 						<label className="flex items-center gap-2 text-sm text-dim">
 							{t("composer.length")}

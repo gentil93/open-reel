@@ -1,5 +1,6 @@
 import { mkdir, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import { ValidationError } from "../errors";
 import { sniffMime } from "../mime";
 import type {
 	ProviderAdapter,
@@ -7,11 +8,12 @@ import type {
 	ProviderEvent,
 	ProviderRequest,
 } from "../provider";
-import type {
-	GenerationParams,
-	LocalModelDefaults,
-	LocalModelSpec,
-	ModelSpec,
+import {
+	DEFAULT_STRENGTH,
+	type GenerationParams,
+	type LocalModelDefaults,
+	type LocalModelSpec,
+	type ModelSpec,
 } from "../types";
 import type { LocalModelStore, LocalRuntime } from "./store";
 import { WarmEngines } from "./warm";
@@ -21,6 +23,8 @@ export interface LocalHandle {
 	params: GenerationParams;
 	/** Pictures the person gave, written to the scratch folder at submit. */
 	references?: string[];
+	/** The size to make, when it follows a picture being redrawn. */
+	size?: { width: number; height: number };
 }
 
 /** Turns a path into one the engine can open, e.g. a Windows path under WSL. */
@@ -134,6 +138,21 @@ export function dimensions(
 		: { width: round((size * w) / h), height: round(size) };
 }
 
+/** A picture model that starts from a picture: image-to-image. */
+export function redraws(model: LocalModelSpec): boolean {
+	return model.media === "image" && model.defaults.references?.as === "init";
+}
+
+/**
+ * Steps to ask for when redrawing: the engine runs only `steps × strength`
+ * of them, rounded down, which for a model distilled to one to four steps
+ * would be none, and would make most strengths alike. Asking for enough that
+ * about four are run gives every model a strength that means something.
+ */
+export function redrawSteps(steps: number, strength: number): number {
+	return Math.max(steps, Math.ceil(4 / strength));
+}
+
 /** The engine's arguments for one job, with paths as the engine sees them. */
 export async function engineArguments(
 	runtime: LocalRuntime,
@@ -142,13 +161,22 @@ export async function engineArguments(
 	output: string,
 	path: PathMapper,
 	references: string[] = [],
+	/** The size to make instead of the ratio's, e.g. the redrawn picture's. */
+	size?: { width: number; height: number },
 ): Promise<string[]> {
 	const video = runtime.model.media === "video";
-	const { width, height } = dimensions(
-		defaults.size,
-		params.aspectRatio ?? defaults.aspectRatios[0],
-		video ? 16 : 64,
-	);
+	const { width, height } =
+		size ??
+		dimensions(
+			defaults.size,
+			params.aspectRatio ?? defaults.aspectRatios[0],
+			video ? 16 : 64,
+		);
+	const redrawing = redraws(runtime.model) && references.length > 0;
+	const strength = params.strength ?? DEFAULT_STRENGTH;
+	const steps = redrawing
+		? redrawSteps(defaults.steps, strength)
+		: defaults.steps;
 	const args = ["-M", video ? "vid_gen" : "img_gen"];
 	for (const [role, file] of Object.entries(runtime.files)) {
 		args.push(roleOption(role), await path(file));
@@ -157,7 +185,7 @@ export async function engineArguments(
 		"-p",
 		params.prompt,
 		"--steps",
-		String(defaults.steps),
+		String(steps),
 		"--cfg-scale",
 		String(defaults.cfgScale),
 		"-W",
@@ -180,6 +208,7 @@ export async function engineArguments(
 			args.push(flag, await path(reference));
 		}
 	}
+	if (redrawing) args.push("--strength", String(strength));
 	args.push(...modelOptions(runtime));
 	if (video) {
 		const fps = defaults.fps ?? 16;
@@ -325,6 +354,7 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 					seed: true,
 					maxCount: 1,
 					maxReferenceImages: model.defaults.references?.max ?? 0,
+					...(redraws(model) && { strength: DEFAULT_STRENGTH }),
 					...(model.defaults.durations && {
 						durations: model.defaults.durations,
 					}),
@@ -341,10 +371,33 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 		};
 		const spec = this.catalog.find((m) => m.id === handle.modelId);
 		const max = spec?.defaults.references?.max ?? 0;
-		if (request.references.length === 0 || max === 0) return handle;
+		if (!spec || request.references.length === 0 || max === 0) return handle;
 		// The engine reads pictures from files, kept next to its output.
 		const { scratch } = await this.store.runtime(handle.modelId);
 		await mkdir(scratch, { recursive: true });
+		const [first] = request.references;
+		if (redraws(spec) && first) {
+			// The new picture keeps the old one's shape, at the model's size;
+			// the engine is given it at exactly that size.
+			const picture = new Bun.Image(first.data);
+			const { width, height } = await picture.metadata().catch(() => {
+				throw new ValidationError(
+					"The reference picture cannot be read",
+					"referenceUnreadable",
+				);
+			});
+			handle.size = dimensions(spec.defaults.size, `${width}:${height}`);
+			const path = join(scratch, `${crypto.randomUUID()}.png`);
+			await Bun.write(
+				path,
+				await picture
+					.resize(handle.size.width, handle.size.height, { fit: "fill" })
+					.png()
+					.bytes(),
+			);
+			handle.references = [path];
+			return handle;
+		}
 		handle.references = [];
 		for (const reference of request.references.slice(0, max)) {
 			const extension = reference.mime.split("/")[1] ?? "png";
@@ -447,6 +500,7 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 				output,
 				path,
 				handle.references,
+				handle.size,
 			)),
 		];
 		// The engine writes the picture as it forms, numbered from 000.

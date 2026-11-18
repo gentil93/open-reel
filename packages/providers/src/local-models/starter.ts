@@ -52,7 +52,7 @@ export function starterModels(): LocalModelSpec[] {
 			name: "SDXL Turbo",
 			author: "Stability AI",
 			media: "image",
-			tasks: ["text-to-image"],
+			tasks: ["text-to-image", "image-to-image"],
 			summary:
 				"A distilled SDXL that makes a 512px image in a single step. The quickest way to try ideas.",
 			license: "Stability AI Community License",
@@ -78,6 +78,7 @@ export function starterModels(): LocalModelSpec[] {
 				},
 			],
 			defaults: {
+				references: { as: "init", max: 1 },
 				size: 512,
 				aspectRatios: ALL_RATIOS,
 				steps: 1,
@@ -97,7 +98,7 @@ export function starterModels(): LocalModelSpec[] {
 			name: "Stable Diffusion XL",
 			author: "Stability AI",
 			media: "image",
-			tasks: ["text-to-image"],
+			tasks: ["text-to-image", "image-to-image"],
 			summary:
 				"The 1024px general-purpose model with the largest ecosystem of fine-tunes and LoRAs.",
 			...openRail(
@@ -124,6 +125,7 @@ export function starterModels(): LocalModelSpec[] {
 				},
 			],
 			defaults: {
+				references: { as: "init", max: 1 },
 				size: 1024,
 				aspectRatios: ALL_RATIOS,
 				steps: 30,
@@ -143,7 +145,7 @@ export function starterModels(): LocalModelSpec[] {
 			name: "FLUX.1 schnell",
 			author: "Black Forest Labs",
 			media: "image",
-			tasks: ["text-to-image"],
+			tasks: ["text-to-image", "image-to-image"],
 			summary:
 				"Detailed 1024px images in four steps, with strong prompt following.",
 			...APACHE_2,
@@ -187,6 +189,7 @@ export function starterModels(): LocalModelSpec[] {
 				},
 			],
 			defaults: {
+				references: { as: "init", max: 1 },
 				size: 1024,
 				aspectRatios: ALL_RATIOS,
 				steps: 4,
@@ -207,7 +210,7 @@ export function starterModels(): LocalModelSpec[] {
 			name: "Z-Image Turbo",
 			author: "Tongyi-MAI (Alibaba)",
 			media: "image",
-			tasks: ["text-to-image"],
+			tasks: ["text-to-image", "image-to-image"],
 			summary:
 				"Photorealistic images in eight steps, and legible text in English and Chinese.",
 			...APACHE_2,
@@ -266,6 +269,7 @@ export function starterModels(): LocalModelSpec[] {
 				},
 			],
 			defaults: {
+				references: { as: "init", max: 1 },
 				size: 1024,
 				aspectRatios: ALL_RATIOS,
 				steps: 8,

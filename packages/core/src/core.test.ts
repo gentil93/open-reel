@@ -633,6 +633,54 @@ describe("video", () => {
 		expect(fit(6, fixed)).toBeUndefined();
 	});
 
+	test("a strength is kept only for a model that redraws a given picture", () => {
+		const strengthOf = (strength: number | undefined, references: string[]) =>
+			adaptParams(
+				{
+					...CLIP,
+					capabilities: {
+						...CLIP.capabilities,
+						maxReferenceImages: 1,
+						strength,
+					},
+				},
+				{
+					prompt: "x",
+					count: 1,
+					referenceAssetIds: references,
+					extras: {},
+					strength: 0.4,
+				},
+			).strength;
+		expect(strengthOf(0.7, ["a"])).toBe(0.4);
+		expect(strengthOf(0.7, [])).toBeUndefined();
+		expect(strengthOf(undefined, ["a"])).toBeUndefined();
+	});
+
+	test("a redrawn picture keeps its reference's shape, not the ratio asked", () => {
+		const ratioOf = (references: string[]) =>
+			adaptParams(
+				{
+					...CLIP,
+					capabilities: {
+						...CLIP.capabilities,
+						aspectRatios: ["16:9"],
+						maxReferenceImages: 1,
+						strength: 0.7,
+					},
+				},
+				{
+					prompt: "x",
+					count: 1,
+					referenceAssetIds: references,
+					extras: {},
+					aspectRatio: "16:9",
+				},
+			).aspectRatio;
+		expect(ratioOf([])).toBe("16:9");
+		expect(ratioOf(["a"])).toBeUndefined();
+	});
+
 	test("a video is downloaded with the provider's headers and priced by the second", async () => {
 		const app = boot(await tempDir(), new FakeVideoProvider());
 		// The CDN mislabels the file; the bytes decide what it is stored as.

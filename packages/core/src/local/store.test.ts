@@ -2,7 +2,6 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { deflateSync } from "node:zlib";
 import {
 	type Hardware,
 	isDemoSize,
@@ -14,7 +13,7 @@ import {
 	NotFoundError,
 	ValidationError,
 } from "../index";
-import { zip } from "./testing";
+import { picture, zip } from "./testing";
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -27,30 +26,6 @@ const sha256 = (data: Uint8Array) =>
 	new Bun.CryptoHasher("sha256").update(data).digest("hex");
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]);
 
-/** A real, flat grey PNG picture of the given size. */
-function picture(width: number, height: number): Uint8Array<ArrayBuffer> {
-	const chunk = (type: string, data: Uint8Array) => {
-		const body = new Uint8Array([...bytes(type), ...data]);
-		const out = new DataView(new ArrayBuffer(12 + data.byteLength));
-		out.setUint32(0, data.byteLength);
-		new Uint8Array(out.buffer).set(body, 4);
-		out.setUint32(8 + data.byteLength, Bun.hash.crc32(body));
-		return new Uint8Array(out.buffer);
-	};
-	const header = new DataView(new ArrayBuffer(13));
-	header.setUint32(0, width);
-	header.setUint32(4, height);
-	header.setUint8(8, 8); // bits per channel
-	header.setUint8(9, 2); // RGB
-	const rows = new Uint8Array((1 + width * 3) * height).fill(128);
-	for (let y = 0; y < height; y++) rows[y * (1 + width * 3)] = 0;
-	return new Uint8Array([
-		...PNG.subarray(0, 8),
-		...chunk("IHDR", new Uint8Array(header.buffer)),
-		...chunk("IDAT", deflateSync(rows)),
-		...chunk("IEND", new Uint8Array()),
-	]);
-}
 const BIG_PNG = picture(3000, 1500);
 
 const UNET_A = bytes("weights of model a");

@@ -43,10 +43,17 @@ describe("the local models catalog", () => {
 	test("a model that takes pictures says how, and one that says how takes them", () => {
 		for (const model of models) {
 			const takes = model.tasks.some(
-				(t) => t === "image-edit" || t === "image-to-video",
+				(t) =>
+					t === "image-edit" ||
+					t === "image-to-video" ||
+					t === "image-to-image",
 			);
 			expect(Boolean(model.defaults.references), model.id).toBe(takes);
-			if (model.tasks.includes("image-to-video")) {
+			// Redrawing and animating start from the picture; editing follows it.
+			if (
+				model.tasks.includes("image-to-video") ||
+				model.tasks.includes("image-to-image")
+			) {
 				expect(model.defaults.references?.as, model.id).toBe("init");
 			}
 		}

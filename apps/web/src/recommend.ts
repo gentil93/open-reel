@@ -90,7 +90,7 @@ export function inCategory(
 ): boolean {
 	return model.tasks.some((task) =>
 		category === "edit"
-			? task === "image-edit"
+			? task === "image-edit" || task === "image-to-image"
 			: category === "video"
 				? task === "text-to-video" || task === "image-to-video"
 				: task === "text-to-image",

@@ -20,6 +20,9 @@ export interface UserContext {
 
 export const LOCAL_USER: UserContext = { userId: "local" };
 
+/** How much a redrawn picture changes when nobody said. */
+export const DEFAULT_STRENGTH = 0.7;
+
 export const generationParamsSchema = z.object({
 	prompt: z.string().trim().min(1),
 	aspectRatio: z
@@ -31,6 +34,11 @@ export const generationParamsSchema = z.object({
 	/** Length of a video. Ignored by image models. */
 	durationSeconds: z.number().int().min(1).max(120).optional(),
 	referenceAssetIds: z.array(z.string()).default([]),
+	/**
+	 * How much a model that redraws a reference picture changes it: near 0
+	 * keeps it, 1 keeps only its colors and layout. Ignored by other models.
+	 */
+	strength: z.number().min(0.05).max(1).optional(),
 	/** Model-specific parameters, passed through to the provider untouched. */
 	extras: z.record(z.string(), z.unknown()).default({}),
 });
@@ -45,6 +53,11 @@ export interface ModelCapabilities {
 	maxCount: number;
 	/** 0 means the model cannot take reference images. */
 	maxReferenceImages: number;
+	/**
+	 * Set when the model redraws its reference picture, by `strength`,
+	 * instead of following it as an example: the strength it uses unasked.
+	 */
+	strength?: number;
 	/**
 	 * Video lengths in seconds the model can produce, ascending. Absent or empty
 	 * means the length cannot be chosen.
@@ -337,8 +350,9 @@ export interface LocalModelDefaults {
 	durations?: number[];
 	/**
 	 * How the model takes pictures: as references to follow (`ref`, for
-	 * editing models) or as the first frame to start from (`init`, for
-	 * image-to-video). Absent when it only works from words.
+	 * editing models) or as a picture to start from (`init`: the first frame
+	 * of image-to-video, the picture image-to-image redraws). Absent when it
+	 * only works from words.
 	 */
 	references?: { as: "ref" | "init"; max: number };
 	/** More engine options this model needs, e.g. `["--diffusion-fa"]`. */
@@ -351,6 +365,8 @@ export type LocalModelTask =
 	| "text-to-image"
 	/** A changed picture, from a picture and words. */
 	| "image-edit"
+	/** A picture redrawn from another, as much as asked, and words. */
+	| "image-to-image"
 	/** A video from words. */
 	| "text-to-video"
 	/** A video that starts from a picture. */

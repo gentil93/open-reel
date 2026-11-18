@@ -1,4 +1,4 @@
-import { crc32, deflateRawSync } from "node:zlib";
+import { crc32, deflateRawSync, deflateSync } from "node:zlib";
 
 export interface ZipItem {
 	name: string;
@@ -63,4 +63,41 @@ export function zip(
 	end.writeUInt32LE(directory.length, 12);
 	end.writeUInt32LE(offset, 16);
 	return Buffer.concat([...locals, directory, end]);
+}
+
+/** A real, flat grey PNG picture of the given size. */
+export function picture(
+	width: number,
+	height: number,
+): Uint8Array<ArrayBuffer> {
+	const text = new TextEncoder();
+	const chunk = (type: string, data: Uint8Array) => {
+		const body = new Uint8Array([...text.encode(type), ...data]);
+		const out = new DataView(new ArrayBuffer(12 + data.byteLength));
+		out.setUint32(0, data.byteLength);
+		new Uint8Array(out.buffer).set(body, 4);
+		out.setUint32(8 + data.byteLength, crc32(body));
+		return new Uint8Array(out.buffer);
+	};
+	const header = new DataView(new ArrayBuffer(13));
+	header.setUint32(0, width);
+	header.setUint32(4, height);
+	header.setUint8(8, 8); // bits per channel
+	header.setUint8(9, 2); // RGB
+	const row = 1 + width * 3;
+	const rows = new Uint8Array(row * height).fill(128);
+	for (let y = 0; y < height; y++) rows[y * row] = 0; // no filter
+	return new Uint8Array([
+		0x89,
+		0x50,
+		0x4e,
+		0x47,
+		0x0d,
+		0x0a,
+		0x1a,
+		0x0a,
+		...chunk("IHDR", new Uint8Array(header.buffer)),
+		...chunk("IDAT", deflateSync(rows)),
+		...chunk("IEND", new Uint8Array()),
+	]);
 }
