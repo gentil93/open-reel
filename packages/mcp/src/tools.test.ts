@@ -114,7 +114,7 @@ test("a generation is waited for, compared across models, and shown", async () =
 	);
 	const images = imagesOf(result);
 	expect(images).toHaveLength(2);
-	expect(images[0]).toMatchObject({ mimeType: "image/webp" });
+	expect(images[0]).toMatchObject({ mimeType: "image/jpeg" });
 });
 
 test("a result, or a file, is the picture the next generation starts from", async () => {

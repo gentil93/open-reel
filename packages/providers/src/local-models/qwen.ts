@@ -62,7 +62,7 @@ const REPO = {
 } as const satisfies Record<string, Repo>;
 
 /** Qwen2.5-VL 7B Instruct, the text encoder of Qwen-Image and LongCat-Image. */
-const QWEN_VL = {
+export const QWEN_VL = {
 	q8: file(
 		REPO.qwenVlGguf,
 		"Qwen2.5-VL-7B-Instruct.Q8_0.gguf",

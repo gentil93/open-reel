@@ -9,6 +9,7 @@ export * from "./keys";
 export * from "./legacy";
 export * from "./local/checkpoints";
 export * from "./local/engines";
+export * from "./local/eyes";
 export * from "./local/hardware";
 export * from "./local/loras";
 export * from "./local/provider";

@@ -16,6 +16,7 @@ import {
 	JobEngine,
 	type LanguageModel,
 	type LocalEngineSpec,
+	LocalEyes,
 	type LocalModelSpec,
 	LocalModelStore,
 	LocalProvider,
@@ -366,6 +367,13 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 		translator: translatorFor,
 	});
 	const service = new ReelService({ repo, assets, registry, keys, engine });
+	// Looks at pictures for an assistant whose brain cannot, once installed.
+	const eyesModel = catalog.find((m) =>
+		m.tasks.includes("picture-description"),
+	);
+	const eyes = eyesModel
+		? new LocalEyes({ store: models, model: eyesModel.id })
+		: null;
 	const assistant = new Assistant({
 		store: {
 			add: (ctx, entry) => repo.addEntry(entry, ctx.userId),
@@ -373,6 +381,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 			list: (ctx, sessionId) => repo.listEntries(ctx, sessionId),
 		},
 		reel: (ctx) => localReel(service, ctx),
+		eyes: async () => (eyes && (await eyes.ready()) ? eyes : null),
 		brain: async (ctx) =>
 			options.assistantModel ??
 			(await brainFor(ctx)) ??

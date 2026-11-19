@@ -3,6 +3,7 @@ import {
 	type ChatModel,
 	type ChatPart,
 	CodedError,
+	type Eyes,
 	NotFoundError,
 	newId,
 	type ToolCall,
@@ -48,6 +49,11 @@ export interface AssistantOptions {
 	reel(ctx: UserContext): Reel;
 	/** What the person's assistant thinks with, or null when nothing can. */
 	brain(ctx: UserContext): Promise<ChatModel | null>;
+	/**
+	 * Looks at what was made for a brain that cannot see, when a model that
+	 * sees is installed.
+	 */
+	eyes?(ctx: UserContext): Promise<Eyes | null>;
 	/** An empty session, for a conversation that starts with words. */
 	startSession(ctx: UserContext, title: string): Promise<{ id: string }>;
 	/** What paid models may cost in one conversation. */
@@ -645,7 +651,7 @@ export class Assistant {
 							false,
 						),
 					});
-					const result = await this.call(
+					const made = await this.call(
 						ctx,
 						sessionId,
 						work,
@@ -657,6 +663,9 @@ export class Assistant {
 								turnId,
 							}),
 					);
+					const result = brain.vision
+						? made
+						: await this.described(ctx, made, messages, signal);
 					const message = resultMessage(call, result, brain.vision);
 					messages.push(message);
 					await this.options.store.update(ctx, entry.id, {
@@ -685,6 +694,38 @@ export class Assistant {
 					code: error instanceof CodedError ? (error.code ?? null) : null,
 				},
 			});
+		}
+	}
+
+	/**
+	 * A result with words about its pictures, for a brain that cannot see:
+	 * what a model that sees says they show, against what was asked. Left
+	 * as it is when no such model is installed or it fails.
+	 */
+	private async described(
+		ctx: UserContext,
+		result: ToolResult,
+		messages: ChatMessage[],
+		signal: AbortSignal,
+	): Promise<ToolResult> {
+		if (result.images.length === 0 || signal.aborted) return result;
+		const eyes = await this.options.eyes?.(ctx);
+		if (!eyes) return result;
+		const asked = messages
+			.findLast((m) => m.role === "user")
+			?.content.flatMap((p) => (p.type === "text" ? [p.text] : []))
+			.join(" ");
+		try {
+			const seen = await eyes.look(result.images, asked ?? "", signal);
+			if (!seen) return result;
+			return {
+				...result,
+				text: `${result.text}\nWhat the pictures show, as a model that sees describes them:\n${seen}`,
+			};
+		} catch (error) {
+			if (signal.aborted) throw error;
+			console.error(error);
+			return result;
 		}
 	}
 

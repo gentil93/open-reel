@@ -477,7 +477,9 @@ export type LocalModelTask =
 	/** A video that starts from a picture. */
 	| "image-to-video"
 	/** A prompt put into English, for the models that read only English. */
-	| "prompt-translation";
+	| "prompt-translation"
+	/** Words about a picture, for an assistant that cannot see. */
+	| "picture-description";
 
 /** What a model's license allows, in the terms people choose by. */
 export type CommercialUse =

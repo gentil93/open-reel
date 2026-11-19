@@ -4,6 +4,7 @@ import {
 	type ChatModel,
 	type ChatReply,
 	CodedError,
+	type Eyes,
 } from "@hatchlight/core";
 import { picture } from "@hatchlight/core/testing";
 import type {
@@ -152,9 +153,14 @@ const call = (name: string, args: Record<string, unknown>, id = "c1") => ({
 
 function setup(
 	brain: ChatModel | null,
-	options: { maxSteps?: number; limitUsd?: number; pictures?: boolean } = {},
+	options: {
+		maxSteps?: number;
+		limitUsd?: number;
+		pictures?: boolean;
+		eyes?: Eyes;
+	} = {},
 ) {
-	const { pictures, ...rest } = options;
+	const { pictures, eyes, ...rest } = options;
 	const { reel, inputs, start } = fakeReel(pictures);
 	const store = memoryStore();
 	let sessions = 0;
@@ -168,6 +174,7 @@ function setup(
 			return { id };
 		},
 		pollMs: 1,
+		eyes: async () => eyes ?? null,
 		...rest,
 	});
 	const idle = async (sessionId: string) => {
@@ -549,5 +556,74 @@ describe("an assistant that can see", () => {
 		await assistant.send(ctx, { sessionId, text: "bigger" });
 		await idle(sessionId);
 		for (const sent of brain.seen) expect(picturesIn(sent)).toEqual([]);
+	});
+});
+
+describe("eyes for an assistant that cannot see", () => {
+	const eyes = () => {
+		const asked: { labels: (string | undefined)[]; asked: string }[] = [];
+		const looking: Eyes & { asked: typeof asked } = {
+			asked,
+			async look(pictures, request) {
+				asked.push({ labels: pictures.map((p) => p.label), asked: request });
+				return "ast_10 by Z: a fox in snow, with no scarf.";
+			},
+		};
+		return looking;
+	};
+
+	test("tell it what the pictures show, against what was asked", async () => {
+		const brain = scripted(
+			call("generate", { prompt: "a fox", models: ["local/z"] }),
+			{ text: "No scarf yet. Add one?", toolCalls: [] },
+		);
+		const looking = eyes();
+		const { assistant, idle, store } = setup(brain, {
+			pictures: true,
+			eyes: looking,
+		});
+		const { sessionId } = await assistant.send(ctx, {
+			text: "a fox with a red scarf",
+		});
+		await idle(sessionId);
+		expect(looking.asked).toEqual([
+			{ labels: ["ast_10 by Z"], asked: "a fox with a red scarf" },
+		]);
+		const result = JSON.stringify(brain.seen[1]?.at(-1));
+		expect(result).toContain("a fox in snow, with no scarf");
+		// Kept, so later turns know it too.
+		expect(JSON.stringify(store.entries[2]?.message)).toContain("no scarf");
+	});
+
+	test("are not used for a brain that sees", async () => {
+		const brain = scripted(
+			call("generate", { prompt: "a fox", models: ["local/z"] }),
+			{ text: "Done.", toolCalls: [] },
+		);
+		const looking = eyes();
+		const { assistant, idle } = setup(
+			{ ...brain, vision: true },
+			{ pictures: true, eyes: looking },
+		);
+		const { sessionId } = await assistant.send(ctx, { text: "a fox" });
+		await idle(sessionId);
+		expect(looking.asked).toEqual([]);
+	});
+
+	test("that fail leave the result as it was", async () => {
+		const brain = scripted(
+			call("generate", { prompt: "a fox", models: ["local/z"] }),
+			{ text: "Done.", toolCalls: [] },
+		);
+		const broken: Eyes = {
+			look: async () => {
+				throw new Error("no model");
+			},
+		};
+		const { assistant, idle } = setup(brain, { pictures: true, eyes: broken });
+		const { sessionId } = await assistant.send(ctx, { text: "a fox" });
+		await idle(sessionId);
+		const last = (await assistant.view(ctx, sessionId)).entries.at(-1);
+		expect(last?.message).toMatchObject({ text: "Done." });
 	});
 });

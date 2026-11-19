@@ -51,7 +51,7 @@ export type RunOnce = (
 	signal: AbortSignal,
 ) => Promise<{ code: number; stdout: string; stderr: string }>;
 
-const runOnce: RunOnce = async (argv, signal) => {
+export const runOnce: RunOnce = async (argv, signal) => {
 	// Already given up: an abort listener would never fire.
 	signal.throwIfAborted();
 	const child = Bun.spawn(argv, {

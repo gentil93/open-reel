@@ -183,3 +183,22 @@ export function parseArguments(
 		return {};
 	}
 }
+
+/** A picture to look at, base64, and which one it is. */
+export interface SeenPicture {
+	data: string;
+	mimeType: string;
+	label?: string;
+}
+
+/**
+ * Something that looks at pictures for a language model that cannot: what
+ * each shows, judged against what the person asked for.
+ */
+export interface Eyes {
+	look(
+		pictures: SeenPicture[],
+		asked: string,
+		signal: AbortSignal,
+	): Promise<string>;
+}

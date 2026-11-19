@@ -32,13 +32,14 @@ export async function shrinkPicture(data: Uint8Array): Promise<{
 				fit: "inside",
 				withoutEnlargement: true,
 			})
-			.webp({ quality: 85 })
+			// JPEG: every service reads it; llama.cpp reads no WebP.
+			.jpeg({ quality: 85 })
 			.bytes();
 		return {
 			size,
 			image: {
 				data: Buffer.from(small).toString("base64"),
-				mimeType: "image/webp",
+				mimeType: "image/jpeg",
 			},
 		};
 	} catch {

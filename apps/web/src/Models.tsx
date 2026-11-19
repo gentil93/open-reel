@@ -243,6 +243,8 @@ function taskText(t: I18n["t"], task: LocalModelTask): string {
 			return t("models.task.imageToVideo");
 		case "prompt-translation":
 			return t("models.task.promptTranslation");
+		case "picture-description":
+			return t("models.task.pictureDescription");
 	}
 }
 

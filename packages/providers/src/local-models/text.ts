@@ -1,4 +1,5 @@
 import type { LocalModelFile, LocalModelSpec } from "@hatchlight/core";
+import { QWEN_VL } from "./qwen";
 import { APACHE_2, GB, SHARED } from "./shared";
 
 /** One of Z-Image's files, as the model the translator runs. */
@@ -44,6 +45,36 @@ export function textModels(): LocalModelSpec[] {
 				},
 			],
 			// A text model makes no pictures: these are never read.
+			defaults: { size: 0, aspectRatios: [], steps: 0, cfgScale: 0 },
+			demos: [],
+		},
+		{
+			// It sees well but calls tools badly (the same call seven times,
+			// model names for ids), so the assistant on this computer keeps
+			// thinking with Qwen3 4B and asks this one what pictures show.
+			id: "qwen2.5-vl-7b",
+			name: "Qwen2.5-VL 7B Instruct",
+			author: "Qwen (Alibaba)",
+			media: "text",
+			tasks: ["picture-description"],
+			summary:
+				"A language model that looks at pictures, so the assistant on this computer can tell whether what it made matches what was asked. It runs on the processor, about half a minute per picture. Qwen-Image and LongCat-Image read prompts with the same file.",
+			...APACHE_2,
+			homepage: "https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct",
+			variants: [
+				{
+					// 4-bit only: on the processor, 8-bit doubles the wait.
+					id: "q4",
+					label: "4-bit",
+					engine: "llama-cpp",
+					// In the computer's memory: it runs on the processor.
+					memoryBytes: 7 * GB,
+					files: [
+						{ ...QWEN_VL.q4, role: "model" },
+						{ ...QWEN_VL.vision, role: "llm_vision" },
+					],
+				},
+			],
 			defaults: { size: 0, aspectRatios: [], steps: 0, cfgScale: 0 },
 			demos: [],
 		},

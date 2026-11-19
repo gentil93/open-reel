@@ -1,6 +1,7 @@
 import type {
 	Settings as Choices,
 	ImproveWith,
+	LocalModelStatus,
 	ProviderStatus,
 	TranslateWith,
 } from "@hatchlight/core/types";
@@ -93,7 +94,7 @@ function ProviderRow({ provider }: { provider: ProviderStatus }) {
  * that read only English: installed here, like any local model.
  */
 function Translation() {
-	const { t, bytes, explain } = useI18n();
+	const { t, explain } = useI18n();
 	const view = useQuery({
 		queryKey: ["local-models"],
 		queryFn: api.localModels,
@@ -101,11 +102,9 @@ function Translation() {
 	const model = view.data?.models.find((m) =>
 		m.tasks.includes("prompt-translation"),
 	);
-	const live = useModelProgress(model?.id ?? "");
-	const id = model?.id ?? "";
-	const install = useMutation({ mutationFn: () => api.installModel(id) });
-	const cancel = useMutation({ mutationFn: () => api.cancelModel(id) });
-	const remove = useMutation({ mutationFn: () => api.deleteModel(id) });
+	const eyes = view.data?.models.find((m) =>
+		m.tasks.includes("picture-description"),
+	);
 	const client = useQueryClient();
 	const settings = useQuery({ queryKey: ["settings"], queryFn: api.settings });
 	const providers = useQuery({
@@ -156,13 +155,6 @@ function Translation() {
 		...clouds,
 		{ ...local, label: t("settings.assistantLocal", { name: local.label }) },
 	];
-	const busy = ["queued", "downloading", "verifying"].includes(
-		live?.state ?? model.state,
-	);
-	const received = live?.receivedBytes ?? model.receivedBytes;
-	const size = live?.size ?? model.size;
-	const percent = Math.round((received / Math.max(size, 1)) * 100);
-	const error = install.error ?? remove.error;
 	return (
 		<section className="mt-10">
 			<h2 className="font-medium">{t("settings.translation")}</h2>
@@ -262,74 +254,124 @@ function Translation() {
 			{choose.error && (
 				<p className="mt-2 text-sm text-danger">{explain(choose.error)}</p>
 			)}
-			<div className="mt-4 rounded-lg border border-line bg-panel p-4">
-				<div className="flex items-baseline justify-between gap-4">
-					<h3 className="font-medium">{model.name}</h3>
-					<span
-						className={`font-mono text-xs ${model.ready ? "text-accent" : "text-dim"}`}
-					>
-						{model.ready
-							? t("settings.translationOn")
-							: t("settings.translationOff")}
-					</span>
-				</div>
-				{busy ? (
-					<div className="mt-3 flex items-center gap-3">
-						<div
-							role="progressbar"
-							aria-label={t("settings.translation")}
-							aria-valuemin={0}
-							aria-valuemax={100}
-							aria-valuenow={percent}
-							className="h-1.5 flex-1 overflow-hidden rounded-full bg-line"
-						>
-							<div
-								className="h-full rounded-full bg-accent transition-[width] duration-300"
-								style={{ width: `${percent}%` }}
-							/>
-						</div>
-						<span className="font-mono text-xs text-dim">
-							{bytes(received)} / {bytes(size)}
-						</span>
-						<button
-							type="button"
-							onClick={() => cancel.mutate()}
-							className="rounded-md border border-line px-3 py-1.5 text-sm text-dim hover:text-ink"
-						>
-							{t("common.cancel")}
-						</button>
-					</div>
-				) : model.ready ? (
-					<button
-						type="button"
-						onClick={() => remove.mutate()}
-						disabled={remove.isPending}
-						className="mt-3 rounded-md border border-line px-3 py-2 text-sm text-dim hover:text-danger"
-					>
-						{t("settings.remove")}
-					</button>
-				) : (
-					<button
-						type="button"
-						onClick={() => install.mutate()}
-						disabled={install.isPending}
-						className="mt-3 rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-ink disabled:opacity-40"
-					>
-						{t("settings.translationInstall", { size: bytes(size) })}
-					</button>
-				)}
-				{model.error && !busy && (
-					<p className="mt-2 text-sm text-danger">
-						{explain({
-							message: model.error,
-							code: model.errorCode ?? null,
-							params: model.errorParams ?? null,
-						})}
+			<HelperModel
+				model={model}
+				label={t("settings.translation")}
+				on={t("settings.translationOn")}
+				off={t("settings.translationOff")}
+				install={(size) => t("settings.translationInstall", { size })}
+			/>
+			{eyes && (
+				<>
+					<h3 className="mt-8 text-sm font-medium">{t("settings.eyes")}</h3>
+					<p className="mt-2 text-sm leading-relaxed text-dim">
+						{t("settings.eyesIntro")}
 					</p>
-				)}
-				{error && <p className="mt-2 text-sm text-danger">{explain(error)}</p>}
-			</div>
+					<HelperModel
+						model={eyes}
+						label={t("settings.eyes")}
+						on={t("settings.eyesOn")}
+						off={t("settings.eyesOff")}
+						install={(size) => t("settings.eyesInstall", { size })}
+					/>
+				</>
+			)}
 		</section>
+	);
+}
+
+/** A model that helps the others, installed and removed here. */
+function HelperModel({
+	model,
+	label,
+	on,
+	off,
+	install: installText,
+}: {
+	model: LocalModelStatus;
+	label: string;
+	on: string;
+	off: string;
+	install(size: string): string;
+}) {
+	const { t, bytes, explain } = useI18n();
+	const live = useModelProgress(model.id);
+	const install = useMutation({ mutationFn: () => api.installModel(model.id) });
+	const cancel = useMutation({ mutationFn: () => api.cancelModel(model.id) });
+	const remove = useMutation({ mutationFn: () => api.deleteModel(model.id) });
+	const busy = ["queued", "downloading", "verifying"].includes(
+		live?.state ?? model.state,
+	);
+	const received = live?.receivedBytes ?? model.receivedBytes;
+	const size = live?.size ?? model.size;
+	const percent = Math.round((received / Math.max(size, 1)) * 100);
+	const error = install.error ?? remove.error;
+	return (
+		<div className="mt-4 rounded-lg border border-line bg-panel p-4">
+			<div className="flex items-baseline justify-between gap-4">
+				<h3 className="font-medium">{model.name}</h3>
+				<span
+					className={`font-mono text-xs ${model.ready ? "text-accent" : "text-dim"}`}
+				>
+					{model.ready ? on : off}
+				</span>
+			</div>
+			{busy ? (
+				<div className="mt-3 flex items-center gap-3">
+					<div
+						role="progressbar"
+						aria-label={label}
+						aria-valuemin={0}
+						aria-valuemax={100}
+						aria-valuenow={percent}
+						className="h-1.5 flex-1 overflow-hidden rounded-full bg-line"
+					>
+						<div
+							className="h-full rounded-full bg-accent transition-[width] duration-300"
+							style={{ width: `${percent}%` }}
+						/>
+					</div>
+					<span className="font-mono text-xs text-dim">
+						{bytes(received)} / {bytes(size)}
+					</span>
+					<button
+						type="button"
+						onClick={() => cancel.mutate()}
+						className="rounded-md border border-line px-3 py-1.5 text-sm text-dim hover:text-ink"
+					>
+						{t("common.cancel")}
+					</button>
+				</div>
+			) : model.ready ? (
+				<button
+					type="button"
+					onClick={() => remove.mutate()}
+					disabled={remove.isPending}
+					className="mt-3 rounded-md border border-line px-3 py-2 text-sm text-dim hover:text-danger"
+				>
+					{t("settings.remove")}
+				</button>
+			) : (
+				<button
+					type="button"
+					onClick={() => install.mutate()}
+					disabled={install.isPending}
+					className="mt-3 rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-ink disabled:opacity-40"
+				>
+					{installText(bytes(size))}
+				</button>
+			)}
+			{model.error && !busy && (
+				<p className="mt-2 text-sm text-danger">
+					{explain({
+						message: model.error,
+						code: model.errorCode ?? null,
+						params: model.errorParams ?? null,
+					})}
+				</p>
+			)}
+			{error && <p className="mt-2 text-sm text-danger">{explain(error)}</p>}
+		</div>
 	);
 }
 
