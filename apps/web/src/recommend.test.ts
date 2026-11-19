@@ -6,7 +6,7 @@ import type {
 	ModelProfile,
 	ModelSpec,
 	ProviderStatus,
-} from "@open-reel/core/types";
+} from "@hatchlight/core/types";
 import {
 	bestCloud,
 	bestLocal,

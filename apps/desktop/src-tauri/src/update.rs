@@ -68,7 +68,7 @@ async fn check(app: AppHandle) {
         // Lets a development build try updates against another feed, such as a
         // test prerelease.
         if cfg!(debug_assertions) {
-            if let Ok(feed) = std::env::var("OPEN_REEL_UPDATE_URL") {
+            if let Ok(feed) = std::env::var("HATCHLIGHT_UPDATE_URL") {
                 builder = builder.endpoints(vec![feed.parse()?])?;
             }
         }

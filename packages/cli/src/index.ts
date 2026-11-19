@@ -11,7 +11,7 @@ import {
 	modelsLocationFile,
 	plainPath,
 	writeServerInfo,
-} from "@open-reel/core";
+} from "@hatchlight/core";
 import {
 	Agents,
 	agentsSetup,
@@ -19,7 +19,7 @@ import {
 	createRuntime,
 	DataDirInUseError,
 	serveWeb,
-} from "@open-reel/server";
+} from "@hatchlight/server";
 
 // An agent's connection: it has its own options, and never serves the app.
 if (process.argv[2] === "mcp") {
@@ -28,10 +28,10 @@ if (process.argv[2] === "mcp") {
 	process.exit(0);
 }
 
-const HELP = `open-reel — one interface for many image generation models
+const HELP = `Hatchlight — one interface for many image generation models
 
-Usage: open-reel [options]
-       open-reel mcp [options]   Connect an AI agent (see open-reel mcp --help)
+Usage: hatchlight [options]
+       hatchlight mcp [options]   Connect an AI agent (see hatchlight mcp --help)
 
   --port <n>       Port to listen on (default 4096; 0 picks a free one)
   --data-dir <p>   Where sessions, images and keys are stored
@@ -85,11 +85,11 @@ const WEB_DIST = resources
 const migrationsDir = resources ? join(resources, "drizzle") : undefined;
 const dataDir = values["data-dir"] ?? defaultDataDir();
 // An explicit data directory keeps everything inside it, models included,
-// unless OPEN_REEL_MODELS_DIR names another place for them. Otherwise the
-// folder can be changed in the app, and every open-reel sharing the default
+// unless HATCHLIGHT_MODELS_DIR names another place for them. Otherwise the
+// folder can be changed in the app, and every Hatchlight sharing the default
 // one follows that choice.
 const fixedModelsDir =
-	process.env.OPEN_REEL_MODELS_DIR ??
+	process.env.HATCHLIGHT_MODELS_DIR ??
 	(values["data-dir"] ? join(dataDir, "models") : null);
 const defaultModels = fixedModelsDir ? null : await defaultModelsDir(dataDir);
 const modelsDir =
@@ -148,7 +148,7 @@ const server = listen();
 // Only now that this process owns the port and the data directory.
 await runtime.start();
 const url = `http://localhost:${server.port}`;
-// Other processes, such as `open-reel mcp`, find this server here.
+// Other processes, such as `hatchlight mcp`, find this server here.
 await writeServerInfo(dataDir, {
 	pid: process.pid,
 	url: `http://127.0.0.1:${server.port}`,
@@ -158,7 +158,7 @@ await writeServerInfo(dataDir, {
 // Written straight to the descriptor, so the line is out at once: the
 // desktop app waits for it before opening the window on this address.
 const say = (line: string) => writeSync(1, `${line}\n`);
-say(`open-reel is running at ${url}`);
+say(`Hatchlight is running at ${url}`);
 say(`Data directory: ${dataDir}`);
 if (modelsDir !== join(dataDir, "models")) {
 	say(`Local models: ${modelsDir}`);

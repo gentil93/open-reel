@@ -4,13 +4,13 @@ import {
 	type ChatModel,
 	type ChatReply,
 	CodedError,
-} from "@open-reel/core";
+} from "@hatchlight/core";
 import type {
 	AssistantEntry,
 	CreateTurnInput,
 	ModelSpec,
 	TurnView,
-} from "@open-reel/core/types";
+} from "@hatchlight/core/types";
 import {
 	Assistant,
 	type AssistantStore,
@@ -40,7 +40,7 @@ const paid = {
 	pricing: { usdPerOutput: 0.04 },
 } as unknown as ModelSpec;
 
-/** open-reel with sessions in memory; every turn is done at once. */
+/** Hatchlight with sessions in memory; every turn is done at once. */
 function fakeReel() {
 	const sessions = new Map<string, SessionDetail>();
 	const inputs: CreateTurnInput[] = [];

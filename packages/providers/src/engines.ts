@@ -1,4 +1,4 @@
-import type { EngineBuild, LocalEngineSpec } from "@open-reel/core";
+import type { EngineBuild, LocalEngineSpec } from "@hatchlight/core";
 
 const SD_CPP_VERSION = "master-1106-532d2c1";
 
@@ -36,7 +36,7 @@ const build = (
  *
  * stable-diffusion.cpp publishes no Linux build that runs on current LTS
  * distributions (they need glibc 2.43), nor a Linux CUDA build, so Linux is
- * served only under WSL, through the Windows builds, until open-reel ships
+ * served only under WSL, through the Windows builds, until Hatchlight ships
  * builds of its own.
  */
 export function builtinEngines(): LocalEngineSpec[] {

@@ -6,7 +6,7 @@ import type {
 	ModelProfile,
 	ModelSpec,
 	ProviderStatus,
-} from "@open-reel/core/types";
+} from "@hatchlight/core/types";
 
 /** How a local model runs here, in the words people see. */
 export type FitLevel = "great" | "slow" | "none";

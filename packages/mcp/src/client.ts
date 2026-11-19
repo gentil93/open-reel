@@ -6,10 +6,10 @@ import type {
 	ProviderStatus,
 	Session,
 	TurnView,
-} from "@open-reel/core/types";
-import type { Reel, SessionDetail } from "@open-reel/tools";
+} from "@hatchlight/core/types";
+import type { Reel, SessionDetail } from "@hatchlight/tools";
 
-/** An error the open-reel server answered with. */
+/** An error the Hatchlight server answered with. */
 export class ServerError extends Error {
 	constructor(
 		message: string,
@@ -22,8 +22,8 @@ export class ServerError extends Error {
 
 export type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 
-/** Talks to a running open-reel server, over its HTTP API. */
-export class OpenReelClient implements Reel {
+/** Talks to a running Hatchlight server, over its HTTP API. */
+export class HatchlightClient implements Reel {
 	constructor(
 		readonly baseUrl: string,
 		// The global one: inside these parameters, `fetch` names this one.
@@ -38,7 +38,7 @@ export class OpenReelClient implements Reel {
 				code?: string;
 			} | null;
 			throw new ServerError(
-				body?.error ?? `open-reel answered ${response.status}`,
+				body?.error ?? `Hatchlight answered ${response.status}`,
 				response.status,
 				body?.code ?? null,
 			);

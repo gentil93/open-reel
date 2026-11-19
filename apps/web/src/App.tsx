@@ -71,7 +71,7 @@ export function App() {
 							aria-hidden="true"
 							className="aurora relative size-4 rounded-full shadow-[0_0_14px_rgb(255_61_139/0.5)] after:absolute after:inset-[4px] after:rounded-full after:bg-panel"
 						/>
-						open-reel
+						Hatchlight
 					</a>
 				</div>
 				<div className="flex flex-col gap-1 px-2">

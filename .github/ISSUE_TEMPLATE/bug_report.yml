@@ -22,7 +22,7 @@ body:
   - type: dropdown
     id: how
     attributes:
-      label: How you run open-reel
+      label: How you run Hatchlight
       options:
         - Desktop app
         - From source (bun run start)

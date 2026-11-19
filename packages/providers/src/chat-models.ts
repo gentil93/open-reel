@@ -9,7 +9,7 @@ import {
 	openAiTools,
 	type ToolCall,
 	type ToolSpec,
-} from "@open-reel/core";
+} from "@hatchlight/core";
 import { type Fetch, refusal, send } from "./http";
 import type { CloudTranslatorId } from "./translators";
 
@@ -163,7 +163,7 @@ export class CloudChatModel implements ChatModel {
 			return this.service === "google" ? geminiReply(body) : openAiReply(body);
 		}
 		throw new CodedError(
-			`${NAMES[this.service]} has none of the models open-reel's assistant uses`,
+			`${NAMES[this.service]} has none of the models Hatchlight's assistant uses`,
 		);
 	}
 

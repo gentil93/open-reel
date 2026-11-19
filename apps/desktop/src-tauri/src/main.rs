@@ -20,7 +20,7 @@ use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
 /// The line the server prints once it listens, followed by its address.
-const READY: &str = "open-reel is running at ";
+const READY: &str = "Hatchlight is running at ";
 /// The app's background, so the window never flashes white.
 const BACKGROUND: Color = Color(9, 9, 11, 255);
 
@@ -74,7 +74,7 @@ fn open_log(app: &AppHandle) -> Option<File> {
     let dir = app.path().app_log_dir().ok()?;
     create_dir_all(&dir).ok()?;
     let mut file = File::create(dir.join("server.log")).ok()?;
-    let _ = writeln!(file, "open-reel {}", app.package_info().version);
+    let _ = writeln!(file, "Hatchlight {}", app.package_info().version);
     Some(file)
 }
 
@@ -85,7 +85,7 @@ fn start_server(app: &AppHandle, window: WebviewWindow) -> Result<(), Box<dyn st
     let mut log = open_log(app);
     let (mut events, child) = app
         .shell()
-        .sidecar("open-reel-server")?
+        .sidecar("hatchlight-server")?
         .args([
             "--port",
             "0",
@@ -179,7 +179,7 @@ fn main() {
             let navigation = app.handle().clone();
             let popups = app.handle().clone();
             let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("splash.html".into()))
-                .title("open-reel")
+                .title("Hatchlight")
                 .inner_size(1280.0, 820.0)
                 .min_inner_size(720.0, 520.0)
                 .background_color(BACKGROUND)
@@ -205,7 +205,7 @@ fn main() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("could not start open-reel");
+        .expect("could not start Hatchlight");
 
     app.run(|app, event| {
         if let RunEvent::Exit = event {

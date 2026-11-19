@@ -1,4 +1,4 @@
-import type { LocalModelDefaults, LocalModelSpec } from "@open-reel/core";
+import type { LocalModelDefaults, LocalModelSpec } from "@hatchlight/core";
 import { APACHE_2, file, GB, type Repo, SHARED, WAN_NEGATIVE } from "./shared";
 
 /** Repositories and the revision each is pinned to. */

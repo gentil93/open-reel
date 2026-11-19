@@ -1,5 +1,5 @@
 [package]
-name = "open-reel"
+name = "hatchlight"
 version = "0.1.0"
 description = "One interface for many image and video generation models"
 license = "MIT"

@@ -1,5 +1,5 @@
 /**
- * Compiles the open-reel server into one executable for the desktop app to
+ * Compiles the Hatchlight server into one executable for the desktop app to
  * run, and gathers what it reads from disk: the built UI and the migrations.
  * Tauri looks for the executable under the target's name, so it is built for
  * the target Tauri is building for (or this machine's).
@@ -36,7 +36,7 @@ const extension = triple.includes("windows") ? ".exe" : "";
 const outfile = join(
 	tauri,
 	"binaries",
-	`open-reel-server-${triple}${extension}`,
+	`hatchlight-server-${triple}${extension}`,
 );
 
 await mkdir(join(tauri, "binaries"), { recursive: true });

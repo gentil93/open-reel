@@ -9,18 +9,18 @@ import {
 import { dirname, join } from "node:path";
 
 /**
- * Keeps two open-reels that share a models folder (the desktop app and
- * open-reel under WSL do) from working on the same file at once: two
+ * Keeps two Hatchlights that share a models folder (the desktop app and
+ * Hatchlight under WSL do) from working on the same file at once: two
  * downloads appending to one `.part` corrupt it, and one removing a model
  * would delete a file the other is still writing.
  *
  * The holder rewrites `<file>.lock` while it works, so the lock of an
- * open-reel that died goes stale and is taken over. Ages are read against
+ * Hatchlight that died goes stale and is taken over. Ages are read against
  * the folder's own clock: under WSL the Linux clock drifts from the Windows
  * one, which stamps the files.
  */
 
-/** A lock not rewritten for this long belongs to an open-reel that died. */
+/** A lock not rewritten for this long belongs to a Hatchlight that died. */
 export const LOCK_STALE_MS = 30_000;
 const HEARTBEAT_MS = 5_000;
 const POLL_MS = 1_000;
@@ -54,13 +54,13 @@ function fresh(path: string, staleMs: number): boolean {
 	}
 }
 
-/** Whether another open-reel, alive, holds `lock`. */
+/** Whether another Hatchlight, alive, holds `lock`. */
 export function isLocked(lock: string, staleMs = LOCK_STALE_MS): boolean {
 	return fresh(lock, staleMs);
 }
 
 /**
- * Takes `lock` if it is free, or left by an open-reel that died. A stale
+ * Takes `lock` if it is free, or left by a Hatchlight that died. A stale
  * lock is first renamed to a name of its own: of two taking it over at once,
  * only one renames it, so neither removes a lock the other just took.
  */
@@ -120,7 +120,7 @@ function keepAlive(lock: string, owner: string, everyMs: number): () => void {
 }
 
 /**
- * Takes `lock` now, or returns null when another open-reel holds it. The
+ * Takes `lock` now, or returns null when another Hatchlight holds it. The
  * returned function lets it go.
  */
 export function tryFileLock(
@@ -133,7 +133,7 @@ export function tryFileLock(
 }
 
 /**
- * Runs `fn` holding `lock`, waiting while another open-reel holds it.
+ * Runs `fn` holding `lock`, waiting while another Hatchlight holds it.
  * Rejects as soon as `signal` aborts, waiting or not.
  */
 export async function withFileLock<T>(

@@ -10,9 +10,9 @@ import {
 	writeFile,
 } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { ValidationError } from "@open-reel/core";
+import { ValidationError } from "@hatchlight/core";
 
-/** How a program starts `open-reel mcp`. */
+/** How a program starts `hatchlight mcp`. */
 export interface Launch {
 	command: string;
 	args: string[];
@@ -72,10 +72,10 @@ export function wslPath(windows: string): string | null {
 	return `/mnt/${drive.toLowerCase()}/${rest.replaceAll("\\", "/")}`;
 }
 
-/** The name open-reel goes by in agents' settings. */
-const NAME = "open-reel";
+/** The name Hatchlight goes by in agents' settings. */
+const NAME = "hatchlight";
 
-/** The options `open-reel mcp` takes for a policy. */
+/** The options `hatchlight mcp` takes for a policy. */
 export function policyArgs(policy: AgentPolicy): string[] {
 	if (!policy.allowPaid) return [];
 	return [
@@ -153,7 +153,7 @@ async function writeConfig(path: string, config: Config): Promise<void> {
 	await mkdir(dirname(path), { recursive: true });
 	const target = await realpath(path).catch(() => path);
 	const before = await stat(target).catch(() => null);
-	const backup = `${target}.before-open-reel`;
+	const backup = `${target}.before-hatchlight`;
 	if (before && !(await exists(backup))) await copyFile(target, backup);
 	const tmp = `${target}.${crypto.randomUUID()}.tmp`;
 	try {
@@ -167,7 +167,7 @@ async function writeConfig(path: string, config: Config): Promise<void> {
 	}
 }
 
-/** Connects agents to open-reel, in their own settings. */
+/** Connects agents to Hatchlight, in their own settings. */
 export class Agents {
 	private setup: Promise<AgentsSetup> | null = null;
 	/** Changes to the settings, one at a time. */
@@ -251,7 +251,7 @@ export class Agents {
 		};
 	}
 
-	/** Adds open-reel to Claude Desktop, or updates what it may spend. */
+	/** Adds Hatchlight to Claude Desktop, or updates what it may spend. */
 	connectClaudeDesktop(policy: AgentPolicy): Promise<void> {
 		return this.change(async (config, { desktop }) => {
 			config.mcpServers = {
@@ -338,7 +338,7 @@ export async function storeFolder(
 }
 
 /**
- * How agents start `open-reel mcp` for this installation: this same program
+ * How agents start `hatchlight mcp` for this installation: this same program
  * (a compiled one by itself, Bun with this script otherwise), on the same
  * data and with the same resources, and where Claude Desktop keeps its
  * settings on this system.
@@ -350,7 +350,7 @@ export async function agentsSetup(options: {
 	env?: Record<string, string | undefined>;
 	platform?: NodeJS.Platform;
 	home?: string;
-	/** The program that runs open-reel; this one by default. */
+	/** The program that runs Hatchlight; this one by default. */
 	program?: string;
 }): Promise<AgentsSetup> {
 	const env = options.env ?? process.env;
@@ -369,7 +369,7 @@ export async function agentsSetup(options: {
 	};
 	// The places it was told to keep things go with it.
 	const kept = Object.fromEntries(
-		["OPEN_REEL_DATA_DIR", "OPEN_REEL_MODELS_DIR"].flatMap((key) =>
+		["HATCHLIGHT_DATA_DIR", "HATCHLIGHT_MODELS_DIR"].flatMap((key) =>
 			env[key] ? [[key, resolve(env[key] as string)]] : [],
 		),
 	);

@@ -1,5 +1,5 @@
 {
-	"name": "@open-reel/server",
+	"name": "@hatchlight/server",
 	"version": "0.0.0",
 	"private": true,
 	"type": "module",
@@ -10,9 +10,9 @@
 		"typecheck": "tsc -p ."
 	},
 	"dependencies": {
-		"@open-reel/core": "workspace:*",
-		"@open-reel/providers": "workspace:*",
-		"@open-reel/tools": "workspace:*",
+		"@hatchlight/core": "workspace:*",
+		"@hatchlight/providers": "workspace:*",
+		"@hatchlight/tools": "workspace:*",
 		"hono": "^4.0.0"
 	}
 }

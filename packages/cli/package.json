@@ -1,16 +1,16 @@
 {
-	"name": "open-reel",
+	"name": "hatchlight",
 	"version": "0.0.0",
 	"type": "module",
 	"bin": {
-		"open-reel": "./src/index.ts"
+		"hatchlight": "./src/index.ts"
 	},
 	"scripts": {
 		"typecheck": "tsc -p ."
 	},
 	"dependencies": {
-		"@open-reel/mcp": "workspace:*",
-		"@open-reel/server": "workspace:*",
-		"@open-reel/core": "workspace:*"
+		"@hatchlight/mcp": "workspace:*",
+		"@hatchlight/server": "workspace:*",
+		"@hatchlight/core": "workspace:*"
 	}
 }

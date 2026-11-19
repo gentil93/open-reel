@@ -1,4 +1,4 @@
-import type { ModelProfile, ProviderAdapter } from "@open-reel/core";
+import type { ModelProfile, ProviderAdapter } from "@hatchlight/core";
 
 /**
  * How models compare, so people can choose one without knowing model names.

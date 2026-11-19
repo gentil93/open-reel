@@ -1,4 +1,4 @@
-# Contributing to open-reel
+# Contributing to Hatchlight
 
 Thank you for helping. Bug reports, translations, new providers, new local
 models, fixes and ideas are all welcome, whether you write code or not.
@@ -8,7 +8,7 @@ By taking part you agree to follow the [code of conduct](CODE_OF_CONDUCT.md).
 ## Ways to help
 
 - **Report a bug or ask for something:** open an
-  [issue](https://github.com/gentil93/open-reel/issues/new/choose). The forms
+  [issue](https://github.com/hatchlight/hatchlight/issues/new/choose). The forms
   ask for what we need to reproduce it.
 - **Translate:** see [Translate](#translate). No coding needed.
 - **Fix or build something:** look for issues labeled
@@ -23,9 +23,9 @@ By taking part you agree to follow the [code of conduct](CODE_OF_CONDUCT.md).
 You need [Bun](https://bun.sh) 1.4 or newer.
 
 ```sh
-git clone https://github.com/gentil93/open-reel.git && cd open-reel
+git clone https://github.com/hatchlight/hatchlight.git && cd hatchlight
 bun install
-OPEN_REEL_FAKE=1 bun run dev:server   # API on :4096, with a key-free fake provider
+HATCHLIGHT_FAKE=1 bun run dev:server   # API on :4096, with a key-free fake provider
 bun run dev:web                       # the app on :5173, with hot reload
 ```
 
@@ -48,7 +48,7 @@ bun test && bun run typecheck && bun run lint
 | `packages/core`      | Domain types, job engine, storage, local models, and the provider contract |
 | `packages/providers` | One adapter per provider, and the catalog of local models and engines      |
 | `packages/server`    | HTTP API and the live event stream                                         |
-| `packages/cli`       | The `open-reel` command                                                    |
+| `packages/cli`       | The `hatchlight` command                                                   |
 | `packages/i18n`      | Translation helpers shared by the app and the site                         |
 | `packages/motion`    | The visual effects the app and the site share                              |
 | `apps/web`           | The app's interface (React)                                                |
@@ -93,7 +93,7 @@ When you add or change an English message, update the other languages you can.
 ## Add a provider
 
 A provider is one file in `packages/providers/src` implementing
-`ProviderAdapter` from `@open-reel/core`:
+`ProviderAdapter` from `@hatchlight/core`:
 
 1. `listModels()` describes each model and what it supports (aspect ratios,
    seed, images per request, reference images, video lengths). The interface
@@ -117,7 +117,7 @@ a scripted `fetch`, as the existing tests do. Tests never call the real API.
 Local models are listed in `packages/providers/src/local-models.ts`. Each one
 pins a revision of its repository and gives, for every file, its size and
 SHA-256, so downloads can be checked. Give each variant the memory it needs,
-so open-reel can tell which ones run on a given computer. Say in the pull
+so Hatchlight can tell which ones run on a given computer. Say in the pull
 request which hardware you ran it on and how long a picture took.
 
 ## Work on the desktop app
@@ -139,7 +139,7 @@ system are built by the `Desktop` workflow.
 ## Pull requests
 
 - Keep one change per pull request, small enough to review in one sitting.
-- Explain what changes for the person using open-reel and why, and how you
+- Explain what changes for the person using Hatchlight and why, and how you
   checked it. Screenshots or a short recording help for anything visible.
 - Write commit messages as a short imperative summary ("Add the Kling 3
   model"), with a body when the reason is not obvious.

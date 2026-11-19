@@ -8,17 +8,17 @@ export function defaultDataDir(
 	env: Record<string, string | undefined> = process.env,
 	home: string = homedir(),
 ): string {
-	if (env.OPEN_REEL_DATA_DIR) return env.OPEN_REEL_DATA_DIR;
+	if (env.HATCHLIGHT_DATA_DIR) return env.HATCHLIGHT_DATA_DIR;
 	if (platform === "win32") {
 		return win32.join(
 			env.APPDATA ?? win32.join(home, "AppData", "Roaming"),
-			"open-reel",
+			"hatchlight",
 		);
 	}
 	if (platform === "darwin") {
-		return join(home, "Library", "Application Support", "open-reel");
+		return join(home, "Library", "Application Support", "hatchlight");
 	}
-	return join(env.XDG_DATA_HOME ?? join(home, ".local", "share"), "open-reel");
+	return join(env.XDG_DATA_HOME ?? join(home, ".local", "share"), "hatchlight");
 }
 
 /**
@@ -46,17 +46,17 @@ async function output(argv: string[]): Promise<string | null> {
  * app data, never the roaming one that may be synced between computers.
  * Under WSL it is that same Windows folder: engines run there as Windows
  * programs, and they read files on the Linux side about twenty times slower.
- * So the desktop app and open-reel under WSL share what they download.
+ * So the desktop app and Hatchlight under WSL share what they download.
  */
 export async function defaultModelsDir(
 	dataDir: string,
 	platform: NodeJS.Platform = process.platform,
 	env: Record<string, string | undefined> = process.env,
 ): Promise<string> {
-	if (env.OPEN_REEL_MODELS_DIR) return env.OPEN_REEL_MODELS_DIR;
+	if (env.HATCHLIGHT_MODELS_DIR) return env.HATCHLIGHT_MODELS_DIR;
 	if (platform === "win32") {
 		return env.LOCALAPPDATA
-			? win32.join(env.LOCALAPPDATA, "open-reel", "models")
+			? win32.join(env.LOCALAPPDATA, "hatchlight", "models")
 			: win32.join(dataDir, "models");
 	}
 	if (
@@ -68,15 +68,15 @@ export async function defaultModelsDir(
 			windows && !windows.includes("%")
 				? await output(["wslpath", "-u", windows])
 				: null;
-		if (linux) return join(linux, "open-reel", "models");
+		if (linux) return join(linux, "hatchlight", "models");
 	}
 	return join(dataDir, "models");
 }
 
 /**
  * Where a models folder chosen by hand is written down: next to the default
- * one, so every open-reel that shares the default folder (the desktop app
- * and open-reel under WSL) follows the same choice.
+ * one, so every Hatchlight that shares the default folder (the desktop app
+ * and Hatchlight under WSL) follows the same choice.
  */
 export function modelsLocationFile(defaultModelsDir: string): string {
 	const path = /^[A-Za-z]:\\/.test(defaultModelsDir) ? win32 : posix;
@@ -84,7 +84,7 @@ export function modelsLocationFile(defaultModelsDir: string): string {
 }
 
 /**
- * A folder as written by any open-reel sharing the choice, as this system
+ * A folder as written by any Hatchlight sharing the choice, as this system
  * names it: `D:\Models` is `/mnt/d/Models` under WSL, and back. Null when
  * this system cannot reach it.
  */

@@ -13,18 +13,18 @@ import { join } from "node:path";
 import { $ } from "bun";
 
 const PORT = 4100;
-const PROGRAM = "open-reel-preview.exe";
+const PROGRAM = "hatchlight-preview.exe";
 const root = join(import.meta.dir, "..");
 
 if (!process.env.WSL_DISTRO_NAME) {
-	console.error("This runs from WSL, to start open-reel on the Windows side.");
+	console.error("This runs from WSL, to start Hatchlight on the Windows side.");
 	process.exit(1);
 }
 
 const localAppData = (
 	await $`cmd.exe /c echo %LOCALAPPDATA%`.quiet().text()
 ).trim();
-const windowsDir = `${localAppData}\\open-reel\\preview`;
+const windowsDir = `${localAppData}\\hatchlight\\preview`;
 const dir = (await $`wslpath -u ${windowsDir}`.text()).trim();
 
 /**
@@ -36,7 +36,7 @@ const dir = (await $`wslpath -u ${windowsDir}`.text()).trim();
 async function stopServer(): Promise<boolean> {
 	const appData = (await $`cmd.exe /c echo %APPDATA%`.quiet().text()).trim();
 	const file = (
-		await $`wslpath -u ${`${appData}\\open-reel\\open-reel.server.json`}`.text()
+		await $`wslpath -u ${`${appData}\\hatchlight\\hatchlight.server.json`}`.text()
 	).trim();
 	const pid = await Bun.file(file)
 		.json()
@@ -60,19 +60,19 @@ if (process.argv.includes("--stop")) {
 }
 
 // The installed app holds the same data directory while it is open.
-const app = await $`tasklist.exe /FI "IMAGENAME eq open-reel-server.exe" /NH`
+const app = await $`tasklist.exe /FI "IMAGENAME eq hatchlight-server.exe" /NH`
 	.quiet()
 	.nothrow()
 	.text();
-if (app.includes("open-reel-server.exe")) {
+if (app.includes("hatchlight-server.exe")) {
 	console.error(
-		"The open-reel app is open. Close it first: both use the same data.",
+		"The Hatchlight app is open. Close it first: both use the same data.",
 	);
 	process.exit(1);
 }
 
 const url = `http://localhost:${PORT}`;
-console.log(`Starting open-reel on Windows, at ${url} once ready.`);
+console.log(`Starting Hatchlight on Windows, at ${url} once ready.`);
 
 /**
  * Runs one step, saying what it does and, on a terminal, the seconds going
@@ -112,7 +112,7 @@ await step("Installing dependencies", () =>
 );
 
 await step("Building the interface", () =>
-	$`bun run --filter @open-reel/web build`.cwd(root).quiet(),
+	$`bun run --filter @hatchlight/web build`.cwd(root).quiet(),
 );
 
 await step("Compiling the server for Windows", async () => {
@@ -192,7 +192,7 @@ const answered = await step("Waiting for it to answer", async () => {
 				.text()
 				.catch(() => "");
 			console.error(
-				`\nopen-reel stopped as it started${said.trim() ? `: ${said.trim()}` : `. See ${log}`}`,
+				`\nHatchlight stopped as it started${said.trim() ? `: ${said.trim()}` : `. See ${log}`}`,
 			);
 			process.exit(1);
 		}
@@ -201,10 +201,10 @@ const answered = await step("Waiting for it to answer", async () => {
 	return false;
 });
 if (!answered) {
-	console.error(`open-reel did not answer in a minute. See ${log}`);
+	console.error(`Hatchlight did not answer in a minute. See ${log}`);
 	process.exit(1);
 }
-console.log(`\nopen-reel is running on Windows: ${url}`);
+console.log(`\nHatchlight is running on Windows: ${url}`);
 console.log(`Its output: ${log}`);
 console.log("Stop it with: bun run preview:windows --stop");
 process.exit(0);

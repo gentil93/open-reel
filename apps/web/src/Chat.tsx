@@ -1,4 +1,4 @@
-import type { JobView, ModelSpec, TurnView } from "@open-reel/core/types";
+import type { JobView, ModelSpec, TurnView } from "@hatchlight/core/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	type CSSProperties,
@@ -19,7 +19,7 @@ import { type JobProgress, useProgress } from "./live";
 import { href, navigate } from "./route";
 import { Welcome } from "./Welcome";
 
-const WELCOMED_KEY = "open-reel.welcomed";
+const WELCOMED_KEY = "hatchlight.welcomed";
 
 /** Whether this browser has been through the welcome, or skipped it. */
 function welcomed(): boolean {

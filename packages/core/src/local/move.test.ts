@@ -18,7 +18,7 @@ afterEach(async () => {
 });
 
 async function folder(): Promise<string> {
-	const dir = await mkdtemp(join(tmpdir(), "open-reel-move-"));
+	const dir = await mkdtemp(join(tmpdir(), "hatchlight-move-"));
 	dirs.push(dir);
 	return dir;
 }

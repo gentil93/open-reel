@@ -2,14 +2,14 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { FakeProvider } from "@hatchlight/core";
+import { picture } from "@hatchlight/core/testing";
+import type { ModelSpec } from "@hatchlight/core/types";
+import { createApp, createRuntime } from "@hatchlight/server";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { FakeProvider } from "@open-reel/core";
-import { picture } from "@open-reel/core/testing";
-import type { ModelSpec } from "@open-reel/core/types";
-import { createApp, createRuntime } from "@open-reel/server";
-import { OpenReelClient } from "./client";
+import { HatchlightClient } from "./client";
 import { bestLocalModel, createMcpServer, type McpOptions } from "./tools";
 
 const cleanups: (() => Promise<void>)[] = [];
@@ -17,9 +17,9 @@ afterEach(async () => {
 	for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-/** An agent connected to a real open-reel, whose only models are fakes. */
+/** An agent connected to a real Hatchlight, whose only models are fakes. */
 async function agent(options: Partial<McpOptions> = {}) {
-	const dataDir = await mkdtemp(join(tmpdir(), "open-reel-mcp-"));
+	const dataDir = await mkdtemp(join(tmpdir(), "hatchlight-mcp-"));
 	const runtime = await createRuntime({
 		dataDir,
 		providers: [new FakeProvider()],
@@ -28,10 +28,11 @@ async function agent(options: Partial<McpOptions> = {}) {
 	});
 	await runtime.start();
 	const app = createApp(runtime);
-	const openReel = new OpenReelClient("http://127.0.0.1:4096", (url, init) =>
-		Promise.resolve(app.fetch(new Request(url, init))),
+	const hatchlight = new HatchlightClient(
+		"http://127.0.0.1:4096",
+		(url, init) => Promise.resolve(app.fetch(new Request(url, init))),
 	);
-	const server = createMcpServer(openReel, {
+	const server = createMcpServer(hatchlight, {
 		allowPaid: false,
 		spendLimitUsd: null,
 		pollMs: 5,
@@ -210,7 +211,7 @@ test("the client reaches a server over the network by default", async () => {
 		fetch: () => Response.json([]),
 	});
 	try {
-		const client = new OpenReelClient(`http://127.0.0.1:${server.port}`);
+		const client = new HatchlightClient(`http://127.0.0.1:${server.port}`);
 		expect(await client.models()).toEqual([]);
 	} finally {
 		server.stop(true);

@@ -2,7 +2,7 @@ import type {
 	AssistantEntry,
 	ModelSpec,
 	TurnView,
-} from "@open-reel/core/types";
+} from "@hatchlight/core/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { type AssistantBrain, api, type SessionDetail } from "./api";

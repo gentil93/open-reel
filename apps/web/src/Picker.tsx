@@ -6,8 +6,8 @@ import type {
 	ModelProfile,
 	ModelSpec,
 	ProviderStatus,
-} from "@open-reel/core/types";
-import { develop, latent, loadImage } from "@open-reel/motion";
+} from "@hatchlight/core/types";
+import { develop, latent, loadImage } from "@hatchlight/motion";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	type CSSProperties,

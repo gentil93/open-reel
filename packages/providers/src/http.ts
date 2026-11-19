@@ -1,4 +1,4 @@
-import { CodedError, type ProviderEvent } from "@open-reel/core";
+import { CodedError, type ProviderEvent } from "@hatchlight/core";
 
 export type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 

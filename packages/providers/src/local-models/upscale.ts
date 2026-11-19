@@ -1,4 +1,4 @@
-import type { LocalModelSpec } from "@open-reel/core";
+import type { LocalModelSpec } from "@hatchlight/core";
 import { GB, hf, type Repo } from "./shared";
 
 /**

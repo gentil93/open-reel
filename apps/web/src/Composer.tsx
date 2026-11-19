@@ -3,7 +3,7 @@ import {
 	type Media,
 	type ModelSpec,
 	type ProviderStatus,
-} from "@open-reel/core/types";
+} from "@hatchlight/core/types";
 import { useMutation } from "@tanstack/react-query";
 import {
 	type Dispatch,
@@ -47,7 +47,7 @@ interface Props {
 	children?: ReactNode;
 }
 
-const STORAGE_KEY = "open-reel.models";
+const STORAGE_KEY = "hatchlight.models";
 
 /** Makes `ids` the models the composer starts with next time. */
 export function rememberModels(ids: string[]): void {

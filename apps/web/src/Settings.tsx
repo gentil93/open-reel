@@ -3,7 +3,7 @@ import type {
 	ImproveWith,
 	ProviderStatus,
 	TranslateWith,
-} from "@open-reel/core/types";
+} from "@hatchlight/core/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { type AgentPolicy, api } from "./api";
@@ -367,7 +367,7 @@ const shellWord = (word: string, shell: "posix" | "powershell") =>
 			? `'${word.replaceAll("'", "''")}'`
 			: `'${word.replaceAll("'", "'\\''")}'`;
 
-/** The options `open-reel mcp` takes for a policy. */
+/** The options `hatchlight mcp` takes for a policy. */
 const policyArgs = (policy: AgentPolicy) =>
 	policy.allowPaid
 		? [

@@ -1,5 +1,5 @@
 {
-	"name": "open-reel",
+	"name": "hatchlight",
 	"private": true,
 	"type": "module",
 	"workspaces": [
@@ -11,11 +11,11 @@
 		"test": "bun test",
 		"lint": "biome check .",
 		"format": "biome check --write .",
-		"build": "bun run --filter '@open-reel/web' --filter '@open-reel/site' build",
+		"build": "bun run --filter '@hatchlight/web' --filter '@hatchlight/site' build",
 		"start": "bun packages/cli/src/index.ts",
 		"dev:server": "bun --watch packages/cli/src/index.ts --dev",
-		"dev:web": "bun run --filter '@open-reel/web' dev",
-		"dev:site": "bun run --filter '@open-reel/site' dev",
+		"dev:web": "bun run --filter '@hatchlight/web' dev",
+		"dev:site": "bun run --filter '@hatchlight/site' dev",
 		"preview:windows": "bun scripts/preview-windows.ts",
 		"eval:improve": "bun scripts/eval-improve.ts"
 	},

@@ -1,13 +1,13 @@
 import { parseArgs } from "node:util";
-import { defaultDataDir } from "@open-reel/core";
-import { runMcp } from "@open-reel/mcp";
+import { defaultDataDir } from "@hatchlight/core";
+import { runMcp } from "@hatchlight/mcp";
 
-const HELP = `open-reel mcp — lets an AI agent make pictures and videos with open-reel
+const HELP = `hatchlight mcp — lets an AI agent make pictures and videos with Hatchlight
 
 It speaks the Model Context Protocol on standard input and output. Add it to
-an agent, e.g. Claude Code:  claude mcp add open-reel -- open-reel mcp
+an agent, e.g. Claude Code:  claude mcp add hatchlight -- hatchlight mcp
 
-It uses the open-reel already running on the data directory, or starts one
+It uses the Hatchlight already running on the data directory, or starts one
 that stops with it. Agents cannot install models; the user does, in the app.
 
 Options:
@@ -18,7 +18,7 @@ Options:
   -h, --help            Show this help
 `;
 
-/** Runs \`open-reel mcp\` with its arguments. */
+/** Runs \`hatchlight mcp\` with its arguments. */
 export async function mcp(args: string[]): Promise<void> {
 	const { values } = parseArgs({
 		args,

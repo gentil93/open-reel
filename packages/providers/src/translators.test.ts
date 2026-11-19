@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { TRANSLATE_INSTRUCTIONS } from "@open-reel/core";
+import { TRANSLATE_INSTRUCTIONS } from "@hatchlight/core";
 import { CloudTranslator } from "./translators";
 
 /** A service that knows only `known` models, answering in its format. */

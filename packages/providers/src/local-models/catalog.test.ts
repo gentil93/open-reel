@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { chooseVariant, roleOption } from "@open-reel/core";
+import { chooseVariant, roleOption } from "@hatchlight/core";
 import en from "../../../../apps/web/src/locales/en.json";
 import ptBR from "../../../../apps/web/src/locales/pt-BR.json";
 import { builtinLocalModels } from "./index";

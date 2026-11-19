@@ -10,7 +10,7 @@ afterEach(async () => {
 });
 
 async function store() {
-	const dir = await mkdtemp(join(tmpdir(), "open-reel-settings-"));
+	const dir = await mkdtemp(join(tmpdir(), "hatchlight-settings-"));
 	dirs.push(dir);
 	const path = join(dir, "settings.json");
 	return { settings: new FileSettingsStore(path), path };
@@ -53,7 +53,7 @@ describe("settings", () => {
 		});
 	});
 
-	test("a value open-reel does not know reads as the default", async () => {
+	test("a value Hatchlight does not know reads as the default", async () => {
 		const { path } = await store();
 		await writeFile(
 			path,

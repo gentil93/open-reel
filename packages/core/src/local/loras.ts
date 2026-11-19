@@ -34,7 +34,7 @@ export function baseFromMetadata(
 	if (/flux/.test(named)) return "flux";
 	if (/wan/.test(named)) return "wan";
 	if (/z-image|zimage/.test(named)) return "z-image";
-	// Named, but a family open-reel has no model for (SD 2, SD 3…): the
+	// Named, but a family Hatchlight has no model for (SD 2, SD 3…): the
 	// tensor names would mistake it for one it has.
 	return "unknown";
 }
@@ -135,7 +135,7 @@ export class LoraShelf extends Shelf<LoraInfo> {
 					const base = loraBaseOf(header);
 					if (!base) {
 						throw new ValidationError(
-							"This file does not look like a LoRA for a model open-reel knows",
+							"This file does not look like a LoRA for a model Hatchlight knows",
 							"loraUnknownBase",
 						);
 					}

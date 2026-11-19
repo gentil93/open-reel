@@ -1,4 +1,4 @@
-# open-reel
+# Hatchlight
 
 An open source project that takes contributions from the community.
 

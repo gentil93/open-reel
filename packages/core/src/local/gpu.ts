@@ -11,7 +11,7 @@ import type { ProviderEvent } from "../provider";
 
 /**
  * Shares the GPU's memory between jobs, in this process and in every other
- * open-reel that uses the same models folder (the desktop app and open-reel
+ * Hatchlight that uses the same models folder (the desktop app and Hatchlight
  * under WSL do). Jobs whose models fit together run together; one that does
  * not fit waits. Waiting jobs go in the order they started waiting, except
  * that a job may go ahead of those that could not run now anyway. Without
@@ -114,7 +114,7 @@ export class GpuLock {
 		}
 	}
 
-	/** Whether any open-reel, this one included, holds or waits for the GPU. */
+	/** Whether any Hatchlight, this one included, holds or waits for the GPU. */
 	inUse(): boolean {
 		if (this.holds.size > 0) return true;
 		try {
@@ -225,7 +225,7 @@ export class GpuLock {
 		writeFileSync(this.file(this.owner), String(this.reserved));
 		if (!this.heartbeat) {
 			this.heartbeat = setInterval(() => this.beat(), this.heartbeatMs);
-			// A reservation alone does not keep open-reel running.
+			// A reservation alone does not keep Hatchlight running.
 			this.heartbeat.unref?.();
 		}
 	}
@@ -255,7 +255,7 @@ export class GpuLock {
 	}
 
 	/**
-	 * Whether a waiting job, here or in another open-reel, would fit if
+	 * Whether a waiting job, here or in another Hatchlight, would fit if
 	 * `bytes` of this process's were given back.
 	 */
 	wanted(bytes: number): boolean {

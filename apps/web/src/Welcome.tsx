@@ -1,4 +1,4 @@
-import type { Media } from "@open-reel/core/types";
+import type { Media } from "@hatchlight/core/types";
 import { type CSSProperties, useState } from "react";
 import { type Draft, rememberModels } from "./Composer";
 import { useI18n } from "./i18n";

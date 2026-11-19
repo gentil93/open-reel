@@ -187,7 +187,7 @@ describe("warm engines", () => {
 	});
 
 	test("a loaded model keeps its memory reserved until another job wants it", async () => {
-		const root = await mkdtemp(join(tmpdir(), "open-reel-gpu-"));
+		const root = await mkdtemp(join(tmpdir(), "hatchlight-gpu-"));
 		roots.push(root);
 		const GB = 2 ** 30;
 		const gpu = new GpuLock({
@@ -216,7 +216,7 @@ describe("warm engines", () => {
 	});
 
 	test("a model failing to load gives its memory back", async () => {
-		const root = await mkdtemp(join(tmpdir(), "open-reel-gpu-"));
+		const root = await mkdtemp(join(tmpdir(), "hatchlight-gpu-"));
 		roots.push(root);
 		const gpu = new GpuLock({ root, capacity: async () => 2 ** 34 });
 		const warm = new WarmEngines({

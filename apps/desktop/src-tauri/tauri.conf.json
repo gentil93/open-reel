@@ -1,8 +1,8 @@
 {
 	"$schema": "https://schema.tauri.app/config/2",
-	"productName": "open-reel",
+	"productName": "Hatchlight",
 	"version": "0.1.0",
-	"identifier": "org.openreel.desktop",
+	"identifier": "app.hatchlight.desktop",
 	"build": {
 		"frontendDist": "../../web/dist",
 		"beforeBuildCommand": "bun run prepare-bundle",
@@ -20,7 +20,7 @@
 		"targets": "all",
 		"category": "Photography",
 		"shortDescription": "One interface for many image and video generation models",
-		"externalBin": ["binaries/open-reel-server"],
+		"externalBin": ["binaries/hatchlight-server"],
 		"resources": {
 			"resources/web/": "resources/web/",
 			"resources/drizzle/": "resources/drizzle/"
@@ -37,7 +37,7 @@
 		"updater": {
 			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJERTdCRjYwNTYyNEMxQzYKUldUR3dTUldZTC9udlYyNDhjQitLcnExTjViVlMzbThzRmZwd2ljWFpFM2pWMkZhUUNQWWh4WTkK",
 			"endpoints": [
-				"https://github.com/gentil93/open-reel/releases/latest/download/latest.json"
+				"https://github.com/hatchlight/hatchlight/releases/latest/download/latest.json"
 			],
 			"windows": {
 				"installMode": "passive"

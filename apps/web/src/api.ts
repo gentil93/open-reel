@@ -11,7 +11,7 @@ import type {
 	Session,
 	Settings,
 	TurnView,
-} from "@open-reel/core/types";
+} from "@hatchlight/core/types";
 
 /** What the assistant thinks with: this computer, a service, or nothing. */
 export type AssistantBrain =

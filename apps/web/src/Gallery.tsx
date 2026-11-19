@@ -1,4 +1,4 @@
-import type { GalleryItem } from "@open-reel/core/types";
+import type { GalleryItem } from "@hatchlight/core/types";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { api, assetUrl, GALLERY_PAGE } from "./api";

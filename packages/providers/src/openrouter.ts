@@ -4,7 +4,7 @@ import type {
 	ProviderContext,
 	ProviderEvent,
 	ProviderRequest,
-} from "@open-reel/core";
+} from "@hatchlight/core";
 import {
 	BUSY_WHILE_WAITING,
 	errorMessage,

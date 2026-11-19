@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { checkCatalog } from "@open-reel/i18n";
+import { checkCatalog } from "@hatchlight/i18n";
 import { LANGUAGES } from "../src/languages";
 import { loadCatalog, renderPage } from "./render";
 

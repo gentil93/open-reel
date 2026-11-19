@@ -1,13 +1,13 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, resolve } from "node:path";
-import type { JobView, ModelSpec } from "@open-reel/core/types";
+import type { JobView, ModelSpec } from "@hatchlight/core/types";
 import { z } from "zod";
 import type { Reel } from "./reel";
 import { done, isLocal, money, type SpendGuard, TERMINAL } from "./spend";
 
 /**
  * The tools an agent uses to make and find pictures and videos with
- * open-reel, whatever it talks through: an agent outside over MCP, or the
+ * Hatchlight, whatever it talks through: an agent outside over MCP, or the
  * assistant inside the app. On this computer's models by default, on paid
  * ones only when the person allowed it, and never installing models.
  */
@@ -70,15 +70,15 @@ export interface ToolsOptions {
 	pollMs?: number;
 }
 
-/** What an agent is told about open-reel before it calls anything. */
+/** What an agent is told about Hatchlight before it calls anything. */
 export const TOOLS_INSTRUCTIONS =
-	"open-reel makes pictures and videos with the models its user installed (local, free) and, when allowed, with paid cloud models on the user's own keys. Call list_models first to see what can be used. Pass returned picture ids (ast_…) back as reference_images to iterate on a result. Models can only be installed by the user, in the open-reel app.";
+	"Hatchlight makes pictures and videos with the models its user installed (local, free) and, when allowed, with paid cloud models on the user's own keys. Call list_models first to see what can be used. Pass returned picture ids (ast_…) back as reference_images to iterate on a result. Models can only be installed by the user, in the Hatchlight app.";
 
 /** Pictures shown to the agent are made this small: enough to judge them. */
 const PREVIEW_SIDE = 1024;
 /** At most this many pictures are shown in one answer. */
 const MAX_PREVIEWS = 8;
-/** What open-reel's ids look like; anything else is not sent to it. */
+/** What Hatchlight's ids look like; anything else is not sent to it. */
 export const ID = /^[a-z]+_[A-Za-z0-9]+$/;
 export const ASSET_ID = /^ast_[A-Za-z0-9]+$/;
 
@@ -383,7 +383,7 @@ export function createTools(reel: Reel, options: ToolsOptions): Tool[] {
 			name: "list_models",
 			title: "List models",
 			description:
-				"Lists the models that can be used now, with what each can do (make from words, redraw or follow given pictures, redraw a masked part, upscale), its cost, and the ratios and video lengths it accepts. Local models are free and run on the user's computer. Only installed models are listed; the user installs more in the open-reel app.",
+				"Lists the models that can be used now, with what each can do (make from words, redraw or follow given pictures, redraw a masked part, upscale), its cost, and the ratios and video lengths it accepts. Local models are free and run on the user's computer. Only installed models are listed; the user installs more in the Hatchlight app.",
 			input: {
 				media: z
 					.enum(["image", "video"])
@@ -398,8 +398,8 @@ export function createTools(reel: Reel, options: ToolsOptions): Tool[] {
 				if (models.length === 0) {
 					return text(
 						options.allowPaid
-							? "No model can be used now. The user can install local models, or add an API key, in the open-reel app."
-							: "No local model is installed. The user can install one from Local models in the open-reel app. (Paid models are off for this connection.)",
+							? "No model can be used now. The user can install local models, or add an API key, in the Hatchlight app."
+							: "No local model is installed. The user can install one from Local models in the Hatchlight app. (Paid models are off for this connection.)",
 					);
 				}
 				const limit = spend.limitUsd;
@@ -460,8 +460,8 @@ export function createTools(reel: Reel, options: ToolsOptions): Tool[] {
 					if (!fit) {
 						return failure(
 							given.length > 0
-								? "No installed local model can start from a picture. Name one with models, or the user can install one in the open-reel app."
-								: "No local model is installed. The user can install one from Local models in the open-reel app.",
+								? "No installed local model can start from a picture. Name one with models, or the user can install one in the Hatchlight app."
+								: "No local model is installed. The user can install one from Local models in the Hatchlight app.",
 						);
 					}
 					ids = [fit.id];
@@ -512,7 +512,7 @@ export function createTools(reel: Reel, options: ToolsOptions): Tool[] {
 				const upscaler = upscalers.find(isLocal) ?? upscalers[0];
 				if (!upscaler) {
 					return failure(
-						"No upscaler is installed. The user can install Real-ESRGAN from Local models in the open-reel app.",
+						"No upscaler is installed. The user can install Real-ESRGAN from Local models in the Hatchlight app.",
 					);
 				}
 				return run(

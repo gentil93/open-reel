@@ -352,7 +352,7 @@ export class LocalModelStore {
 	private unshrinkable = new Set<string>();
 	/** One download at a time: they all compete for the same connection. */
 	private queue: Promise<void> = Promise.resolve();
-	/** Shares the GPU's memory between jobs, with other open-reels too. */
+	/** Shares the GPU's memory between jobs, with other Hatchlights too. */
 	readonly gpu: GpuLock;
 	/** LoRAs, kept in the models folder so they move with it. */
 	readonly loras: LoraShelf;
@@ -547,7 +547,7 @@ export class LocalModelStore {
 			...(await this.installedVariants(disk.complete)).values(),
 			...[...this.installs.values()].map((install) => install.variant),
 		];
-		// Being installed by another open-reel on the folder, in a variant this
+		// Being installed by another Hatchlight on the folder, in a variant this
 		// one cannot tell: every one of them.
 		const dir = join(this.root, "installed");
 		for (const name of await readdir(dir).catch(() => [])) {
@@ -702,7 +702,7 @@ export class LocalModelStore {
 			usedBytes += sizes.get(hash) ?? (await sizeOf(this.blob(hash)));
 		}
 		for (const bytes of disk.partial.values()) usedBytes += bytes;
-		// Another open-reel sharing this folder (the desktop app and open-reel
+		// Another Hatchlight sharing this folder (the desktop app and Hatchlight
 		// under WSL do) may have installed or deleted a model: say so, as for
 		// a change made here.
 		const ready = models
@@ -737,8 +737,8 @@ export class LocalModelStore {
 
 	/**
 	 * Moves the models to `target` and keeps them there from now on, for
-	 * every open-reel that shares the choice. Refused while anything uses the
-	 * folder, here or in another open-reel. The old folder stays whole until
+	 * every Hatchlight that shares the choice. Refused while anything uses the
+	 * folder, here or in another Hatchlight. The old folder stays whole until
 	 * the new one is written down (see move.ts): a failure, or quitting
 	 * midway, leaves the models where they were.
 	 */
@@ -757,7 +757,7 @@ export class LocalModelStore {
 		const file = this.locationFile;
 		if (!file) {
 			throw new ValidationError(
-				"The models folder is set from outside open-reel",
+				"The models folder is set from outside Hatchlight",
 				"modelsFolderFixed",
 			);
 		}
@@ -784,7 +784,7 @@ export class LocalModelStore {
 		}
 		try {
 			await mkdir(here, { recursive: true });
-			const probe = join(here, `.open-reel-${crypto.randomUUID()}`);
+			const probe = join(here, `.hatchlight-${crypto.randomUUID()}`);
 			await Bun.write(probe, "");
 			await rm(probe);
 		} catch {
@@ -809,7 +809,7 @@ export class LocalModelStore {
 				{ path: here },
 			);
 		}
-		// Held in both folders until the old files are gone: no open-reel
+		// Held in both folders until the old files are gone: no Hatchlight
 		// installs, removes, runs or moves models meanwhile. Taken before
 		// looking whether anything runs, so nothing starts in between.
 		const holdOld = tryFileLock(join(this.root, "moving.lock"));
@@ -944,7 +944,7 @@ export class LocalModelStore {
 		}
 	}
 
-	/** Uses the folder another open-reel chose, once nothing runs here. */
+	/** Uses the folder another Hatchlight chose, once nothing runs here. */
 	private async follow(): Promise<void> {
 		if (
 			!this.locationFile ||
@@ -973,7 +973,7 @@ export class LocalModelStore {
 	/** What it takes to run an installed model on this machine. */
 	async runtime(id: string): Promise<LocalRuntime> {
 		const model = this.spec(id);
-		// Another open-reel may have moved the models since this one looked.
+		// Another Hatchlight may have moved the models since this one looked.
 		await this.follow();
 		this.notMoving();
 		const disk = await this.onDisk();
@@ -1151,7 +1151,7 @@ export class LocalModelStore {
 
 		const run = async () => {
 			if (this.installs.get(id) !== install) return; // canceled while waiting
-			// Says to other open-reels on the folder that this model's files are
+			// Says to other Hatchlights on the folder that this model's files are
 			// wanted, before its marker is there to say so.
 			let announced: (() => void) | null = null;
 			try {
@@ -1201,7 +1201,7 @@ export class LocalModelStore {
 
 	/**
 	 * Downloads a build's archives, extracts them, and drops the archives.
-	 * Another open-reel sharing the folder may be installing the same build:
+	 * Another Hatchlight sharing the folder may be installing the same build:
 	 * this one waits for it and uses what it installed.
 	 */
 	private async installEngine(
@@ -1289,7 +1289,7 @@ export class LocalModelStore {
 	}
 
 	/**
-	 * Downloads one file, unless it is there. Another open-reel sharing the
+	 * Downloads one file, unless it is there. Another Hatchlight sharing the
 	 * folder may be downloading it: this one waits, showing that download's
 	 * progress, and uses the file it leaves.
 	 */
@@ -1300,7 +1300,7 @@ export class LocalModelStore {
 	): Promise<void> {
 		const path = this.blob(file.sha256);
 		if (await Bun.file(path).exists()) return;
-		// Another open-reel may have started moving the models.
+		// Another Hatchlight may have started moving the models.
 		this.notMoving();
 		await mkdir(join(this.root, "blobs"), { recursive: true });
 		await withFileLock(
@@ -1459,7 +1459,7 @@ export class LocalModelStore {
 		const needed = await this.neededHashes();
 		for (const file of unique(model.variants.flatMap((v) => v.files))) {
 			if (needed.has(file.sha256)) continue;
-			// Another open-reel sharing the folder is downloading it.
+			// Another Hatchlight sharing the folder is downloading it.
 			if (isLocked(`${this.blob(file.sha256)}.lock`)) continue;
 			await rm(this.blob(file.sha256), { force: true });
 			await rm(`${this.blob(file.sha256)}.part`, { force: true });
@@ -1479,7 +1479,7 @@ export class LocalModelStore {
 		for (const engine of this.engines) {
 			if (inUse.has(engine.id)) continue;
 			for (const build of engine.builds) {
-				// Another open-reel sharing the folder is installing it.
+				// Another Hatchlight sharing the folder is installing it.
 				if (isLocked(`${this.engineDir(build.id)}.lock`)) continue;
 				await rm(this.engineDir(build.id), { recursive: true, force: true });
 				for (const file of build.files) {

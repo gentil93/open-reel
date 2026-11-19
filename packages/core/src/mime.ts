@@ -1,6 +1,6 @@
 /**
  * The media type the bytes really are, whatever their source claimed. Null
- * when it is not one of the formats open-reel stores and shows.
+ * when it is not one of the formats Hatchlight stores and shows.
  */
 export function sniffMime(data: Uint8Array): string | null {
 	const starts = (bytes: number[], at = 0) =>

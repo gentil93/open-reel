@@ -16,8 +16,8 @@ import {
 	TRANSLATE_WITH,
 	type UserContext,
 	ValidationError,
-} from "@open-reel/core";
-import type { Assistant } from "@open-reel/tools";
+} from "@hatchlight/core";
+import type { Assistant } from "@hatchlight/tools";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";

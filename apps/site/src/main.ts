@@ -1,6 +1,6 @@
 import "./styles.css";
-import { createTranslator, matchLanguage } from "@open-reel/i18n";
-import { develop, loadImage } from "@open-reel/motion";
+import { createTranslator, matchLanguage } from "@hatchlight/i18n";
+import { develop, loadImage } from "@hatchlight/motion";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { LINKS } from "./config";

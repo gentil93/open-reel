@@ -14,12 +14,12 @@ afterEach(async () => {
 });
 
 async function folder(): Promise<string> {
-	const dir = await mkdtemp(join(tmpdir(), "open-reel-gpu-"));
+	const dir = await mkdtemp(join(tmpdir(), "hatchlight-gpu-"));
 	dirs.push(dir);
 	return dir;
 }
 
-/** A lock as another open-reel sharing `root` would have, polling fast. */
+/** A lock as another Hatchlight sharing `root` would have, polling fast. */
 function lock(root: string, capacity: number | null = 12 * GB) {
 	return new GpuLock({ root, capacity: async () => capacity, pollMs: 5 });
 }
@@ -115,7 +115,7 @@ describe("GpuLock", () => {
 		expect(other.reserved).toBe(8 * GB);
 	});
 
-	test("another open-reel's holder hears the request through the folder", async () => {
+	test("another Hatchlight's holder hears the request through the folder", async () => {
 		const root = await folder();
 		const other = new GpuLock({
 			root,
@@ -136,7 +136,7 @@ describe("GpuLock", () => {
 		).toEqual([]);
 	});
 
-	test("the reservation of an open-reel that died stops counting", async () => {
+	test("the reservation of a Hatchlight that died stops counting", async () => {
 		const root = await folder();
 		await acquire(lock(root), 1 * GB);
 		const dead = join(root, "gpu", "dead");

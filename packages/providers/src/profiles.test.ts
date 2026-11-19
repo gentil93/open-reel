@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { Media } from "@open-reel/core";
+import type { Media } from "@hatchlight/core";
 import { builtinProviders } from "./index";
 import { builtinLocalModels } from "./local-models";
 import { profiledModelIds, profileFor } from "./profiles";

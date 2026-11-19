@@ -50,7 +50,7 @@ describe("telling a checkpoint's family", () => {
 				"first_stage_model.decoder.conv_in.weight",
 			]),
 		).toBeNull();
-		// Named as a family open-reel does not run, whatever the names say.
+		// Named as a family Hatchlight does not run, whatever the names say.
 		expect(
 			base(SDXL, { "modelspec.architecture": "stable-diffusion-v3-medium" }),
 		).toBeNull();
@@ -67,7 +67,7 @@ describe("telling a checkpoint's family", () => {
 
 describe("the checkpoint shelf", () => {
 	async function setup() {
-		const root = await mkdtemp(join(tmpdir(), "open-reel-ckpt-"));
+		const root = await mkdtemp(join(tmpdir(), "hatchlight-ckpt-"));
 		dirs.push(root);
 		return new CheckpointShelf({ root: () => root });
 	}
@@ -139,7 +139,7 @@ describe("the checkpoint shelf", () => {
 	});
 
 	test("settings are not changed while the folder moves", async () => {
-		const root = await mkdtemp(join(tmpdir(), "open-reel-ckpt-"));
+		const root = await mkdtemp(join(tmpdir(), "hatchlight-ckpt-"));
 		dirs.push(root);
 		let moving = false;
 		const shelf = new CheckpointShelf({
@@ -159,7 +159,7 @@ describe("the checkpoint shelf", () => {
 	});
 
 	test("deleting lets go of a loaded model first", async () => {
-		const root = await mkdtemp(join(tmpdir(), "open-reel-ckpt-"));
+		const root = await mkdtemp(join(tmpdir(), "hatchlight-ckpt-"));
 		dirs.push(root);
 		const order: string[] = [];
 		const shelf = new CheckpointShelf({

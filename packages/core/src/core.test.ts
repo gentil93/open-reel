@@ -27,7 +27,7 @@ afterEach(async () => {
 });
 
 async function tempDir() {
-	const dir = await mkdtemp(join(tmpdir(), "open-reel-"));
+	const dir = await mkdtemp(join(tmpdir(), "hatchlight-"));
 	dirs.push(dir);
 	return dir;
 }

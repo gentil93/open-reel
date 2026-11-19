@@ -4,7 +4,7 @@ import {
 	type Message,
 	matchLanguage,
 	type Translator,
-} from "@open-reel/i18n";
+} from "@hatchlight/i18n";
 import {
 	createContext,
 	type ReactNode,
@@ -31,7 +31,7 @@ export const languages: Language[] = [
 	{ code: "pt-BR", name: "Português (Brasil)" },
 ];
 
-const STORAGE_KEY = "open-reel.language";
+const STORAGE_KEY = "hatchlight.language";
 const codes = languages.map((language) => language.code);
 
 function initialLanguage(): string {

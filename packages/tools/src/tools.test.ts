@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { JobView, ModelSpec, TurnView } from "@open-reel/core/types";
+import type { JobView, ModelSpec, TurnView } from "@hatchlight/core/types";
 import type { Reel } from "./reel";
 import { SpendGuard } from "./spend";
 import { createTools, type ToolContext } from "./tools";
@@ -56,8 +56,8 @@ const context: ToolContext = {
 
 describe("the tools for the assistant inside the app", () => {
 	test("never touch files on this computer", async () => {
-		const openReel = reel();
-		const tools = createTools(openReel, {
+		const hatchlight = reel();
+		const tools = createTools(hatchlight, {
 			allowPaid: false,
 			spend: new SpendGuard(null),
 			files: false,
@@ -71,7 +71,7 @@ describe("the tools for the assistant inside the app", () => {
 		expect(result?.isError).toBe(true);
 		expect(result?.text).toContain("given by id");
 		// Refused before anything was made.
-		expect(openReel.turns).toBe(0);
+		expect(hatchlight.turns).toBe(0);
 	});
 
 	test("a call whose arguments do not fit is refused, not thrown", async () => {

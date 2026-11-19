@@ -13,7 +13,7 @@ afterEach(async () => {
 });
 
 async function setup(throughWindows: boolean) {
-	const scratch = await mkdtemp(join(tmpdir(), "open-reel-translate-"));
+	const scratch = await mkdtemp(join(tmpdir(), "hatchlight-translate-"));
 	dirs.push(scratch);
 	const runtime = {
 		executable: "/engines/llama/llama-server.exe",

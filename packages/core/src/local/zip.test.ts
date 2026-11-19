@@ -10,7 +10,7 @@ afterEach(async () => {
 	for (const dir of dirs.splice(0)) await rm(dir, { recursive: true });
 });
 async function tempDir() {
-	const dir = await mkdtemp(join(tmpdir(), "open-reel-zip-"));
+	const dir = await mkdtemp(join(tmpdir(), "hatchlight-zip-"));
 	dirs.push(dir);
 	return dir;
 }

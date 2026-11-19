@@ -1,6 +1,6 @@
 /**
  * Judges "Improve prompt" on this computer: sends a fixed set of ideas to a
- * running open-reel and checks each answer (kept the colors, numbers and
+ * running Hatchlight and checks each answer (kept the colors, numbers and
  * quoted text, added no words to show, wrote in the reader's language, a
  * fitting length). It uses whatever Settings > "Improve prompts with" picks.
  *

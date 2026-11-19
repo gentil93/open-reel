@@ -67,7 +67,7 @@ describe("reading a LoRA", () => {
 		expect(base({ ss_base_model_version: "sd_v1" })).toBe("sd1");
 		expect(base({ "modelspec.architecture": "flux-1-dev/lora" })).toBe("flux");
 		expect(base({})).toBeNull();
-		// A family open-reel has no model for is not guessed from the names.
+		// A family Hatchlight has no model for is not guessed from the names.
 		expect(
 			loraBaseOf({
 				keys: ["lora_unet_down_blocks_0_attentions_0_proj_in.alpha"],
@@ -137,7 +137,7 @@ describe("reading a LoRA", () => {
 
 describe("the shelf", () => {
 	async function setup() {
-		const root = await mkdtemp(join(tmpdir(), "open-reel-loras-"));
+		const root = await mkdtemp(join(tmpdir(), "hatchlight-loras-"));
 		dirs.push(root);
 		let changes = 0;
 		const shelf = new LoraShelf({
@@ -215,12 +215,12 @@ describe("the shelf", () => {
 
 	test("the shelf follows the models folder when it moves", async () => {
 		const { shelf } = await setup();
-		const other = await mkdtemp(join(tmpdir(), "open-reel-loras-"));
+		const other = await mkdtemp(join(tmpdir(), "hatchlight-loras-"));
 		dirs.push(other);
 		let root = other;
 		const moving = new LoraShelf({ root: () => root });
 		await moving.add(new Blob([safetensors(SDXL_KEYS)]), "a.safetensors");
-		root = await mkdtemp(join(tmpdir(), "open-reel-loras-"));
+		root = await mkdtemp(join(tmpdir(), "hatchlight-loras-"));
 		dirs.push(root);
 		expect(await moving.list()).toEqual([]);
 		expect(await shelf.list()).toEqual([]);
@@ -275,7 +275,7 @@ describe("the shelf", () => {
 	});
 
 	test("nothing is written while the folder cannot be", async () => {
-		const root = await mkdtemp(join(tmpdir(), "open-reel-loras-"));
+		const root = await mkdtemp(join(tmpdir(), "hatchlight-loras-"));
 		dirs.push(root);
 		const shelf = new LoraShelf({
 			root: () => root,

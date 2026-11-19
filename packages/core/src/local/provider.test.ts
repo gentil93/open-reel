@@ -392,8 +392,8 @@ describe("engine arguments", () => {
 describe("running", () => {
 	/** A store that has one installed model, with its scratch in `dir`. */
 	async function setup(model = FLUX) {
-		const dir = await mkdtemp(join(tmpdir(), "open-reel-local-"));
-		const gpuRoot = await mkdtemp(join(tmpdir(), "open-reel-gpu-"));
+		const dir = await mkdtemp(join(tmpdir(), "hatchlight-local-"));
+		const gpuRoot = await mkdtemp(join(tmpdir(), "hatchlight-gpu-"));
 		dirs.push(dir, gpuRoot);
 		const listeners: ((event: { type: string }) => void)[] = [];
 		const store = {
@@ -1117,7 +1117,7 @@ describe("running", () => {
 		expect(local.lineOf("local/wan")).toBe("video");
 	});
 
-	test("a job waits while another open-reel holds the GPU's memory", async () => {
+	test("a job waits while another Hatchlight holds the GPU's memory", async () => {
 		const { provider, fake, calls, gpuRoot } = await setup();
 		const other = new GpuLock({
 			root: gpuRoot,

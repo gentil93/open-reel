@@ -1,9 +1,9 @@
+import { readServerInfo } from "@hatchlight/core";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { readServerInfo } from "@open-reel/core";
-import { OpenReelClient } from "./client";
+import { HatchlightClient } from "./client";
 import { createMcpServer, type McpOptions } from "./tools";
 
-export { OpenReelClient, ServerError } from "./client";
+export { HatchlightClient, ServerError } from "./client";
 export { createMcpServer, type McpOptions } from "./tools";
 
 /** How long a server started for the agent may take to come up. */
@@ -11,7 +11,7 @@ const START_TIMEOUT_MS = 60_000;
 /** How long an app that is starting may take to say where it listens. */
 const STARTING_APP_MS = 20_000;
 
-/** The server at `url`, if it answers soon and like open-reel. */
+/** The server at `url`, if it answers soon and like Hatchlight. */
 async function answers(url: string): Promise<boolean> {
 	try {
 		const response = await fetch(`${url}/api/models`, {
@@ -59,7 +59,7 @@ async function start(
 			if (done) break;
 			seen += value;
 			// A whole line: the address may come in pieces.
-			const found = seen.match(/open-reel is running at (http:\/\/\S+)\r?\n/);
+			const found = seen.match(/Hatchlight is running at (http:\/\/\S+)\r?\n/);
 			if (found?.[1]) {
 				void (async () => {
 					while (!(await reader.read()).done) {}
@@ -72,11 +72,11 @@ async function start(
 	}
 	const reason = (await errors).trim();
 	if (/already running/.test(reason)) return "in use";
-	throw new Error(`open-reel did not start: ${reason || seen.trim()}`);
+	throw new Error(`Hatchlight did not start: ${reason || seen.trim()}`);
 }
 
 /**
- * The open-reel server for a data directory: the one already running, or
+ * The Hatchlight server for a data directory: the one already running, or
  * one started for this process, which stops when it does.
  */
 async function connect(
@@ -95,13 +95,13 @@ async function connect(
 		if (found) return found;
 	}
 	throw new Error(
-		"open-reel is running on this data directory but does not answer",
+		"Hatchlight is running on this data directory but does not answer",
 	);
 }
 
 export interface RunOptions extends McpOptions {
 	dataDir: string;
-	/** The program, and its script if any, that starts an open-reel server. */
+	/** The program, and its script if any, that starts a Hatchlight server. */
 	launcher: string[];
 	/** Options the server is started with, such as its data directory. */
 	serverArgs: string[];
@@ -117,7 +117,7 @@ export async function runMcp(options: RunOptions): Promise<void> {
 		options.launcher,
 		options.serverArgs,
 	);
-	const server = createMcpServer(new OpenReelClient(url), options);
+	const server = createMcpServer(new HatchlightClient(url), options);
 	// The agent leaves by closing our input, which the transport does not
 	// report: either way, this process ends, and a server it started with it.
 	const closed = new Promise<void>((done) => {

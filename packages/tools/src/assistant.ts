@@ -8,14 +8,14 @@ import {
 	type ToolCall,
 	type ToolSpec,
 	ValidationError,
-} from "@open-reel/core";
+} from "@hatchlight/core";
 import type {
 	AssistantEntry,
 	AssistantEntryBody,
 	AssistantView,
 	ModelSpec,
 	UserContext,
-} from "@open-reel/core/types";
+} from "@hatchlight/core/types";
 import { z } from "zod";
 import type { Reel } from "./reel";
 import { estimate, isLocal, SpendGuard } from "./spend";
@@ -42,7 +42,7 @@ export interface AssistantStore {
 
 export interface AssistantOptions {
 	store: AssistantStore;
-	/** open-reel as a person sees it. */
+	/** Hatchlight as a person sees it. */
 	reel(ctx: UserContext): Reel;
 	/** What the person's assistant thinks with, or null when nothing can. */
 	brain(ctx: UserContext): Promise<ChatModel | null>;
@@ -93,7 +93,7 @@ export function assistantInstructions(language?: string): string {
 		}
 	}
 	return [
-		"You are the assistant inside open-reel, an app that makes pictures and videos. The person talks with you to make pictures and change them; you do it with the tools.",
+		"You are the assistant inside Hatchlight, an app that makes pictures and videos. The person talks with you to make pictures and change them; you do it with the tools.",
 		`- Always write to the person in ${reader}. Keep it short: a sentence or two. Do not describe a picture you have not seen.`,
 		"- Write each prompt for generate in English, as a full description of the picture: subject, setting, light, style. To change a picture, describe the whole new picture, not only the change.",
 		"- To change a picture made before, give its id (ast_…) in reference_images when the model can redraw pictures; otherwise make it again with a new prompt.",

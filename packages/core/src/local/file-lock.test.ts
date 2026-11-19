@@ -11,7 +11,7 @@ afterEach(async () => {
 });
 
 async function lockPath(): Promise<string> {
-	const dir = await mkdtemp(join(tmpdir(), "open-reel-lock-"));
+	const dir = await mkdtemp(join(tmpdir(), "hatchlight-lock-"));
 	dirs.push(dir);
 	return join(dir, "file.lock");
 }
@@ -56,7 +56,7 @@ describe("file locks", () => {
 		expect(isLocked(lock)).toBe(false);
 	});
 
-	test("the lock of an open-reel that died is taken over", async () => {
+	test("the lock of a Hatchlight that died is taken over", async () => {
 		const lock = await lockPath();
 		await writeFile(lock, "someone gone");
 		const old = new Date(Date.now() - 60_000);

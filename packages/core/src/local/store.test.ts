@@ -207,7 +207,7 @@ async function setup(
 ) {
 	// A second store on an existing root reopens it, as after a restart.
 	const root =
-		options.root ?? (await mkdtemp(join(tmpdir(), "open-reel-models-")));
+		options.root ?? (await mkdtemp(join(tmpdir(), "hatchlight-models-")));
 	if (!options.root) dirs.push(root);
 	const host = remote(HOSTED);
 	const hardware = options.hardware ?? machine(24);
@@ -780,7 +780,7 @@ test("when no engine runs here, the install says why", async () => {
 	expect(failed.errorParams).toEqual({ reason: "the program was blocked" });
 });
 
-test("a model installed by another open-reel on the same folder is noticed", async () => {
+test("a model installed by another Hatchlight on the same folder is noticed", async () => {
 	const first = await setup();
 	await first.store.install("a");
 	await first.store.idle();
@@ -798,7 +798,7 @@ test("a model installed by another open-reel on the same folder is noticed", asy
 	expect(events).toEqual(["models.changed"]);
 });
 
-test("two open-reels installing the same model download each file once", async () => {
+test("two Hatchlights installing the same model download each file once", async () => {
 	const first = await setup();
 	const second = await setup({ root: first.root });
 	const held = gate();
@@ -830,7 +830,7 @@ test("two open-reels installing the same model download each file once", async (
 	expect((await first.blobs()).filter((n) => n.endsWith(".lock"))).toEqual([]);
 });
 
-test("models move to another folder, and stay there for every open-reel", async () => {
+test("models move to another folder, and stay there for every Hatchlight", async () => {
 	const first = await setup();
 	const locationFile = join(first.root, "..", `${crypto.randomUUID()}.json`);
 	const store = new LocalModelStore({
@@ -847,7 +847,7 @@ test("models move to another folder, and stay there for every open-reel", async 
 	const used = (await store.list()).disk.usedBytes;
 	expect((await store.list()).disk.changeable).toBe(true);
 
-	const target = await mkdtemp(join(tmpdir(), "open-reel-target-"));
+	const target = await mkdtemp(join(tmpdir(), "hatchlight-target-"));
 	dirs.push(target, locationFile);
 	const moving: number[] = [];
 	store.subscribe((event) => {
@@ -867,10 +867,10 @@ test("models move to another folder, and stay there for every open-reel", async 
 	expect(view.models.find((m) => m.id === "a")?.ready).toBe(true);
 	expect(moving.at(-1)).toBeGreaterThan(0);
 	expect(await readdir(join(first.root, "blobs")).catch(() => [])).toEqual([]);
-	// Written where every open-reel sharing the default folder reads it.
+	// Written where every Hatchlight sharing the default folder reads it.
 	expect(await Bun.file(locationFile).json()).toEqual({ path: target });
 
-	// Another open-reel, still on the old folder, follows.
+	// Another Hatchlight, still on the old folder, follows.
 	const other = new LocalModelStore({
 		root: first.root,
 		catalog: CATALOG,
@@ -906,14 +906,14 @@ test("moving the models is refused while they are in use, or without a place to 
 	const it = movable.gpu.acquire(1, new AbortController().signal);
 	let held = await it.next();
 	while (!held.done) held = await it.next();
-	const target = await mkdtemp(join(tmpdir(), "open-reel-target-"));
+	const target = await mkdtemp(join(tmpdir(), "hatchlight-target-"));
 	dirs.push(target);
 	await expect(movable.relocate(target)).rejects.toMatchObject({
 		code: "modelsBusy",
 	});
 	held.value.release();
 
-	// Another open-reel on the folder holds the GPU.
+	// Another Hatchlight on the folder holds the GPU.
 	const other = new GpuLock({ root, capacity: async () => 2 ** 34 });
 	const theirs = other.acquire(1, new AbortController().signal);
 	let taken = await theirs.next();
@@ -949,11 +949,11 @@ test("the same folder under another name is not moved, and nothing is lost", asy
 	expect(await Bun.file(locationFile).exists()).toBe(false);
 });
 
-test("while another open-reel moves the models, nothing installs, runs or is removed", async () => {
+test("while another Hatchlight moves the models, nothing installs, runs or is removed", async () => {
 	const { store, root } = await setup();
 	await store.install("b");
 	await store.idle();
-	// Another open-reel is moving the folder.
+	// Another Hatchlight is moving the folder.
 	await Bun.write(join(root, "moving.lock"), "other");
 	await expect(store.install("a")).rejects.toMatchObject({
 		code: "modelsMoving",
@@ -966,11 +966,11 @@ test("while another open-reel moves the models, nothing installs, runs or is rem
 	});
 });
 
-test("a model another open-reel is installing keeps the files it shares", async () => {
+test("a model another Hatchlight is installing keeps the files it shares", async () => {
 	const { store, root, blobs } = await setup();
 	await store.install("a");
 	await store.idle();
-	// Another open-reel is installing b, which shares a's encoder.
+	// Another Hatchlight is installing b, which shares a's encoder.
 	await Bun.write(join(root, "installed", "b.lock"), "other");
 	await store.remove("a");
 	const encoder = new Bun.CryptoHasher("sha256").update(ENCODER).digest("hex");
@@ -1001,19 +1001,19 @@ test("a model kept loaded lets go of its files before they are deleted or moved"
 	movable.onLetGo(async () => {
 		lets++;
 	});
-	const target = await mkdtemp(join(tmpdir(), "open-reel-target-"));
+	const target = await mkdtemp(join(tmpdir(), "hatchlight-target-"));
 	dirs.push(target);
 	await movable.relocate(target);
 	await movable.idle();
 	expect(lets).toBe(1);
 });
 
-test("removing a model leaves a file another open-reel is downloading", async () => {
+test("removing a model leaves a file another Hatchlight is downloading", async () => {
 	const first = await setup();
 	await first.store.install("a");
 	await first.store.idle();
 	const blob = (await first.blobs()).find((n) => /^[a-f0-9]{64}$/.test(n));
-	// Another open-reel holds a download of one of its files.
+	// Another Hatchlight holds a download of one of its files.
 	await Bun.write(join(first.root, "blobs", `${blob}.lock`), "other");
 	await first.store.remove("a");
 	expect(await first.blobs()).toContain(blob as string);

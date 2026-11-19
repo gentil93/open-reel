@@ -1,4 +1,4 @@
-import type { LocalModelSpec } from "@open-reel/core";
+import type { LocalModelSpec } from "@hatchlight/core";
 import { PROFILES } from "../profiles";
 import {
 	ALL_RATIOS,
@@ -42,7 +42,7 @@ const REPO = {
 } as const satisfies Record<string, Repo>;
 
 /**
- * The first models open-reel offered, the ones verified on real hardware.
+ * The first models Hatchlight offered, the ones verified on real hardware.
  */
 export function starterModels(): LocalModelSpec[] {
 	return [

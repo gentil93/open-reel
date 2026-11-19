@@ -1,4 +1,4 @@
-import type { LocalModelSpec } from "@open-reel/core";
+import type { LocalModelSpec } from "@hatchlight/core";
 import { classicModels } from "./classic";
 import { flux2Models } from "./flux2";
 import { newerModels } from "./newer";
@@ -10,7 +10,7 @@ import { videoModels } from "./video";
 import { zimageModels } from "./zimage";
 
 /**
- * The models open-reel can download, each in the variants it can run. Sizes
+ * The models Hatchlight can download, each in the variants it can run. Sizes
  * and hashes are the ones their repositories report at the pinned revision.
  *
  * `memoryBytes` is what a variant needs on the GPU to run at full speed: the

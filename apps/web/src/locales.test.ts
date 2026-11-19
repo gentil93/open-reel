@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { ERROR_CODES } from "@open-reel/core/errors";
-import { checkCatalog } from "@open-reel/i18n";
+import { ERROR_CODES } from "@hatchlight/core/errors";
+import { checkCatalog } from "@hatchlight/i18n";
 import en from "./locales/en.json";
 import ptBR from "./locales/pt-BR.json";
 

@@ -1,7 +1,7 @@
 import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-/** Where a running open-reel can be reached, for other processes to find. */
+/** Where a running Hatchlight can be reached, for other processes to find. */
 export interface ServerInfo {
 	pid: number;
 	url: string;
@@ -9,7 +9,7 @@ export interface ServerInfo {
 
 /** The file a running server writes in its data directory. */
 export const serverInfoFile = (dataDir: string) =>
-	join(dataDir, "open-reel.server.json");
+	join(dataDir, "hatchlight.server.json");
 
 /** Says where this server listens, once it owns the data directory. */
 export async function writeServerInfo(

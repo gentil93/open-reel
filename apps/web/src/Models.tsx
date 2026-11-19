@@ -5,7 +5,7 @@ import type {
 	LocalModelStatus,
 	LocalModelsView,
 	LocalModelTask,
-} from "@open-reel/core/types";
+} from "@hatchlight/core/types";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { api, demoUrl } from "./api";
@@ -587,7 +587,7 @@ const BACKEND_NAMES: Record<
 	vulkan: "Vulkan",
 };
 
-/** What open-reel found on this computer, and what it will run models with. */
+/** What Hatchlight found on this computer, and what it will run models with. */
 function Machine({ view }: { view: LocalModelsView }) {
 	const { t, bytes } = useI18n();
 	const { hardware, engines } = view;

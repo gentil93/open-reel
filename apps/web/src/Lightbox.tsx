@@ -1,4 +1,4 @@
-import type { GenerationParams } from "@open-reel/core/types";
+import type { GenerationParams } from "@hatchlight/core/types";
 import { useEffect, useRef } from "react";
 import { assetUrl } from "./api";
 import { usd } from "./format";
@@ -107,7 +107,7 @@ export function Lightbox({ item, onClose, onUseAsReference }: Props) {
 						)}
 						<a
 							href={assetUrl(item.assetId)}
-							download={`open-reel-${item.assetId}`}
+							download={`hatchlight-${item.assetId}`}
 							className="rounded-md border border-line px-3 py-2 text-center hover:border-dim"
 						>
 							{t("lightbox.download")}

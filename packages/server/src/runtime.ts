@@ -28,7 +28,7 @@ import {
 	type UserContext,
 	ValidationError,
 	writerChoice,
-} from "@open-reel/core";
+} from "@hatchlight/core";
 import {
 	builtinEngines,
 	builtinLocalModels,
@@ -36,8 +36,8 @@ import {
 	CloudChatModel,
 	CloudTranslator,
 	type CloudTranslatorId,
-} from "@open-reel/providers";
-import { Assistant, type Reel } from "@open-reel/tools";
+} from "@hatchlight/providers";
+import { Assistant, type Reel } from "@hatchlight/tools";
 
 export interface Runtime {
 	service: ReelService;
@@ -75,7 +75,7 @@ export interface ImproveRequest {
 
 export type AssistantBrain = "local" | CloudTranslatorId | null;
 
-/** open-reel as a person sees it, for the assistant in this process. */
+/** Hatchlight as a person sees it, for the assistant in this process. */
 export function localReel(service: ReelService, ctx: UserContext): Reel {
 	return {
 		models: async () => service.listModels(),
@@ -127,7 +127,7 @@ class FakeChatModel implements ChatModel {
 	}
 }
 
-/** Another open-reel process is already using the data directory. */
+/** Another Hatchlight process is already using the data directory. */
 export class DataDirInUseError extends Error {}
 
 /**
@@ -135,7 +135,7 @@ export class DataDirInUseError extends Error {}
  * directory is claimed with a lock file holding the owner's process id.
  */
 function lockDataDir(dataDir: string): () => void {
-	const path = join(dataDir, "open-reel.lock");
+	const path = join(dataDir, "hatchlight.lock");
 	for (let attempt = 0; attempt < 2; attempt++) {
 		try {
 			writeFileSync(path, String(process.pid), { flag: "wx" });
@@ -145,7 +145,7 @@ function lockDataDir(dataDir: string): () => void {
 			const owner = Number(readFileSync(path, "utf8"));
 			if (isRunning(owner)) {
 				throw new DataDirInUseError(
-					`open-reel is already running on this data directory (process ${owner})`,
+					`Hatchlight is already running on this data directory (process ${owner})`,
 				);
 			}
 			rmSync(path, { force: true }); // left behind by a process that died
@@ -194,7 +194,7 @@ export interface RuntimeOptions {
 /** Wires the core on a data directory. Call `start()` once ready to run jobs. */
 export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 	const providers = options.providers ?? builtinProviders();
-	const fake = process.env.OPEN_REEL_FAKE === "1";
+	const fake = process.env.HATCHLIGHT_FAKE === "1";
 	if (fake) {
 		const fakeProvider = new FakeProvider();
 		fakeProvider.delayMs = 1500;
@@ -221,7 +221,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 	await mkdir(options.dataDir, { recursive: true, mode: 0o700 });
 	const unlock = lockDataDir(options.dataDir);
 	const repo = new SqliteRepository(
-		join(options.dataDir, "open-reel.sqlite"),
+		join(options.dataDir, "hatchlight.sqlite"),
 		options.migrationsDir,
 	);
 	const assets = new FsAssetStore(join(options.dataDir, "assets"));

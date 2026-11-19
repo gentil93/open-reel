@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { type Catalog, createTranslator } from "@open-reel/i18n";
+import { type Catalog, createTranslator } from "@hatchlight/i18n";
 import { LINKS } from "../src/config";
 import { LANGUAGES, type SiteLanguage } from "../src/languages";
 

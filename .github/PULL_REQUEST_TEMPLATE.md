@@ -1,6 +1,6 @@
 ## What changes
 
-<!-- What changes for the person using open-reel, and why. Link the issue: "Closes #123". -->
+<!-- What changes for the person using Hatchlight, and why. Link the issue: "Closes #123". -->
 
 ## How I checked it
 

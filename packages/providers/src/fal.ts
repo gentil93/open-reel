@@ -6,7 +6,7 @@ import type {
 	ProviderEvent,
 	ProviderRequest,
 	ReferenceImage,
-} from "@open-reel/core";
+} from "@hatchlight/core";
 import {
 	errorMessage,
 	type Fetch,

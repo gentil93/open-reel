@@ -1,4 +1,4 @@
-import type { ProviderAdapter } from "@open-reel/core";
+import type { ProviderAdapter } from "@hatchlight/core";
 import { FalProvider } from "./fal";
 import { GoogleProvider } from "./google";
 import { OpenAIProvider } from "./openai";
@@ -17,7 +17,7 @@ export { PROFILES, profileFor, withProfiles } from "./profiles";
 export { ReplicateProvider } from "./replicate";
 export { CloudTranslator, type CloudTranslatorId } from "./translators";
 
-/** Every provider that ships with open-reel, with their models' profiles. */
+/** Every provider that ships with Hatchlight, with their models' profiles. */
 export function builtinProviders(): ProviderAdapter[] {
 	return [
 		new FalProvider(),

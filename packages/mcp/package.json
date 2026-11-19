@@ -1,5 +1,5 @@
 {
-	"name": "@open-reel/mcp",
+	"name": "@hatchlight/mcp",
 	"version": "0.0.0",
 	"private": true,
 	"type": "module",
@@ -11,11 +11,11 @@
 	},
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "1.32.2",
-		"@open-reel/core": "workspace:*",
-		"@open-reel/tools": "workspace:*",
+		"@hatchlight/core": "workspace:*",
+		"@hatchlight/tools": "workspace:*",
 		"zod": "^4.0.0"
 	},
 	"devDependencies": {
-		"@open-reel/server": "workspace:*"
+		"@hatchlight/server": "workspace:*"
 	}
 }

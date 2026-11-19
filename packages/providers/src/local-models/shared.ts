@@ -1,4 +1,4 @@
-import type { LocalModelFile, LocalModelSpec } from "@open-reel/core";
+import type { LocalModelFile, LocalModelSpec } from "@hatchlight/core";
 
 /** A file in a Hugging Face repository, at a fixed revision. */
 export const hf = (repo: string, revision: string, path: string) =>

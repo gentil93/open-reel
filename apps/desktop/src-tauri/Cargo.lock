@@ -2590,7 +2590,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "open-reel"
+name = "hatchlight"
 version = "0.1.0"
 dependencies = [
  "dunce",

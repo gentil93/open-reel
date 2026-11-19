@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { ChatMessage } from "@open-reel/core";
+import type { ChatMessage } from "@hatchlight/core";
 import { CloudChatModel, geminiContents, geminiReply } from "./chat-models";
 
 const signal = () => new AbortController().signal;

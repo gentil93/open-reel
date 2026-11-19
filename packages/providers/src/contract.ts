@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import type { ProviderAdapter } from "@open-reel/core";
+import type { ProviderAdapter } from "@hatchlight/core";
 
 /** Checks every adapter must pass. Call from the adapter's test file. */
 export function providerContract(adapter: ProviderAdapter): void {

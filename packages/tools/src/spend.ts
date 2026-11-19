@@ -1,4 +1,4 @@
-import type { JobView, ModelSpec, TurnView } from "@open-reel/core/types";
+import type { JobView, ModelSpec, TurnView } from "@hatchlight/core/types";
 
 export const TERMINAL = ["succeeded", "failed", "canceled"];
 

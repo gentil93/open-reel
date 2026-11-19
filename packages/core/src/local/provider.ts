@@ -464,7 +464,7 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 	id = "local";
 	name = "This computer";
 	requiresKey = false;
-	// A job lives in the engine process, which dies with open-reel.
+	// A job lives in the engine process, which dies with Hatchlight.
 	resumable = false;
 	// One picture and one video at a time (see lineOf), and both at once only
 	// when they fit in the GPU's memory: the GPU lock decides.
@@ -993,7 +993,7 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 		if (this.warm.unused) await this.warm.stopAndWait();
 	}
 
-	/** Unloads the model, so no engine outlives open-reel. */
+	/** Unloads the model, so no engine outlives Hatchlight. */
 	close(): void {
 		if (this.warm) this.warm.stop();
 		this.store.gpu.close();

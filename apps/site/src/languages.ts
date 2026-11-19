@@ -1,4 +1,4 @@
-import type { Language } from "@open-reel/i18n";
+import type { Language } from "@hatchlight/i18n";
 
 export interface SiteLanguage extends Language {
 	/** The language's folder on the site; the first one lives at the root. */

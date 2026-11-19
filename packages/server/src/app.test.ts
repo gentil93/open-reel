@@ -9,9 +9,9 @@ import {
 	FakeProvider,
 	type LocalEngineSpec,
 	type LocalModelSpec,
-} from "@open-reel/core";
-import { safetensors, zip } from "@open-reel/core/testing";
-import type { AssistantView } from "@open-reel/core/types";
+} from "@hatchlight/core";
+import { safetensors, zip } from "@hatchlight/core/testing";
+import type { AssistantView } from "@hatchlight/core/types";
 import {
 	createApp,
 	createRuntime,
@@ -96,8 +96,8 @@ const download = async (url: string) =>
 
 async function setup(options: Partial<RuntimeOptions> = {}) {
 	// A nested path that does not exist yet, as on a first run.
-	const root = await mkdtemp(join(tmpdir(), "open-reel-server-"));
-	const dir = join(root, "data", "open-reel");
+	const root = await mkdtemp(join(tmpdir(), "hatchlight-server-"));
+	const dir = join(root, "data", "hatchlight");
 	const provider = new FakeProvider();
 	const runtime: Runtime = await createRuntime({
 		dataDir: dir,
@@ -300,17 +300,17 @@ test("a second process cannot take over a data directory in use", async () => {
 });
 
 test("a lock left by a dead process is taken over", async () => {
-	const root = await mkdtemp(join(tmpdir(), "open-reel-lock-"));
-	await Bun.write(join(root, "open-reel.lock"), "2147483646");
+	const root = await mkdtemp(join(tmpdir(), "hatchlight-lock-"));
+	await Bun.write(join(root, "hatchlight.lock"), "2147483646");
 	const runtime = await createRuntime({
 		dataDir: root,
 		providers: [new FakeProvider()],
 	});
-	expect(await Bun.file(join(root, "open-reel.lock")).text()).toBe(
+	expect(await Bun.file(join(root, "hatchlight.lock")).text()).toBe(
 		String(process.pid),
 	);
 	runtime.close();
-	expect(await Bun.file(join(root, "open-reel.lock")).exists()).toBe(false);
+	expect(await Bun.file(join(root, "hatchlight.lock")).exists()).toBe(false);
 	await rm(root, { recursive: true });
 });
 

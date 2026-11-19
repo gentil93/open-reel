@@ -2,7 +2,7 @@ import type {
 	EngineEvent,
 	JobView,
 	LocalModelEvent,
-} from "@open-reel/core/types";
+} from "@hatchlight/core/types";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useSyncExternalStore } from "react";
 import type { SessionDetail } from "./api";

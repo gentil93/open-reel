@@ -1,14 +1,14 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import {
 	createTools,
 	type Reel,
 	SpendGuard,
 	TOOLS_INSTRUCTIONS,
 	type ToolResult,
-} from "@open-reel/tools";
+} from "@hatchlight/tools";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
-export { bestLocalModel } from "@open-reel/tools";
+export { bestLocalModel } from "@hatchlight/tools";
 
 export interface McpOptions {
 	/**
@@ -36,12 +36,12 @@ function asMcp(result: ToolResult): CallToolResult {
 }
 
 /**
- * Serves open-reel's tools over MCP, to agents the person runs themselves:
+ * Serves Hatchlight's tools over MCP, to agents the person runs themselves:
  * they may also name files on this computer.
  */
 export function createMcpServer(reel: Reel, options: McpOptions): McpServer {
 	const server = new McpServer(
-		{ name: "open-reel", version: options.version ?? "0.0.0" },
+		{ name: "hatchlight", version: options.version ?? "0.0.0" },
 		{ instructions: TOOLS_INSTRUCTIONS },
 	);
 	const tools = createTools(reel, {

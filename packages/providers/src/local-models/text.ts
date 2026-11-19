@@ -1,4 +1,4 @@
-import type { LocalModelFile, LocalModelSpec } from "@open-reel/core";
+import type { LocalModelFile, LocalModelSpec } from "@hatchlight/core";
 import { APACHE_2, GB, SHARED } from "./shared";
 
 /** One of Z-Image's files, as the model the translator runs. */

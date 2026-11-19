@@ -42,7 +42,7 @@ export async function treeSize(path: string): Promise<number> {
 	return total;
 }
 
-/** Names that only matter to the open-reel that made them, now. */
+/** Names that only matter to the Hatchlight that made them, now. */
 function passing(name: string): boolean {
 	return (
 		name.endsWith(".lock") ||

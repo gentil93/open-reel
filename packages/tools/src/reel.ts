@@ -6,12 +6,12 @@ import type {
 	ProviderStatus,
 	Session,
 	TurnView,
-} from "@open-reel/core/types";
+} from "@hatchlight/core/types";
 
 export type SessionDetail = Session & { turns: TurnView[] };
 
 /**
- * What the tools need from open-reel. An agent outside reaches it over HTTP;
+ * What the tools need from Hatchlight. An agent outside reaches it over HTTP;
  * the assistant inside the app reaches it in the same process.
  */
 export interface Reel {

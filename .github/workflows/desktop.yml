@@ -55,10 +55,10 @@ jobs:
           # local build without the key still produces the installers.
           args: ${{ matrix.args }} --config src-tauri/tauri.release.conf.json
           tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
-          releaseName: open-reel ${{ github.ref_name }}
+          releaseName: Hatchlight ${{ github.ref_name }}
           releaseDraft: true
       - uses: actions/upload-artifact@v4
         with:
-          name: open-reel-${{ matrix.os }}-${{ matrix.rust-target || 'native' }}
+          name: hatchlight-${{ matrix.os }}-${{ matrix.rust-target || 'native' }}
           path: apps/desktop/src-tauri/target/**/release/bundle/
           if-no-files-found: error

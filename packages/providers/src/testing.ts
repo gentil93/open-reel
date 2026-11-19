@@ -2,7 +2,7 @@ import type {
 	ModelSpec,
 	ProviderAdapter,
 	ProviderEvent,
-} from "@open-reel/core";
+} from "@hatchlight/core";
 
 export interface Call {
 	url: string;

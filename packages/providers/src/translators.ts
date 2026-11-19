@@ -4,7 +4,7 @@ import {
 	type ReplyOptions,
 	TRANSLATE_INSTRUCTIONS,
 	type Translator,
-} from "@open-reel/core";
+} from "@hatchlight/core";
 import { type Fetch, refusal, send } from "./http";
 
 /**
@@ -79,7 +79,7 @@ export class CloudTranslator implements Translator, LanguageModel {
 			return answer;
 		}
 		throw new CodedError(
-			`${NAMES[this.service]} has none of the models open-reel writes with`,
+			`${NAMES[this.service]} has none of the models Hatchlight writes with`,
 		);
 	}
 

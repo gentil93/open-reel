@@ -26,7 +26,7 @@ afterEach(async () => {
 });
 
 async function temp() {
-	const dir = await mkdtemp(join(tmpdir(), "open-reel-agents-"));
+	const dir = await mkdtemp(join(tmpdir(), "hatchlight-agents-"));
 	dirs.push(dir);
 	return dir;
 }
@@ -40,7 +40,7 @@ async function claude(installed = true) {
 		code: {
 			command: "/usr/bin/bun",
 			args: ["/src/cli.ts", "mcp"],
-			env: { OPEN_REEL_MODELS_DIR: "/models" },
+			env: { HATCHLIGHT_MODELS_DIR: "/models" },
 		},
 		desktop: { command: "wsl.exe", args: ["-d", "Ubuntu", "-e", "bun"] },
 		claudeDesktopConfig: config,
@@ -50,7 +50,7 @@ async function claude(installed = true) {
 	return { agents: new Agents(async () => setup), config, folder, read };
 }
 
-test("Claude Desktop gets open-reel next to what it already had", async () => {
+test("Claude Desktop gets Hatchlight next to what it already had", async () => {
 	const { agents, config, read } = await claude();
 	await writeFile(
 		config,
@@ -69,16 +69,16 @@ test("Claude Desktop gets open-reel next to what it already had", async () => {
 		theme: "dark",
 		mcpServers: {
 			other: { command: "other" },
-			"open-reel": { command: "wsl.exe", args: ["-d", "Ubuntu", "-e", "bun"] },
+			hatchlight: { command: "wsl.exe", args: ["-d", "Ubuntu", "-e", "bun"] },
 		},
 	});
-	// What was there before open-reel is kept beside it.
-	expect(await readFile(`${config}.before-open-reel`, "utf8")).toContain(
+	// What was there before Hatchlight is kept beside it.
+	expect(await readFile(`${config}.before-hatchlight`, "utf8")).toContain(
 		'"theme":"dark"',
 	);
 
 	await agents.connectClaudeDesktop({ allowPaid: true, spendLimitUsd: 5 });
-	expect((await read()).mcpServers["open-reel"].args.slice(-3)).toEqual([
+	expect((await read()).mcpServers["hatchlight"].args.slice(-3)).toEqual([
 		"--allow-paid",
 		"--spend-limit",
 		"5",
@@ -131,7 +131,7 @@ test("the settings keep their permissions, and a link stays a link", async () =>
 	await agents.connectClaudeDesktop({ allowPaid: false, spendLimitUsd: null });
 	expect((await stat(real)).mode & 0o777).toBe(0o600);
 	expect(JSON.parse(await readFile(real, "utf8")).mcpServers).toHaveProperty(
-		"open-reel",
+		"hatchlight",
 	);
 	expect((await lstat(config)).isSymbolicLink()).toBe(true);
 });
@@ -151,11 +151,11 @@ test("Claude Code gets a command to run, keeping where models are", async () => 
 		"claude",
 		"mcp",
 		"add",
-		"open-reel",
+		"hatchlight",
 		"--scope",
 		"user",
 		"-e",
-		"OPEN_REEL_MODELS_DIR=/models",
+		"HATCHLIGHT_MODELS_DIR=/models",
 		"--",
 		"/usr/bin/bun",
 		"/src/cli.ts",
@@ -185,7 +185,7 @@ test("each system's Claude Desktop settings are found where it keeps them", asyn
 	);
 	const linux = await agentsSetup({
 		platform: "linux",
-		env: { OPEN_REEL_MODELS_DIR: "models" },
+		env: { HATCHLIGHT_MODELS_DIR: "models" },
 		home: "/home/a",
 		dataDir: "./data",
 	});
@@ -198,7 +198,7 @@ test("each system's Claude Desktop settings are found where it keeps them", asyn
 		"--data-dir",
 		resolve("./data"),
 	]);
-	expect(linux.code.env).toEqual({ OPEN_REEL_MODELS_DIR: resolve("models") });
+	expect(linux.code.env).toEqual({ HATCHLIGHT_MODELS_DIR: resolve("models") });
 	expect(linux.desktop).toEqual(linux.code);
 });
 
@@ -219,29 +219,29 @@ test("Claude from the Microsoft Store is set up in its own package", async () =>
 });
 
 test("a Windows installation is offered to Claude Code inside WSL too", async () => {
-	expect(wslPath("C:\\Users\\a\\open-reel.exe")).toBe(
-		"/mnt/c/Users/a/open-reel.exe",
+	expect(wslPath("C:\\Users\\a\\hatchlight.exe")).toBe(
+		"/mnt/c/Users/a/hatchlight.exe",
 	);
-	expect(wslPath("\\\\server\\share\\open-reel.exe")).toBeNull();
+	expect(wslPath("\\\\server\\share\\hatchlight.exe")).toBeNull();
 	const windows = await agentsSetup({
 		platform: "win32",
 		env: {
 			APPDATA: "C:\\Users\\a\\AppData\\Roaming",
 			LOCALAPPDATA: "C:\\nowhere",
-			OPEN_REEL_MODELS_DIR: "D:\\models",
+			HATCHLIGHT_MODELS_DIR: "D:\\models",
 		},
-		program: "C:\\Program Files\\open-reel\\open-reel.exe",
+		program: "C:\\Program Files\\hatchlight\\hatchlight.exe",
 	});
 	expect(windows.codeInWsl?.command).toBe(
-		"/mnt/c/Program Files/open-reel/open-reel.exe",
+		"/mnt/c/Program Files/hatchlight/hatchlight.exe",
 	);
 	// Its arguments and settings stay Windows paths: the Windows program reads them.
 	expect(windows.codeInWsl?.args).toEqual(windows.code.args);
-	expect(windows.codeInWsl?.env?.WSLENV).toBe("OPEN_REEL_MODELS_DIR");
+	expect(windows.codeInWsl?.env?.WSLENV).toBe("HATCHLIGHT_MODELS_DIR");
 	const share = await agentsSetup({
 		platform: "win32",
 		env: { APPDATA: "C:\\a", LOCALAPPDATA: "C:\\b" },
-		program: "\\\\server\\share\\open-reel.exe",
+		program: "\\\\server\\share\\hatchlight.exe",
 	});
 	expect(share.codeInWsl).toBeUndefined();
 });

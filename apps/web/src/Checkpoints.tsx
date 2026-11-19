@@ -1,4 +1,4 @@
-import type { CheckpointInfo } from "@open-reel/core/types";
+import type { CheckpointInfo } from "@hatchlight/core/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { ApiError, api } from "./api";

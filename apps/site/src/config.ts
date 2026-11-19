@@ -8,7 +8,7 @@ export const LINKS: {
 	repository: string | null;
 	releases: string | null;
 } = {
-	site: "https://gentil93.github.io/open-reel/",
-	repository: "https://github.com/gentil93/open-reel",
+	site: "https://hatchlight.app/",
+	repository: "https://github.com/hatchlight/hatchlight",
 	releases: null,
 };

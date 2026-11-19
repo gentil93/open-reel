@@ -1,6 +1,6 @@
 # Security
 
-open-reel keeps API keys and private pictures on people's computers, so
+Hatchlight keeps API keys and private pictures on people's computers, so
 security problems matter a lot to us.
 
 ## Report a problem
@@ -15,7 +15,7 @@ unless you prefer otherwise.
 
 ## What counts
 
-Anything that lets someone other than the person running open-reel read their
+Anything that lets someone other than the person running Hatchlight read their
 keys, pictures or prompts, run code on their computer, or make requests with
 their keys. For example: another website reaching the local server, a crafted
 model download or engine running something it should not, a key sent to the

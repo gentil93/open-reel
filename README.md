@@ -1,4 +1,4 @@
-# open-reel
+# Hatchlight
 
 One interface for many image and video generation models. Open source, runs on
 your computer, and uses your own API keys or models that run on your own
@@ -8,7 +8,7 @@ graphics card.
   each result with its time and cost.
 - **Iterate like a conversation.** Any image can become the reference for your
   next prompt, or the first frame of a video.
-- **Run models on your computer.** open-reel looks at your hardware, picks the
+- **Run models on your computer.** Hatchlight looks at your hardware, picks the
   engine and the version of each model that fits it, downloads and checks the
   files, and runs them. Free, private, and offline once downloaded.
 - **Keep everything.** Every result is saved on your computer with the prompt
@@ -29,13 +29,13 @@ welcome: see [Translate](CONTRIBUTING.md#translate).
 ## Install
 
 **Desktop app** (Windows, macOS, Linux): installers will be published on the
-[releases page](https://github.com/gentil93/open-reel/releases). Until the
+[releases page](https://github.com/hatchlight/hatchlight/releases). Until the
 first release, run it from source.
 
 **From source**, with [Bun](https://bun.sh) 1.4 or newer:
 
 ```sh
-git clone https://github.com/gentil93/open-reel.git && cd open-reel
+git clone https://github.com/hatchlight/hatchlight.git && cd hatchlight
 bun install
 bun run build
 bun run start
@@ -50,17 +50,17 @@ environment: `FAL_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`,
 
 ## Use it from an AI agent
 
-`open-reel mcp` lets an agent that speaks the
+`hatchlight mcp` lets an agent that speaks the
 [Model Context Protocol](https://modelcontextprotocol.io), such as Claude Code
 or Claude Desktop, make pictures and videos with your models: list them,
 generate and compare, redraw a picture, upscale it, and search and save from
-your gallery. With Claude Code, from the open-reel folder:
+your gallery. With Claude Code, from the Hatchlight folder:
 
 ```sh
-claude mcp add open-reel -- bun "$PWD/packages/cli/src/index.ts" mcp
+claude mcp add hatchlight -- bun "$PWD/packages/cli/src/index.ts" mcp
 ```
 
-It uses the open-reel already running, or starts one that stops with the
+It uses the Hatchlight already running, or starts one that stops with the
 agent. By default only models on your computer are used, so it costs nothing;
 `--allow-paid --spend-limit 5` also lets it use your cloud keys, up to $5 per
 connection. Agents cannot install models: you do, in the app. See
@@ -71,19 +71,19 @@ connection. Agents cannot install models: you do, in the app. See
 Sessions, pictures, keys and models stay on your computer, in a directory
 readable only by you:
 
-| System  | Directory                                                |
-| ------- | -------------------------------------------------------- |
-| Windows | `%APPDATA%\open-reel`                                    |
-| macOS   | `~/Library/Application Support/open-reel`                |
-| Linux   | `$XDG_DATA_HOME/open-reel` or `~/.local/share/open-reel` |
+| System  | Directory                                                  |
+| ------- | ---------------------------------------------------------- |
+| Windows | `%APPDATA%\hatchlight`                                     |
+| macOS   | `~/Library/Application Support/hatchlight`                 |
+| Linux   | `$XDG_DATA_HOME/hatchlight` or `~/.local/share/hatchlight` |
 
-`OPEN_REEL_DATA_DIR` or `--data-dir` puts it elsewhere. Under WSL, models are
+`HATCHLIGHT_DATA_DIR` or `--data-dir` puts it elsewhere. Under WSL, models are
 kept on the Windows side, where the graphics card driver reads them fastest.
 
 Keys are sent only to the provider they belong to and are never returned by
 the API. The server listens on `127.0.0.1` only and refuses requests that do
 not come from its own page, so other websites cannot use your keys. Nothing is
-collected about you: open-reel has no telemetry.
+collected about you: Hatchlight has no telemetry.
 
 ## Contribute
 

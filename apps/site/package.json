@@ -1,5 +1,5 @@
 {
-	"name": "@open-reel/site",
+	"name": "@hatchlight/site",
 	"version": "0.0.0",
 	"private": true,
 	"type": "module",
@@ -13,8 +13,8 @@
 		"@fontsource/bricolage-grotesque": "5.3.0",
 		"@fontsource/ibm-plex-mono": "5.1.0",
 		"@fontsource/inter-tight": "5.1.0",
-		"@open-reel/motion": "workspace:*",
-		"@open-reel/i18n": "workspace:*",
+		"@hatchlight/motion": "workspace:*",
+		"@hatchlight/i18n": "workspace:*",
 		"gsap": "3.12.5"
 	},
 	"devDependencies": {

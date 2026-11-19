@@ -3,7 +3,7 @@ import {
 	type LoraInfo,
 	MAX_LORAS,
 	type ModelSpec,
-} from "@open-reel/core/types";
+} from "@hatchlight/core/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { api } from "./api";

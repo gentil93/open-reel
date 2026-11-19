@@ -60,7 +60,7 @@ export type CheckpointBase = (typeof CHECKPOINT_BASES)[number];
 
 /**
  * A whole model in one file, added by hand: a community fine-tune of a
- * family open-reel runs. It is offered as `local/ckpt-<id>`.
+ * family Hatchlight runs. It is offered as `local/ckpt-<id>`.
  */
 export interface CheckpointInfo {
 	id: string;
@@ -117,7 +117,7 @@ export const generationParamsSchema = z.object({
 export type GenerationParams = z.infer<typeof generationParamsSchema> & {
 	/**
 	 * The prompt as sent, in English, when the model reads only English and
-	 * the prompt was in another language. Set by open-reel, never asked for:
+	 * the prompt was in another language. Set by Hatchlight, never asked for:
 	 * `prompt` stays as written.
 	 */
 	translatedPrompt?: string;
