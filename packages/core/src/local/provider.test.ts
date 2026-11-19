@@ -319,8 +319,9 @@ describe("engine arguments", () => {
 			"/o.png",
 			async (p) => p,
 		);
-		expect(args[args.indexOf("--max-vram") + 1]).toBe("7");
-		expect(vramBudget(24 * 2 ** 30)).toBe(16);
+		expect(args[args.indexOf("--max-vram") + 1]).toBe("8");
+		expect(vramBudget(24 * 2 ** 30)).toBe(20);
+		expect(vramBudget(4 * 2 ** 30)).toBe(1);
 		// Not on the CPU, nor for a model that does not ask for it.
 		const cpu = await engineArguments(
 			runtime(pieces),

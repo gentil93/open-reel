@@ -199,12 +199,12 @@ export function roleOption(role: string): string {
 }
 
 /**
- * The GPU memory a model that runs in pieces may use, in whole GiB: two
- * thirds of the card, leaving the rest for the screen, other programs and
- * the engine's own buffers. 8 of a 12 GB card was measured to work.
+ * The GPU memory a model that runs in pieces may use, in whole GiB: all but
+ * 4 GiB, left for the screen, other programs and the engine's own buffers.
+ * 8 of a 12 GB card was measured to work.
  */
 export function vramBudget(gpuMemoryBytes: number): number {
-	return Math.max(1, Math.floor(((gpuMemoryBytes / 2 ** 30) * 2) / 3));
+	return Math.max(1, Math.round(gpuMemoryBytes / 2 ** 30) - 4);
 }
 
 /**
