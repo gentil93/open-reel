@@ -11,6 +11,7 @@ import {
 export const DEFAULT_SETTINGS: Settings = {
 	translateWith: "local",
 	improveWith: "auto",
+	assistantWith: "auto",
 };
 
 export interface SettingsStore {
@@ -42,6 +43,9 @@ export class FileSettingsStore implements SettingsStore {
 			improveWith: isImproveWith(mine.improveWith)
 				? mine.improveWith
 				: DEFAULT_SETTINGS.improveWith,
+			assistantWith: isImproveWith(mine.assistantWith)
+				? mine.assistantWith
+				: DEFAULT_SETTINGS.assistantWith,
 		};
 	}
 

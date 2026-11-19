@@ -32,11 +32,13 @@ export type Expected = Map<string, number>;
  * meanwhile see it; once it ends, what it really cost is counted.
  */
 export class SpendGuard {
-	/** Spent on turns that have ended. */
-	private spentUsd = 0;
 	private held = new Map<string, { usd: number; perJob: Expected }>();
 
-	constructor(readonly limitUsd: number | null) {}
+	/** `spentUsd`: already spent on turns that have ended. */
+	constructor(
+		readonly limitUsd: number | null,
+		private spentUsd = 0,
+	) {}
 
 	/** Spent, and held for turns still running. */
 	committed(): number {

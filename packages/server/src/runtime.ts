@@ -2,6 +2,8 @@ import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
+	assistantChoice,
+	type ChatModel,
 	FakeProvider,
 	FileKeyStore,
 	FileSettingsStore,
@@ -29,15 +31,21 @@ import {
 	builtinEngines,
 	builtinLocalModels,
 	builtinProviders,
+	CloudChatModel,
 	CloudTranslator,
 	type CloudTranslatorId,
 } from "@open-reel/providers";
+import { Assistant, type Reel } from "@open-reel/tools";
 
 export interface Runtime {
 	service: ReelService;
 	engine: JobEngine;
 	models: LocalModelStore;
 	settings: SettingsStore;
+	/** Makes and changes pictures by talking with the person. */
+	assistant: Assistant;
+	/** What the person's assistant thinks with now, or null. */
+	assistantBrain(ctx: UserContext): Promise<AssistantBrain>;
 	/** Whether the prompt translator on this computer is installed. */
 	translatorReady(): boolean;
 	/** A richer prompt for a short idea, written for the models named. */
@@ -61,6 +69,29 @@ export interface ImproveRequest {
 	editing: boolean;
 	/** The language the person reads, e.g. "pt-BR", to write the prompt in. */
 	language?: string;
+}
+
+export type AssistantBrain = "local" | CloudTranslatorId | null;
+
+/** open-reel as a person sees it, for the assistant in this process. */
+export function localReel(service: ReelService, ctx: UserContext): Reel {
+	return {
+		models: async () => service.listModels(),
+		providers: () => service.listProviders(ctx),
+		session: (id) => service.getSession(ctx, id),
+		createTurn: (input) => service.createTurn(ctx, input),
+		upload: (data) => service.uploadAsset(ctx, data),
+		gallery: ({ query, limit }) =>
+			service.listGallery(ctx, { query, limit: limit ?? 20 }),
+		async asset(id) {
+			const { asset, blob } = await service.getAssetFile(ctx, id);
+			return {
+				data: new Uint8Array(await blob.arrayBuffer()),
+				mime: asset.mime,
+			};
+		},
+		sessionUrl: (id) => `#/s/${encodeURIComponent(id)}`,
+	};
 }
 
 /** Another open-reel process is already using the data directory. */
@@ -121,6 +152,8 @@ export interface RuntimeOptions {
 	fetch?: (url: string, init?: RequestInit) => Promise<Response>;
 	/** Database migrations. Defaults to the ones in the source tree. */
 	migrationsDir?: string;
+	/** What the assistant thinks with, in place of the person's choice. */
+	assistantModel?: ChatModel;
 	/** Tries a freshly installed engine. Defaults to running it. */
 	checkEngine?: (executable: string) => Promise<string | null>;
 }
@@ -190,14 +223,18 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 	);
 	// One per service and key, so the jobs of a turn share a translation.
 	const clouds = new Map<string, CloudTranslator>();
+	const keyFor = async (ctx: UserContext, service: CloudTranslatorId) => {
+		const adapter = registry.adapter(service);
+		return (
+			(await keys.get(ctx, service)) ??
+			(adapter?.keyEnv ? process.env[adapter.keyEnv] : undefined)
+		);
+	};
 	const cloudFor = async (
 		ctx: UserContext,
 		service: CloudTranslatorId,
 	): Promise<CloudTranslator | null> => {
-		const adapter = registry.adapter(service);
-		const key =
-			(await keys.get(ctx, service)) ??
-			(adapter?.keyEnv ? process.env[adapter.keyEnv] : undefined);
+		const key = await keyFor(ctx, service);
 		if (!key) return null;
 		const id = `${service}:${key}`;
 		let cloud = clouds.get(id);
@@ -215,11 +252,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 		return cloudFor(ctx, translateWith);
 	};
 	const writerFor = async (ctx: UserContext): Promise<LanguageModel | null> => {
-		const services = ["openai", "google", "openrouter"] as const;
-		const reachable = new Set<CloudTranslatorId>();
-		for (const service of services) {
-			if (await cloudFor(ctx, service)) reachable.add(service);
-		}
+		const reachable = await reachableServices(ctx);
 		const choice = writerChoice(
 			await settings.get(ctx),
 			translatorReady,
@@ -227,6 +260,36 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 		);
 		if (choice === "local") return translator;
 		return choice ? cloudFor(ctx, choice) : null;
+	};
+	const services = ["openai", "google", "openrouter"] as const;
+	const reachableServices = async (ctx: UserContext) => {
+		const reachable = new Set<CloudTranslatorId>();
+		for (const service of services) {
+			if (await keyFor(ctx, service)) reachable.add(service);
+		}
+		return reachable;
+	};
+	const brainChoice = async (ctx: UserContext): Promise<AssistantBrain> => {
+		const reachable = await reachableServices(ctx);
+		return assistantChoice(await settings.get(ctx), translatorReady, (s) =>
+			reachable.has(s),
+		);
+	};
+	// One per service and key: each keeps the model name that answered.
+	const brains = new Map<string, CloudChatModel>();
+	const brainFor = async (ctx: UserContext): Promise<ChatModel | null> => {
+		const choice = await brainChoice(ctx);
+		if (choice === "local") return translator;
+		if (!choice) return null;
+		const key = await keyFor(ctx, choice);
+		if (!key) return null;
+		const id = `${choice}:${key}`;
+		let brain = brains.get(id);
+		if (!brain) {
+			brain = new CloudChatModel(choice, key, options.fetch);
+			brains.set(id, brain);
+		}
+		return brain;
 	};
 	const engine = new JobEngine({
 		repo,
@@ -236,11 +299,23 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 		translator: translatorFor,
 	});
 	const service = new ReelService({ repo, assets, registry, keys, engine });
+	const assistant = new Assistant({
+		store: {
+			add: (ctx, entry) => repo.addEntry(entry, ctx.userId),
+			update: (ctx, id, body) => repo.updateEntry(ctx, id, body),
+			list: (ctx, sessionId) => repo.listEntries(ctx, sessionId),
+		},
+		reel: (ctx) => localReel(service, ctx),
+		brain: async (ctx) => options.assistantModel ?? brainFor(ctx),
+		startSession: (ctx, title) => service.startSession(ctx, title),
+	});
 	return {
 		service,
 		engine,
 		models,
 		settings,
+		assistant,
+		assistantBrain: brainChoice,
 		translatorReady: () => translatorReady,
 		improvePrompt: async (ctx, request, signal) => {
 			const writer = await writerFor(ctx);

@@ -6,7 +6,12 @@ import {
 	text,
 } from "drizzle-orm/sqlite-core";
 import type { ErrorParams } from "../errors";
-import type { AssetKind, GenerationParams, JobStatus } from "../types";
+import type {
+	AssetKind,
+	AssistantEntryBody,
+	GenerationParams,
+	JobStatus,
+} from "../types";
 
 export const sessions = sqliteTable(
 	"sessions",
@@ -84,4 +89,19 @@ export const assets = sqliteTable(
 		index("assets_user_kind_created").on(t.userId, t.kind, t.createdAt),
 		index("assets_job").on(t.jobId),
 	],
+);
+
+/** What a person and the assistant said in a session, in order. */
+export const messages = sqliteTable(
+	"messages",
+	{
+		id: text("id").primaryKey(),
+		sessionId: text("session_id")
+			.notNull()
+			.references(() => sessions.id, { onDelete: "cascade" }),
+		userId: text("user_id").notNull(),
+		body: text("body", { mode: "json" }).$type<AssistantEntryBody>().notNull(),
+		createdAt: integer("created_at").notNull(),
+	},
+	(t) => [index("messages_session_created").on(t.sessionId, t.createdAt)],
 );

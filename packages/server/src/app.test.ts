@@ -3,17 +3,21 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+	type ChatModel,
+	type ChatReply,
 	CodedError,
 	FakeProvider,
 	type LocalEngineSpec,
 	type LocalModelSpec,
 } from "@open-reel/core";
 import { zip } from "@open-reel/core/testing";
+import type { AssistantView } from "@open-reel/core/types";
 import {
 	createApp,
 	createRuntime,
 	DataDirInUseError,
 	type Runtime,
+	type RuntimeOptions,
 } from "./index";
 
 const cleanups: (() => Promise<void>)[] = [];
@@ -90,7 +94,7 @@ const download = async (url: string) =>
 		url.endsWith(".png") ? PNG : url.endsWith(".zip") ? ENGINE : WEIGHTS,
 	);
 
-async function setup() {
+async function setup(options: Partial<RuntimeOptions> = {}) {
 	// A nested path that does not exist yet, as on a first run.
 	const root = await mkdtemp(join(tmpdir(), "open-reel-server-"));
 	const dir = join(root, "data", "open-reel");
@@ -110,6 +114,7 @@ async function setup() {
 		// The test engine is not a real program.
 		checkEngine: async () => null,
 		fetch: download,
+		...options,
 	});
 	cleanups.push(async () => {
 		await runtime.engine.idle();
@@ -548,4 +553,76 @@ test("settings keep what improves prompts, and refuse what is not a choice", asy
 		translateWith: "local",
 		improveWith: "openai",
 	});
+});
+
+test("the assistant answers in a session, and asks before paying", async () => {
+	const replies: ChatReply[] = [
+		{
+			text: "",
+			toolCalls: [
+				{
+					id: "c1",
+					name: "generate",
+					arguments: { prompt: "a red fox", models: ["fake/alpha"] },
+				},
+			],
+		},
+		{ text: "Aqui está.", toolCalls: [] },
+	];
+	const brain: ChatModel = {
+		vision: false,
+		chat: async () => replies.shift() ?? { text: "", toolCalls: [] },
+	};
+	const { call, post, runtime } = await setup({ assistantModel: brain });
+	const view = async (id: string) => {
+		for (let i = 0; i < 200; i++) {
+			const body = (await (
+				await call(`/api/sessions/${id}/assistant`)
+			).json()) as AssistantView;
+			if (!body.busy) return body;
+			await Bun.sleep(10);
+		}
+		throw new Error("still busy");
+	};
+
+	expect((await post("/api/assistant/messages", { text: " " })).status).toBe(
+		400,
+	);
+	const sent = await post("/api/assistant/messages", {
+		text: "uma raposa",
+		language: "pt-BR",
+	});
+	expect(sent.status).toBe(202);
+	const { sessionId } = (await sent.json()) as { sessionId: string };
+	// The fake models cost money: the person is asked first.
+	const asked = (await view(sessionId)).entries.at(-1);
+	expect(asked?.confirm).toMatchObject({ usd: 0.01, state: "asked" });
+
+	const yes = await post(`/api/sessions/${sessionId}/assistant/answers`, {
+		entryId: asked?.id,
+		approve: true,
+	});
+	expect(yes.status).toBe(202);
+	const done = await view(sessionId);
+	await runtime.engine.idle();
+	expect(done.entries.at(-1)?.message).toMatchObject({ text: "Aqui está." });
+	const turnId = done.entries.find((e) => e.id === asked?.id)?.turnId;
+	const session = (await (await call(`/api/sessions/${sessionId}`)).json()) as {
+		turns: { id: string; prompt: string }[];
+	};
+	expect(session.turns).toEqual([
+		expect.objectContaining({ id: turnId, prompt: "a red fox" }),
+	]);
+	expect(done.spentUsd).toBeCloseTo(0.01);
+
+	// Answered already; and a session that is not there is not found.
+	expect(
+		(
+			await post(`/api/sessions/${sessionId}/assistant/answers`, {
+				entryId: asked?.id,
+				approve: true,
+			})
+		).status,
+	).toBe(404);
+	expect((await call("/api/sessions/ses_none/assistant")).status).toBe(404);
 });

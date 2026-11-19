@@ -112,6 +112,7 @@
       "dependencies": {
         "@open-reel/core": "workspace:*",
         "@open-reel/providers": "workspace:*",
+        "@open-reel/tools": "workspace:*",
         "hono": "^4.0.0",
       },
     },

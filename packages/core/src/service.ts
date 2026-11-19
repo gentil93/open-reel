@@ -165,6 +165,20 @@ export class ReelService {
 		return { ...session, turns: await this.deps.repo.listTurns(ctx, id) };
 	}
 
+	/** An empty session, for a conversation that starts with words. */
+	async startSession(ctx: UserContext, title: string): Promise<Session> {
+		const now = Date.now();
+		const session: Session = {
+			id: newId("ses"),
+			userId: ctx.userId,
+			title: title.slice(0, 80),
+			createdAt: now,
+			updatedAt: now,
+		};
+		await this.deps.repo.createSession(session);
+		return session;
+	}
+
 	async deleteSession(ctx: UserContext, id: string): Promise<void> {
 		const session = await this.getSession(ctx, id);
 		for (const job of session.turns.flatMap((turn) => turn.jobs)) {

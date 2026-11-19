@@ -1,0 +1,653 @@
+import {
+	type ChatMessage,
+	type ChatModel,
+	type ChatPart,
+	CodedError,
+	NotFoundError,
+	newId,
+	type ToolCall,
+	type ToolSpec,
+	ValidationError,
+} from "@open-reel/core";
+import type {
+	AssistantEntry,
+	AssistantEntryBody,
+	AssistantView,
+	ModelSpec,
+	UserContext,
+} from "@open-reel/core/types";
+import { z } from "zod";
+import type { Reel } from "./reel";
+import { estimate, isLocal, SpendGuard } from "./spend";
+import {
+	createTools,
+	TOOLS_INSTRUCTIONS,
+	type Tool,
+	type ToolResult,
+} from "./tools";
+
+/**
+ * The assistant inside the app: a language model that makes and changes
+ * pictures for a person by talking with them, through the same tools an
+ * agent outside uses. Each session holds one conversation, kept with it.
+ * Models on this computer are used freely; a paid one waits for the
+ * person's yes, within a limit per conversation.
+ */
+
+export interface AssistantStore {
+	add(ctx: UserContext, entry: AssistantEntry): Promise<void>;
+	update(ctx: UserContext, id: string, body: AssistantEntryBody): Promise<void>;
+	list(ctx: UserContext, sessionId: string): Promise<AssistantEntry[]>;
+}
+
+export interface AssistantOptions {
+	store: AssistantStore;
+	/** open-reel as a person sees it. */
+	reel(ctx: UserContext): Reel;
+	/** What the person's assistant thinks with, or null when nothing can. */
+	brain(ctx: UserContext): Promise<ChatModel | null>;
+	/** An empty session, for a conversation that starts with words. */
+	startSession(ctx: UserContext, title: string): Promise<{ id: string }>;
+	/** What paid models may cost in one conversation. */
+	limitUsd?: number;
+	/** Model turns for one message of the person, so a loop cannot run on. */
+	maxSteps?: number;
+	waitMs?: number;
+	pollMs?: number;
+}
+
+export interface AssistantEvent {
+	type: "assistant.changed";
+	sessionId: string;
+}
+
+/** The person's message, or their answer to a paid generation. */
+export interface SendInput {
+	/** Without one, a new session is started. */
+	sessionId?: string;
+	text: string;
+	/** The language the person reads, such as "pt-BR". */
+	language?: string;
+}
+
+export const DEFAULT_LIMIT_USD = 2;
+const DEFAULT_MAX_STEPS = 12;
+/** Tools that work in a session: always the conversation's. */
+const IN_SESSION = new Set(["generate", "upscale", "job_status"]);
+
+interface Work {
+	controller: AbortController;
+	turnId: string | null;
+}
+
+/** What the language model is told before the conversation. */
+export function assistantInstructions(language?: string): string {
+	let reader = "the language the person writes in";
+	if (language) {
+		try {
+			reader =
+				new Intl.DisplayNames(["en"], { type: "language" }).of(language) ??
+				language;
+		} catch {
+			reader = language;
+		}
+	}
+	return [
+		"You are the assistant inside open-reel, an app that makes pictures and videos. The person talks with you to make pictures and change them; you do it with the tools.",
+		`- Always write to the person in ${reader}. Keep it short: a sentence or two. Do not describe a picture you have not seen.`,
+		"- Write each prompt for generate in English, as a full description of the picture: subject, setting, light, style. To change a picture, describe the whole new picture, not only the change.",
+		"- To change a picture made before, give its id (ast_…) in reference_images when the model can redraw pictures; otherwise make it again with a new prompt.",
+		"- Leave models out unless the person names one: the best free model on this computer is used. Use paid models only when the person asks; they are asked to approve the cost.",
+		"- Call list_models when the person asks what can be used, or names a model you do not know.",
+		"- The pictures you make appear to the person on their own: do not repeat their ids or links.",
+		TOOLS_INSTRUCTIONS,
+	].join("\n");
+}
+
+/** A tool as the language model is told about it, without the session. */
+export function toolSpec(tool: Tool): ToolSpec {
+	const schema = z.toJSONSchema(z.object(tool.input)) as {
+		properties?: Record<string, unknown>;
+		required?: string[];
+	} & Record<string, unknown>;
+	if (schema.properties) delete schema.properties.session_id;
+	if (schema.required) {
+		schema.required = schema.required.filter((key) => key !== "session_id");
+	}
+	delete schema.$schema;
+	return {
+		name: tool.name,
+		description: tool.description,
+		parameters: schema,
+	};
+}
+
+/**
+ * What the language model sees of the kept entries. Notes and errors are for
+ * the person; a call that never got its result (stopped, or answered no)
+ * gets one, as every service requires.
+ */
+export function conversation(entries: AssistantEntry[]): ChatMessage[] {
+	const out: ChatMessage[] = [];
+	let open: ToolCall[] = [];
+	const close = () => {
+		for (const call of open) {
+			out.push({
+				role: "tool",
+				callId: call.id,
+				name: call.name,
+				content: [
+					{ type: "text", text: "Stopped by the person before it ran." },
+				],
+			});
+		}
+		open = [];
+	};
+	for (const entry of entries) {
+		if (entry.error || entry.note) continue;
+		const { message } = entry;
+		if (message.role === "tool") {
+			open = open.filter((call) => call.id !== message.callId);
+			out.push(message);
+			continue;
+		}
+		close();
+		if (message.role === "assistant") {
+			if (!message.text && message.toolCalls.length === 0) continue;
+			open = [...message.toolCalls];
+		}
+		out.push(message);
+	}
+	close();
+	return out;
+}
+
+const errorText = (error: unknown) =>
+	error instanceof Error ? error.message : String(error);
+
+/** What a tool's result says to the language model. */
+function resultMessage(
+	call: { id: string; name: string },
+	result: ToolResult,
+	vision: boolean,
+): Extract<ChatMessage, { role: "tool" }> {
+	const content: ChatPart[] = [
+		{
+			type: "text",
+			text: result.isError ? `Error: ${result.text}` : result.text,
+		},
+	];
+	if (vision) {
+		for (const image of result.images) {
+			content.push({ type: "image", ...image });
+		}
+	}
+	return { role: "tool", callId: call.id, name: call.name, content };
+}
+
+/** Kept without pictures: they are large, and the turn holds them. */
+const withoutPictures = (message: ChatMessage): ChatMessage =>
+	message.role === "assistant"
+		? message
+		: {
+				...message,
+				content: message.content.filter((part) => part.type === "text"),
+			};
+
+/** An entry without what identifies it, to write it back changed. */
+function bodyOf(entry: AssistantEntry): AssistantEntryBody {
+	const { id, sessionId, createdAt, ...body } = entry;
+	return body;
+}
+
+export class Assistant {
+	private working = new Map<string, Work>();
+	private guards = new Map<string, SpendGuard>();
+	private listeners = new Set<
+		(userId: string, event: AssistantEvent) => void
+	>();
+	private limitUsd: number;
+	private maxSteps: number;
+
+	constructor(private options: AssistantOptions) {
+		this.limitUsd = options.limitUsd ?? DEFAULT_LIMIT_USD;
+		this.maxSteps = options.maxSteps ?? DEFAULT_MAX_STEPS;
+	}
+
+	subscribe(
+		listener: (userId: string, event: AssistantEvent) => void,
+	): () => void {
+		this.listeners.add(listener);
+		return () => this.listeners.delete(listener);
+	}
+
+	async view(ctx: UserContext, sessionId: string): Promise<AssistantView> {
+		const entries = await this.options.store.list(ctx, sessionId);
+		const guard = await this.guard(ctx, sessionId, entries);
+		const work = this.working.get(this.key(ctx, sessionId));
+		return {
+			entries,
+			busy: work != null,
+			turnId: work?.turnId ?? null,
+			spentUsd: guard.committed(),
+			limitUsd: this.limitUsd,
+		};
+	}
+
+	/** Takes the person's message and starts answering it. */
+	async send(
+		ctx: UserContext,
+		input: SendInput,
+	): Promise<{ sessionId: string }> {
+		const text = input.text.trim();
+		if (!text) throw new ValidationError("Write something first");
+		const brain = await this.needBrain(ctx);
+		const sessionId =
+			input.sessionId ?? (await this.options.startSession(ctx, text)).id;
+		if (input.sessionId) await this.options.reel(ctx).session(sessionId);
+		const work = this.claim(ctx, sessionId);
+		try {
+			const entries = await this.options.store.list(ctx, sessionId);
+			// Paid generations still waiting: the person moved on.
+			for (const entry of entries) {
+				if (entry.confirm?.state === "asked") {
+					await this.decide(
+						ctx,
+						entry,
+						"The person wrote again instead of approving; nothing was made.",
+					);
+				}
+			}
+			await this.add(ctx, sessionId, {
+				message: { role: "user", content: [{ type: "text", text }] },
+			});
+		} catch (error) {
+			this.release(ctx, sessionId);
+			throw error;
+		}
+		this.run(ctx, sessionId, work, brain, input.language);
+		return { sessionId };
+	}
+
+	/** The person's yes or no to a paid generation the assistant asked for. */
+	async answer(
+		ctx: UserContext,
+		sessionId: string,
+		entryId: string,
+		approve: boolean,
+		language?: string,
+	): Promise<void> {
+		const work = this.claim(ctx, sessionId);
+		let entry: AssistantEntry;
+		let brain: ChatModel | null;
+		let othersWaiting: boolean;
+		try {
+			const entries = await this.options.store.list(ctx, sessionId);
+			const found = entries.find((e) => e.id === entryId);
+			if (found?.confirm?.state !== "asked") {
+				throw new NotFoundError(
+					"Nothing is waiting for an answer there",
+					"confirmNotWaiting",
+				);
+			}
+			entry = found;
+			brain = approve
+				? await this.needBrain(ctx)
+				: await this.options.brain(ctx);
+			if (!approve) {
+				await this.decide(
+					ctx,
+					entry,
+					"The person said no to the cost; nothing was made. Do not use paid models again unless they ask.",
+				);
+			}
+			othersWaiting = entries.some(
+				(e) => e.id !== entryId && e.confirm?.state === "asked",
+			);
+		} catch (error) {
+			this.release(ctx, sessionId);
+			throw error;
+		}
+		// The model goes on once nothing waits for the person any more.
+		const next = othersWaiting ? null : brain;
+		if (!approve && !next) {
+			this.release(ctx, sessionId);
+			return;
+		}
+		this.run(
+			ctx,
+			sessionId,
+			work,
+			next,
+			language,
+			approve ? (tools) => this.approved(ctx, work, tools, entry) : undefined,
+		);
+	}
+
+	/** Runs a paid generation the person said yes to. */
+	private async approved(
+		ctx: UserContext,
+		work: Work,
+		tools: Tool[],
+		entry: AssistantEntry,
+	) {
+		const { confirm, message } = entry;
+		if (!confirm || message.role !== "tool") return;
+		const body = bodyOf(entry);
+		const yes = { ...confirm, state: "approved" as const };
+		await this.options.store.update(ctx, entry.id, { ...body, confirm: yes });
+		this.changed(ctx, entry.sessionId);
+		const call = {
+			id: message.callId,
+			name: message.name,
+			arguments: confirm.arguments,
+		};
+		const result = await this.call(ctx, entry.sessionId, work, tools, call);
+		await this.options.store.update(ctx, entry.id, {
+			...body,
+			confirm: yes,
+			message: withoutPictures(resultMessage(call, result, false)),
+			...(result.turnId && { turnId: result.turnId }),
+		});
+		this.changed(ctx, entry.sessionId);
+	}
+
+	/** Stops the assistant's work on a conversation; what it made stays. */
+	stop(ctx: UserContext, sessionId: string): void {
+		this.working.get(this.key(ctx, sessionId))?.controller.abort();
+	}
+
+	private key(ctx: UserContext, sessionId: string) {
+		return `${ctx.userId}\n${sessionId}`;
+	}
+
+	private claim(ctx: UserContext, sessionId: string): Work {
+		const key = this.key(ctx, sessionId);
+		if (this.working.has(key)) {
+			throw new ValidationError(
+				"The assistant is still working on this conversation",
+				"assistantBusy",
+			);
+		}
+		const work: Work = { controller: new AbortController(), turnId: null };
+		this.working.set(key, work);
+		this.changed(ctx, sessionId);
+		return work;
+	}
+
+	private release(ctx: UserContext, sessionId: string) {
+		this.working.delete(this.key(ctx, sessionId));
+		this.changed(ctx, sessionId);
+	}
+
+	private changed(ctx: UserContext, sessionId: string) {
+		for (const listener of this.listeners) {
+			listener(ctx.userId, { type: "assistant.changed", sessionId });
+		}
+	}
+
+	private async needBrain(ctx: UserContext): Promise<ChatModel> {
+		const brain = await this.options.brain(ctx);
+		if (!brain) {
+			throw new ValidationError(
+				"No language model to think with: install the one for this computer or add a key",
+				"noLanguageModel",
+			);
+		}
+		return brain;
+	}
+
+	/** The conversation's spending, with what its earlier turns cost. */
+	private async guard(
+		ctx: UserContext,
+		sessionId: string,
+		entries: AssistantEntry[],
+	): Promise<SpendGuard> {
+		const key = this.key(ctx, sessionId);
+		const known = this.guards.get(key);
+		if (known) return known;
+		const turns = new Set(entries.flatMap((e) => (e.turnId ? [e.turnId] : [])));
+		let spent = 0;
+		if (turns.size > 0) {
+			const detail = await this.options.reel(ctx).session(sessionId);
+			for (const turn of detail.turns) {
+				if (!turns.has(turn.id)) continue;
+				for (const job of turn.jobs) {
+					if (job.providerId !== "local") spent += job.costUsd ?? 0;
+				}
+			}
+		}
+		const guard = this.guards.get(key) ?? new SpendGuard(this.limitUsd, spent);
+		this.guards.set(key, guard);
+		return guard;
+	}
+
+	private async add(
+		ctx: UserContext,
+		sessionId: string,
+		body: AssistantEntryBody,
+	): Promise<AssistantEntry> {
+		const entry: AssistantEntry = {
+			...body,
+			message: withoutPictures(body.message),
+			id: newId("msg"),
+			sessionId,
+			createdAt: Date.now(),
+		};
+		await this.options.store.add(ctx, entry);
+		this.changed(ctx, sessionId);
+		return entry;
+	}
+
+	/** Says no to a paid generation that was waiting, telling the model why. */
+	private async decide(ctx: UserContext, entry: AssistantEntry, text: string) {
+		if (!entry.confirm || entry.message.role !== "tool") return;
+		await this.options.store.update(ctx, entry.id, {
+			...bodyOf(entry),
+			confirm: { ...entry.confirm, state: "declined" },
+			message: { ...entry.message, content: [{ type: "text", text }] },
+		});
+		this.changed(ctx, entry.sessionId);
+	}
+
+	/** Runs the work in the background; the conversation is busy meanwhile. */
+	private run(
+		ctx: UserContext,
+		sessionId: string,
+		work: Work,
+		brain: ChatModel | null,
+		language: string | undefined,
+		/** Runs first, before the model is asked. */
+		before?: (tools: Tool[]) => Promise<void>,
+	) {
+		void this.loop(ctx, sessionId, work, brain, language, before)
+			.catch((error) => console.error(error))
+			.finally(() => this.release(ctx, sessionId));
+	}
+
+	private async loop(
+		ctx: UserContext,
+		sessionId: string,
+		work: Work,
+		brain: ChatModel | null,
+		language: string | undefined,
+		before?: (tools: Tool[]) => Promise<void>,
+	) {
+		const { signal } = work.controller;
+		const reel = this.options.reel(ctx);
+		const say = async (body: Omit<AssistantEntryBody, "message">) => {
+			await this.add(ctx, sessionId, {
+				message: { role: "assistant", text: "", toolCalls: [] },
+				...body,
+			});
+		};
+		try {
+			const entries = await this.options.store.list(ctx, sessionId);
+			const guard = await this.guard(ctx, sessionId, entries);
+			const tools = createTools(reel, {
+				allowPaid: true,
+				spend: guard,
+				files: false,
+				waitMs: this.options.waitMs,
+				pollMs: this.options.pollMs,
+			});
+			if (before) await before(tools);
+			if (!brain || signal.aborted) {
+				if (signal.aborted) await say({ note: "stopped" });
+				return;
+			}
+			const specs = tools.map(toolSpec);
+			const messages = conversation(
+				await this.options.store.list(ctx, sessionId),
+			);
+			const instructions = assistantInstructions(language);
+			for (let step = 0; step < this.maxSteps; step++) {
+				const reply = await brain.chat(instructions, messages, specs, signal);
+				const said: ChatMessage = {
+					role: "assistant",
+					text: reply.text,
+					toolCalls: reply.toolCalls,
+				};
+				messages.push(said);
+				await this.add(ctx, sessionId, { message: said });
+				if (reply.toolCalls.length === 0) return;
+
+				let asked = false;
+				for (const call of reply.toolCalls) {
+					if (signal.aborted) break;
+					const cost = await this.paidCost(reel, call, guard);
+					if (cost) {
+						asked = true;
+						await this.add(ctx, sessionId, {
+							message: {
+								role: "tool",
+								callId: call.id,
+								name: call.name,
+								content: [
+									{
+										type: "text",
+										text: "Waiting for the person to approve the cost.",
+									},
+								],
+							},
+							confirm: {
+								arguments: call.arguments,
+								modelNames: cost.names,
+								usd: cost.usd,
+								state: "asked",
+							},
+						});
+						continue;
+					}
+					const result = await this.call(ctx, sessionId, work, tools, call);
+					const message = resultMessage(call, result, brain.vision);
+					messages.push(message);
+					await this.add(ctx, sessionId, {
+						message,
+						...(result.turnId && { turnId: result.turnId }),
+					});
+				}
+				if (signal.aborted) {
+					await say({ note: "stopped" });
+					return;
+				}
+				if (asked) return;
+			}
+			await say({ note: "tooManySteps" });
+		} catch (error) {
+			if (signal.aborted) {
+				await say({ note: "stopped" });
+				return;
+			}
+			await say({
+				error: {
+					message: errorText(error),
+					code: error instanceof CodedError ? (error.code ?? null) : null,
+				},
+			});
+		}
+	}
+
+	/** Runs one tool call, in the conversation's session. */
+	private async call(
+		ctx: UserContext,
+		sessionId: string,
+		work: Work,
+		tools: Tool[],
+		call: ToolCall,
+	): Promise<ToolResult> {
+		const tool = tools.find((t) => t.name === call.name);
+		if (!tool) {
+			return {
+				text: `There is no tool named ${call.name}.`,
+				images: [],
+				isError: true,
+			};
+		}
+		const args: Record<string, unknown> = { ...call.arguments };
+		if (IN_SESSION.has(tool.name)) args.session_id = sessionId;
+		try {
+			return await tool.run(args as never, {
+				signal: work.controller.signal,
+				progress: async () => {},
+				started: (turnId) => {
+					work.turnId = turnId;
+					this.changed(ctx, sessionId);
+				},
+			});
+		} catch (error) {
+			return { text: errorText(error), images: [], isError: true };
+		} finally {
+			if (work.turnId) {
+				work.turnId = null;
+				this.changed(ctx, sessionId);
+			}
+		}
+	}
+
+	/**
+	 * What a call would cost on paid models, when the person must approve it
+	 * first. A call that cannot run on them (unknown price, over the limit)
+	 * is not asked about: the tool says why.
+	 */
+	private async paidCost(
+		reel: Reel,
+		call: ToolCall,
+		guard: SpendGuard,
+	): Promise<{ names: string[]; usd: number } | null> {
+		if (call.name !== "generate" && call.name !== "upscale") return null;
+		const [models, providers] = await Promise.all([
+			reel.models(),
+			reel.providers(),
+		]);
+		const ready = new Set(
+			providers.filter((p) => p.hasKey || !p.requiresKey).map((p) => p.id),
+		);
+		const usable = models.filter((m) => ready.has(m.providerId));
+		const args = call.arguments;
+		let paid: ModelSpec[];
+		let count = 1;
+		let seconds: number | undefined;
+		if (call.name === "generate") {
+			const ids = Array.isArray(args.models) ? args.models : [];
+			paid = usable.filter((m) => ids.includes(m.id) && !isLocal(m));
+			if (typeof args.count === "number") count = args.count;
+			if (typeof args.duration_seconds === "number") {
+				seconds = args.duration_seconds;
+			}
+		} else {
+			const upscalers = usable.filter((m) => m.capabilities.upscale != null);
+			paid = upscalers.some(isLocal) ? [] : upscalers.slice(0, 1);
+		}
+		if (paid.length === 0) return null;
+		let usd = 0;
+		for (const model of paid) {
+			const one = estimate(model, count, seconds);
+			if (one == null) return null;
+			usd += one;
+		}
+		const left = guard.left();
+		if (left != null && usd > left) return null;
+		return { names: paid.map((m) => m.name), usd };
+	}
+}

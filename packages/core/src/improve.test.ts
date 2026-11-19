@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { CodedError } from "./errors";
 import {
+	assistantChoice,
 	improveInstructions,
 	improvePrompt,
 	type LanguageModel,
@@ -292,5 +293,38 @@ describe("what writes a fuller prompt", () => {
 				(service) => service === "openai",
 			),
 		).toBe("openai");
+	});
+});
+
+describe("what the assistant thinks with", () => {
+	const keys =
+		(...services: string[]) =>
+		(service: string) =>
+			services.includes(service);
+
+	test("automatic: a service with a key first, this computer after", () => {
+		const auto = { assistantWith: "auto", translateWith: "local" } as const;
+		expect(assistantChoice(auto, true, keys("google"))).toBe("google");
+		expect(assistantChoice(auto, true, keys())).toBe("local");
+		expect(assistantChoice(auto, false, keys())).toBeNull();
+	});
+
+	test("automatic prefers the service that translates", () => {
+		expect(
+			assistantChoice(
+				{ assistantWith: "auto", translateWith: "openrouter" },
+				true,
+				keys("openai", "openrouter"),
+			),
+		).toBe("openrouter");
+	});
+
+	test("a chosen one is used while it can be", () => {
+		const local = { assistantWith: "local", translateWith: "openai" } as const;
+		expect(assistantChoice(local, true, keys("openai"))).toBe("local");
+		expect(assistantChoice(local, false, keys("openai"))).toBeNull();
+		const google = { assistantWith: "google", translateWith: "local" } as const;
+		expect(assistantChoice(google, true, keys("google"))).toBe("google");
+		expect(assistantChoice(google, true, keys("openai"))).toBe("openai");
 	});
 });

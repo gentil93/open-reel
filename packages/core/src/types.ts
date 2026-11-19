@@ -590,4 +590,47 @@ export function isImproveWith(value: unknown): value is ImproveWith {
 export interface Settings {
 	translateWith: TranslateWith;
 	improveWith: ImproveWith;
+	/** What the assistant thinks with: same choices as improving. */
+	assistantWith: ImproveWith;
+}
+
+/**
+ * One entry of a session's conversation with the assistant. `message` is
+ * what its language model sees; the rest is for the person.
+ */
+export interface AssistantEntryBody {
+	message: import("./chat").ChatMessage;
+	/** A tool call that made pictures: the turn they are in. */
+	turnId?: string;
+	/** A paid generation waiting for the person's yes. */
+	confirm?: AssistantConfirm;
+	/** The assistant stopped on this; the code says it in the reader's language. */
+	error?: { message: string; code: string | null };
+	/** Something said to the person only, never to the language model. */
+	note?: "stopped" | "tooManySteps";
+}
+
+export interface AssistantConfirm {
+	/** The generate call to run on a yes. */
+	arguments: Record<string, unknown>;
+	modelNames: string[];
+	usd: number;
+	state: "asked" | "approved" | "declined";
+}
+
+export interface AssistantEntry extends AssistantEntryBody {
+	id: string;
+	sessionId: string;
+	createdAt: number;
+}
+
+/** A session's conversation, and whether the assistant is working on it. */
+export interface AssistantView {
+	entries: AssistantEntry[];
+	busy: boolean;
+	/** The turn a tool is making now, to show it while it develops. */
+	turnId: string | null;
+	/** Spent on paid models in this conversation, and its limit. */
+	spentUsd: number;
+	limitUsd: number;
 }

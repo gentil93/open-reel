@@ -35,6 +35,8 @@ export const ERROR_CODES = [
 	"noApiKey",
 	"noLanguageModel",
 	"localAssistantUnavailable",
+	"assistantBusy",
+	"confirmNotWaiting",
 	"improveFailed",
 	"noModel",
 	"needsPicture",

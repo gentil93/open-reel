@@ -15,11 +15,12 @@ import {
 	type UserContext,
 	ValidationError,
 } from "@open-reel/core";
+import type { Assistant } from "@open-reel/tools";
 import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
 import type { Agents } from "./agents";
-import type { ImproveRequest } from "./runtime";
+import type { AssistantBrain, ImproveRequest } from "./runtime";
 
 export interface AppOptions {
 	service: ReelService;
@@ -35,6 +36,10 @@ export interface AppOptions {
 	resolveUser?: (c: Context) => UserContext;
 	/** Connects AI agents to this installation; absent where it cannot. */
 	agents?: Agents;
+	/** Makes and changes pictures by talking; absent where it cannot. */
+	assistant?: Assistant;
+	/** What a person's assistant thinks with now. */
+	assistantBrain?: (ctx: UserContext) => Promise<AssistantBrain>;
 	/** A richer prompt for a short idea; absent where no model can write. */
 	improvePrompt?: (
 		ctx: UserContext,
@@ -51,10 +56,14 @@ const MAX_IDEA_LENGTH = 1000;
 /** More models than any composer offers at once. */
 const MAX_IDEA_MODELS = 50;
 
+/** The longest message a person may send the assistant. */
+const MAX_MESSAGE_LENGTH = 4000;
+
 /** Codes for a service the server relies on that failed: a bad gateway. */
 const UPSTREAM_CODES = new Set<ErrorCode>([
 	"connectionLost",
 	"improveFailed",
+	"localAssistantUnavailable",
 	"noConnection",
 	"providerBusy",
 ]);
@@ -227,6 +236,7 @@ export function createApp(options: AppOptions): Hono {
 		c.json(await service.getSession(user(c), c.req.param("id"))),
 	);
 	app.delete("/api/sessions/:id", async (c) => {
+		options.assistant?.stop(user(c), c.req.param("id"));
 		await service.deleteSession(user(c), c.req.param("id"));
 		return c.body(null, 204);
 	});
@@ -361,8 +371,19 @@ export function createApp(options: AppOptions): Hono {
 				`improveWith must be one of ${IMPROVE_WITH.join(", ")}`,
 			);
 		}
+		if (
+			body.assistantWith !== undefined &&
+			!isImproveWith(body.assistantWith)
+		) {
+			throw new ValidationError(
+				`assistantWith must be one of ${IMPROVE_WITH.join(", ")}`,
+			);
+		}
 		return c.json(
 			await options.settings.set(user(c), {
+				...(isImproveWith(body.assistantWith) && {
+					assistantWith: body.assistantWith,
+				}),
 				...(isTranslateWith(body.translateWith) && {
 					translateWith: body.translateWith,
 				}),
@@ -421,6 +442,85 @@ export function createApp(options: AppOptions): Hono {
 		);
 	});
 
+	// The assistant: one conversation per session, answered in the background;
+	// its progress comes as events.
+	const assistant = () => {
+		if (!options.assistant) throw new NotFoundError("No assistant here");
+		return options.assistant;
+	};
+	const languageOf = (value: unknown) => {
+		if (value === undefined) return undefined;
+		if (
+			typeof value !== "string" ||
+			!/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(value)
+		) {
+			throw new ValidationError(
+				"language must be a language code such as pt-BR",
+			);
+		}
+		return value;
+	};
+	app.get("/api/assistant", async (c) =>
+		c.json({
+			brain: options.assistantBrain
+				? await options.assistantBrain(user(c))
+				: null,
+		}),
+	);
+	app.post("/api/assistant/messages", async (c) => {
+		const body = await json(c);
+		const { text, sessionId } = body;
+		if (typeof text !== "string" || !text.trim()) {
+			throw new ValidationError("text must be some words");
+		}
+		if (text.length > MAX_MESSAGE_LENGTH) {
+			throw new ValidationError(
+				`text must be at most ${MAX_MESSAGE_LENGTH} characters`,
+			);
+		}
+		if (sessionId !== undefined && typeof sessionId !== "string") {
+			throw new ValidationError("sessionId must be a session id");
+		}
+		const language = languageOf(body.language);
+		return c.json(
+			await assistant().send(user(c), {
+				text,
+				...(sessionId !== undefined && { sessionId }),
+				...(language && { language }),
+			}),
+			202,
+		);
+	});
+	app.get("/api/sessions/:id/assistant", async (c) => {
+		const ctx = user(c);
+		// Someone else's session is not found.
+		await service.getSession(ctx, c.req.param("id"));
+		return c.json(await assistant().view(ctx, c.req.param("id")));
+	});
+	app.post("/api/sessions/:id/assistant/stop", async (c) => {
+		assistant().stop(user(c), c.req.param("id"));
+		return c.body(null, 204);
+	});
+	app.post("/api/sessions/:id/assistant/answers", async (c) => {
+		const body = await json(c);
+		const { entryId, approve } = body;
+		if (typeof entryId !== "string" || typeof approve !== "boolean") {
+			throw new ValidationError(
+				"entryId and approve (true or false) are needed",
+			);
+		}
+		const ctx = user(c);
+		await service.getSession(ctx, c.req.param("id"));
+		await assistant().answer(
+			ctx,
+			c.req.param("id"),
+			entryId,
+			approve,
+			languageOf(body.language),
+		);
+		return c.body(null, 202);
+	});
+
 	app.get("/api/events", (c) => {
 		const { userId } = user(c);
 		return streamSSE(c, async (stream) => {
@@ -433,9 +533,15 @@ export function createApp(options: AppOptions): Hono {
 				if (target === userId) send(event);
 			});
 			const unsubscribeModels = models.subscribe(send);
+			const unsubscribeAssistant = options.assistant?.subscribe(
+				(target, event) => {
+					if (target === userId) send(event);
+				},
+			);
 			const unsubscribe = () => {
 				unsubscribeJobs();
 				unsubscribeModels();
+				unsubscribeAssistant?.();
 			};
 			stream.onAbort(unsubscribe);
 			await stream.writeSSE({ event: "ready", data: "{}" });

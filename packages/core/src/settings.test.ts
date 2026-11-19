@@ -25,6 +25,7 @@ describe("settings", () => {
 		expect(await settings.get(ana)).toEqual({
 			translateWith: "local",
 			improveWith: "auto",
+			assistantWith: "auto",
 		});
 	});
 
@@ -33,18 +34,22 @@ describe("settings", () => {
 		expect(await settings.set(ana, { translateWith: "openai" })).toEqual({
 			translateWith: "openai",
 			improveWith: "auto",
+			assistantWith: "auto",
 		});
 		expect(await settings.set(ana, { improveWith: "local" })).toEqual({
 			translateWith: "openai",
 			improveWith: "local",
+			assistantWith: "auto",
 		});
 		expect(await settings.get(bia)).toEqual({
 			translateWith: "local",
 			improveWith: "auto",
+			assistantWith: "auto",
 		});
 		expect(await new FileSettingsStore(path).get(ana)).toEqual({
 			translateWith: "openai",
 			improveWith: "local",
+			assistantWith: "auto",
 		});
 	});
 
@@ -59,11 +64,13 @@ describe("settings", () => {
 		expect(await new FileSettingsStore(path).get(ana)).toEqual({
 			translateWith: "local",
 			improveWith: "auto",
+			assistantWith: "auto",
 		});
 		await writeFile(path, "not json");
 		expect(await new FileSettingsStore(path).get(ana)).toEqual({
 			translateWith: "local",
 			improveWith: "auto",
+			assistantWith: "auto",
 		});
 	});
 

@@ -24,6 +24,8 @@ export interface ToolResult {
 	images: ToolImage[];
 	/** The call could not do what was asked; `text` says why. */
 	isError?: boolean;
+	/** The turn the call made, when it made one. */
+	turnId?: string;
 }
 
 export interface ToolContext {
@@ -31,6 +33,8 @@ export interface ToolContext {
 	signal: AbortSignal;
 	/** Says the call is alive, for agents that give up on a silent one. */
 	progress(message: string): Promise<void>;
+	/** The call made a turn, before waiting for it. */
+	started?(turnId: string): void;
 }
 
 export interface Tool<Shape extends z.ZodRawShape = z.ZodRawShape> {
@@ -84,7 +88,6 @@ const failure = (value: string): ToolResult => ({
 	isError: true,
 });
 
-/** Keeps the arguments' types while the list holds tools of any shape. */
 /**
  * Keeps the arguments' types while the list holds tools of any shape, and
  * checks the arguments: a language model's call may not match the schema.
@@ -323,6 +326,7 @@ export function createTools(reel: Reel, options: ToolsOptions): Tool[] {
 			throw error;
 		}
 		spend.rename(pending, turn.id);
+		context.started?.(turn.id);
 
 		let jobs: JobView[] = turn.jobs;
 		const started = Date.now();
@@ -367,7 +371,7 @@ export function createTools(reel: Reel, options: ToolsOptions): Tool[] {
 				`Spent or held so far: ${money(spend.committed())} of ${money(limit)}.`,
 			);
 		}
-		return { text: lines.join("\n"), images };
+		return { text: lines.join("\n"), images, turnId: turn.id };
 	}
 
 	const tools: Tool[] = [

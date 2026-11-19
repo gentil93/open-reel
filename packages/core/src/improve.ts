@@ -189,7 +189,7 @@ export async function improvePrompt(
  * it), else the service chosen for translation.
  */
 export function writerChoice(
-	settings: Settings,
+	settings: Pick<Settings, "improveWith" | "translateWith">,
 	localReady: boolean,
 	/** Whether a service has a key to be reached with. */
 	usable: (service: "openai" | "google" | "openrouter") => boolean = () => true,
@@ -201,4 +201,25 @@ export function writerChoice(
 	if (localReady) return "local";
 	if (translateWith === "off" || translateWith === "local") return null;
 	return usable(translateWith) ? translateWith : null;
+}
+
+/**
+ * The language model the assistant thinks with. Automatic picks a service
+ * with a key first, the one that translates if it has one: the model on
+ * this computer is weak at planning and calling tools, so it is the
+ * fallback.
+ */
+export function assistantChoice(
+	settings: Pick<Settings, "assistantWith" | "translateWith">,
+	localReady: boolean,
+	usable: (service: "openai" | "google" | "openrouter") => boolean,
+): "local" | "openai" | "google" | "openrouter" | null {
+	const { assistantWith, translateWith } = settings;
+	if (assistantWith === "local") return localReady ? "local" : null;
+	if (assistantWith !== "auto" && usable(assistantWith)) return assistantWith;
+	const services = ["openai", "google", "openrouter"] as const;
+	const preferred = services.find((s) => s === translateWith && usable(s));
+	const cloud = preferred ?? services.find(usable);
+	if (cloud) return cloud;
+	return localReady ? "local" : null;
 }

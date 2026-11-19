@@ -5,6 +5,8 @@ import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import {
 	type Asset,
+	type AssistantEntry,
+	type AssistantEntryBody,
 	type GalleryItem,
 	type Job,
 	type JobView,
@@ -49,6 +51,14 @@ export interface Repository {
 	createAsset(asset: Asset): Promise<void>;
 	getAssets(ctx: UserContext, ids: string[]): Promise<Asset[]>;
 	listGallery(ctx: UserContext, query: GalleryQuery): Promise<GalleryItem[]>;
+
+	addEntry(entry: AssistantEntry, userId: string): Promise<void>;
+	updateEntry(
+		ctx: UserContext,
+		id: string,
+		body: AssistantEntryBody,
+	): Promise<void>;
+	listEntries(ctx: UserContext, sessionId: string): Promise<AssistantEntry[]>;
 
 	// Used by the job engine, which acts across users.
 	findJob(id: string): Promise<JobView | null>;
@@ -121,6 +131,49 @@ export class SqliteRepository implements Repository {
 				.where(eq(schema.sessions.id, turn.sessionId))
 				.run();
 		});
+	}
+
+	async addEntry(entry: AssistantEntry, userId: string) {
+		const { id, sessionId, createdAt, ...body } = entry;
+		this.db.transaction((tx) => {
+			tx.insert(schema.messages)
+				.values({ id, sessionId, userId, body, createdAt })
+				.run();
+			tx.update(schema.sessions)
+				.set({ updatedAt: createdAt })
+				.where(eq(schema.sessions.id, sessionId))
+				.run();
+		});
+	}
+
+	async updateEntry(ctx: UserContext, id: string, body: AssistantEntryBody) {
+		this.db
+			.update(schema.messages)
+			.set({ body })
+			.where(
+				and(eq(schema.messages.id, id), eq(schema.messages.userId, ctx.userId)),
+			)
+			.run();
+	}
+
+	async listEntries(ctx: UserContext, sessionId: string) {
+		return this.db
+			.select()
+			.from(schema.messages)
+			.where(
+				and(
+					eq(schema.messages.sessionId, sessionId),
+					eq(schema.messages.userId, ctx.userId),
+				),
+			)
+			.orderBy(schema.messages.createdAt, schema.messages.id)
+			.all()
+			.map(({ id, sessionId, createdAt, body }) => ({
+				...body,
+				id,
+				sessionId,
+				createdAt,
+			}));
 	}
 
 	async listTurns(ctx: UserContext, sessionId: string) {

@@ -1145,3 +1145,45 @@ describe("storage", () => {
 		expect(await app.service.listGallery(other, { limit: 10 })).toHaveLength(0);
 	});
 });
+
+describe("assistant conversations", () => {
+	test("are kept per session and person, in order, and go with the session", async () => {
+		const dir = await tempDir();
+		const { repo, service } = boot(dir);
+		const ana = { userId: "ana" };
+		const session = await service.startSession(ana, "a fox");
+		const said = (id: string, text: string, createdAt: number) => ({
+			id,
+			sessionId: session.id,
+			createdAt,
+			message: {
+				role: "user" as const,
+				content: [{ type: "text" as const, text }],
+			},
+		});
+		await repo.addEntry(said("msg_b", "second", 2), "ana");
+		await repo.addEntry(said("msg_a", "first", 1), "ana");
+		expect((await repo.listEntries(ana, session.id)).map((e) => e.id)).toEqual([
+			"msg_a",
+			"msg_b",
+		]);
+		// Someone else can neither read nor change them.
+		expect(await repo.listEntries({ userId: "bia" }, session.id)).toEqual([]);
+		const { id, sessionId, createdAt, ...body } = said("msg_a", "x", 1);
+		await repo.updateEntry({ userId: "bia" }, id, {
+			...body,
+			note: "stopped",
+		});
+		await repo.updateEntry(ana, id, {
+			...body,
+			confirm: { arguments: {}, modelNames: ["X"], usd: 1, state: "asked" },
+		});
+		const [first] = await repo.listEntries(ana, sessionId);
+		expect(first).toMatchObject({ id, createdAt, confirm: { state: "asked" } });
+		expect(first?.note).toBeUndefined();
+
+		await service.deleteSession(ana, session.id);
+		expect(await repo.listEntries(ana, session.id)).toEqual([]);
+		repo.close();
+	});
+});
