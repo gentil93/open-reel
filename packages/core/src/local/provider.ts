@@ -198,11 +198,28 @@ export function roleOption(role: string): string {
 	return option;
 }
 
-/** Options every run of a model takes: its own, and offloading when short. */
+/**
+ * The GPU memory a model that runs in pieces may use, in whole GiB: two
+ * thirds of the card, leaving the rest for the screen, other programs and
+ * the engine's own buffers. 8 of a 12 GB card was measured to work.
+ */
+export function vramBudget(gpuMemoryBytes: number): number {
+	return Math.max(1, Math.floor(((gpuMemoryBytes / 2 ** 30) * 2) / 3));
+}
+
+/**
+ * Options every run of a model takes: its own, offloading when short, and a
+ * memory budget for a model that needs one.
+ */
 function modelOptions(runtime: LocalRuntime): string[] {
+	const budget =
+		runtime.model.defaults.vramBudget && runtime.gpuMemoryBytes
+			? ["--max-vram", String(vramBudget(runtime.gpuMemoryBytes))]
+			: [];
 	return [
 		...(runtime.model.defaults.engineArgs ?? []),
 		...(runtime.fit === "offload" ? ["--offload-to-cpu"] : []),
+		...budget,
 	];
 }
 
