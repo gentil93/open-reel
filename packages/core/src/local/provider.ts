@@ -489,7 +489,9 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 			options.warm ??
 			new WarmEngines({ spawn: this.spawn, gpu: this.store.gpu });
 		this.store.subscribe((event) => {
-			if (event.type === "models.changed") void this.load();
+			// What was known stays when a look fails (its folder going away,
+			// say); the next change looks again.
+			if (event.type === "models.changed") this.load().catch(() => {});
 		});
 	}
 

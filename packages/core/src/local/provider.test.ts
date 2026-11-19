@@ -1107,6 +1107,27 @@ describe("running", () => {
 		expect(local.listModels().map((m) => m.id)).toEqual(["local/sdxl-base"]);
 	});
 
+	test("a look at the models that fails after a change is not left unhandled", async () => {
+		let changed: (event: { type: string }) => void = () => {};
+		const local = new LocalProvider({
+			store: {
+				subscribe: (listener: typeof changed) => {
+					changed = listener;
+					return () => {};
+				},
+				list: async () => {
+					throw new Error("ENOENT: the folder is gone");
+				},
+			} as never,
+			catalog: [FLUX],
+			warm: false,
+		});
+		changed({ type: "models.changed" });
+		// An unhandled rejection would fail this test, or the next one.
+		await Bun.sleep(20);
+		expect(local.listModels()).toEqual([]);
+	});
+
 	test("pictures and videos wait in separate lines", async () => {
 		const local = new LocalProvider({
 			store: { subscribe: () => () => {} } as never,
