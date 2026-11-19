@@ -145,5 +145,20 @@ system are built by the `Desktop` workflow.
   model"), with a body when the reason is not obvious.
 - The checks must pass. A maintainer reviews, may ask for changes, and merges.
 
+### What runs on your pull request
+
+- **CI / check**: lint, typecheck, tests and the build, the same as
+  `bun test && bun run typecheck && bun run lint && bun run build`.
+- **CI / desktop**: `cargo clippy` on the desktop shell in
+  `apps/desktop/src-tauri`.
+- **CI / dependency-review**: fails if the change adds a dependency with a known
+  high or critical vulnerability.
+- **CodeQL**: looks for security problems in the code.
+- **Workflows / zizmor**: only when `.github/` changes, checks the workflows for
+  unsafe patterns.
+
+If this is your first pull request here, a maintainer has to approve the checks
+before they run. Pull requests from forks never receive the project's secrets.
+
 By contributing you agree that your contribution is released under the
 project's [MIT license](LICENSE).

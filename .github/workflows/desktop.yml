@@ -7,6 +7,9 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     strategy:
@@ -24,14 +27,21 @@ jobs:
             args: --target x86_64-apple-darwin
             rust-target: x86_64-apple-darwin
     runs-on: ${{ matrix.os }}
+    # The update signing keys live in the release environment, which only
+    # opens for v* tags.
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || '' }}
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.4
-      - uses: dtolnay/rust-toolchain@stable
+          # Release builds never restore a cache someone else could have written.
+          no-cache: true
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         with:
           targets: ${{ matrix.rust-target }}
       - name: Linux libraries
@@ -40,7 +50,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
       - run: bun install --frozen-lockfile
-      - uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         id: tauri
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -51,13 +61,13 @@ jobs:
         with:
           projectPath: apps/desktop
           tauriScript: bunx tauri
-          # Update packages are made only here, where the signing key is; a
-          # local build without the key still produces the installers.
-          args: ${{ matrix.args }} --config src-tauri/tauri.release.conf.json
+          # Update packages are made only for tags, where the signing key is;
+          # other builds still produce the installers.
+          args: ${{ matrix.args }} ${{ startsWith(github.ref, 'refs/tags/v') && '--config src-tauri/tauri.release.conf.json' || '' }}
           tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
           releaseName: Hatchlight ${{ github.ref_name }}
           releaseDraft: true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: hatchlight-${{ matrix.os }}-${{ matrix.rust-target || 'native' }}
           path: apps/desktop/src-tauri/target/**/release/bundle/

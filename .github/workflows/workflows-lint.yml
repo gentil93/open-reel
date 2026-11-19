@@ -1,0 +1,27 @@
+name: Workflows
+
+# Checks the workflows themselves for injection and unsafe triggers, so a
+# change to .github cannot quietly hand out secrets or write access.
+on:
+  push:
+    branches: [main]
+    paths: [".github/**"]
+  pull_request:
+    paths: [".github/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  zizmor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
+        # Annotations instead of a code-scanning upload: pull requests from
+        # forks get a read-only token and could not upload.
+        with:
+          advanced-security: false
+          annotations: true
