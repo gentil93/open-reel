@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { Assistant } from "./Assistant";
 import { api } from "./api";
 import { Chat } from "./Chat";
 import { Gallery } from "./Gallery";
@@ -27,7 +28,11 @@ export function App() {
 				? current
 				: [...current, assetId].slice(-MAX_REFERENCES),
 		);
+		// The picture waits in the composer of the advanced view.
 		if (route.view !== "chat") navigate(href.newChat);
+		else if (route.talk) {
+			navigate(route.sessionId ? href.session(route.sessionId) : href.newChat);
+		}
 	};
 
 	const remove = useMutation({
@@ -48,7 +53,10 @@ export function App() {
 		}`;
 	// Each view comes into the light when it is opened.
 	const scene =
-		route.view === "chat" ? `chat/${route.sessionId ?? ""}` : route.view;
+		route.view === "chat"
+			? `chat/${route.sessionId ?? ""}/${route.talk ? "talk" : ""}`
+			: route.view;
+	const title = sessions.data?.find((s) => s.id === active)?.title;
 
 	return (
 		<div className="flex h-full">
@@ -84,7 +92,11 @@ export function App() {
 					{sessions.data?.map((session) => (
 						<li key={session.id} className="group flex items-center">
 							<a
-								href={href.session(session.id)}
+								href={
+									route.view === "chat" && route.talk
+										? href.talk(session.id)
+										: href.session(session.id)
+								}
 								title={session.title}
 								className={`min-w-0 flex-1 truncate ${navLink(session.id === active)}`}
 							>
@@ -142,6 +154,56 @@ export function App() {
 					</a>
 				</div>
 				{route.view === "chat" && (
+					<header className="flex items-center justify-between gap-4 border-b border-line px-6 py-3">
+						<h1 className="min-w-0 truncate font-medium">
+							{title ?? t("nav.newSession")}
+						</h1>
+						<div
+							role="tablist"
+							aria-label={t("session.mode")}
+							className="flex shrink-0 gap-1 rounded-lg border border-line p-1"
+						>
+							{(
+								[
+									[true, t("session.chat")],
+									[false, t("session.advanced")],
+								] as const
+							).map(([talk, label]) => {
+								const selected = route.talk === talk;
+								const to = route.sessionId
+									? talk
+										? href.talk(route.sessionId)
+										: href.session(route.sessionId)
+									: talk
+										? href.newTalk
+										: href.newChat;
+								return (
+									<a
+										key={label}
+										role="tab"
+										aria-selected={selected}
+										href={to}
+										className={`rounded-md px-4 py-1.5 text-sm transition-colors ${
+											selected
+												? "aurora font-semibold text-black"
+												: "text-dim hover:text-ink"
+										}`}
+									>
+										{label}
+									</a>
+								);
+							})}
+						</div>
+					</header>
+				)}
+				{route.view === "chat" && route.talk && (
+					<Assistant
+						key={route.sessionId ?? "new"}
+						sessionId={route.sessionId}
+						addReference={addReference}
+					/>
+				)}
+				{route.view === "chat" && !route.talk && (
 					<Chat
 						key={route.sessionId ?? "new"}
 						sessionId={route.sessionId}

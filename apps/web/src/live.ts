@@ -96,6 +96,7 @@ export function useLiveJobs(): void {
 			// After a reconnect, events may have been missed.
 			if (connectedBefore) {
 				void client.invalidateQueries({ queryKey: ["session"] });
+				void client.invalidateQueries({ queryKey: ["assistant"] });
 				void client.invalidateQueries({ queryKey: ["local-models"] });
 			}
 			connectedBefore = true;
@@ -129,6 +130,12 @@ export function useLiveJobs(): void {
 			if (event.job.status !== "running") progress.delete(event.job.id);
 			order = order.then(() => applyJob(client, event.job));
 			notify();
+		});
+		source.addEventListener("assistant.changed", (message) => {
+			const { sessionId } = JSON.parse(message.data) as { sessionId: string };
+			void client.invalidateQueries({ queryKey: ["assistant", sessionId] });
+			// A turn the assistant made shows up in the session.
+			void client.invalidateQueries({ queryKey: ["session", sessionId] });
 		});
 		source.addEventListener("job.progress", (message) => {
 			const event = JSON.parse(message.data) as EngineEvent;

@@ -488,7 +488,6 @@ export function createApp(options: AppOptions): Hono {
 				...(sessionId !== undefined && { sessionId }),
 				...(language && { language }),
 			}),
-			202,
 		);
 	});
 	app.get("/api/sessions/:id/assistant", async (c) => {

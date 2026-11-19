@@ -54,7 +54,7 @@ function Elapsed({ since }: { since: number }) {
 	return <>{duration(i18n, now - since)}</>;
 }
 
-function JobCard(props: {
+export function JobCard(props: {
 	index: number;
 	job: JobView;
 	prompt: string;

@@ -3,7 +3,9 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
 	assistantChoice,
+	type ChatMessage,
 	type ChatModel,
+	type ChatReply,
 	FakeProvider,
 	FileKeyStore,
 	FileSettingsStore,
@@ -94,6 +96,37 @@ export function localReel(service: ReelService, ctx: UserContext): Reel {
 	};
 }
 
+/**
+ * Stands in for the assistant's language model when trying the app without
+ * keys: makes what it is asked on the first fake model, then says so.
+ */
+class FakeChatModel implements ChatModel {
+	readonly vision = false;
+	async chat(
+		_instructions: string,
+		messages: ChatMessage[],
+	): Promise<ChatReply> {
+		await Bun.sleep(600);
+		const last = messages.at(-1);
+		if (last?.role === "user") {
+			const text = last.content
+				.map((part) => (part.type === "text" ? part.text : ""))
+				.join(" ");
+			return {
+				text: "",
+				toolCalls: [
+					{
+						id: `call_${messages.length}`,
+						name: "generate",
+						arguments: { prompt: text, models: ["fake/alpha"] },
+					},
+				],
+			};
+		}
+		return { text: "Done: here it is. (A fake assistant.)", toolCalls: [] };
+	}
+}
+
 /** Another open-reel process is already using the data directory. */
 export class DataDirInUseError extends Error {}
 
@@ -161,10 +194,11 @@ export interface RuntimeOptions {
 /** Wires the core on a data directory. Call `start()` once ready to run jobs. */
 export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 	const providers = options.providers ?? builtinProviders();
-	if (process.env.OPEN_REEL_FAKE === "1") {
-		const fake = new FakeProvider();
-		fake.delayMs = 1500;
-		providers.push(fake);
+	const fake = process.env.OPEN_REEL_FAKE === "1";
+	if (fake) {
+		const fakeProvider = new FakeProvider();
+		fakeProvider.delayMs = 1500;
+		providers.push(fakeProvider);
 	}
 	const catalog = options.localModels ?? builtinLocalModels();
 	const models = new LocalModelStore({
@@ -306,7 +340,10 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 			list: (ctx, sessionId) => repo.listEntries(ctx, sessionId),
 		},
 		reel: (ctx) => localReel(service, ctx),
-		brain: async (ctx) => options.assistantModel ?? brainFor(ctx),
+		brain: async (ctx) =>
+			options.assistantModel ??
+			(await brainFor(ctx)) ??
+			(fake ? new FakeChatModel() : null),
 		startSession: (ctx, title) => service.startSession(ctx, title),
 	});
 	return {
@@ -315,7 +352,10 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 		models,
 		settings,
 		assistant,
-		assistantBrain: brainChoice,
+		// A model standing in (tests, trying the app) shows as this computer's.
+		assistantBrain: async (ctx) =>
+			(await brainChoice(ctx)) ??
+			(options.assistantModel || fake ? "local" : null),
 		translatorReady: () => translatorReady,
 		improvePrompt: async (ctx, request, signal) => {
 			const writer = await writerFor(ctx);

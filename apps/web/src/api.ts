@@ -1,5 +1,6 @@
 import type {
 	Asset,
+	AssistantView,
 	CreateTurnInput,
 	GalleryItem,
 	LocalModelsView,
@@ -9,6 +10,14 @@ import type {
 	Settings,
 	TurnView,
 } from "@open-reel/core/types";
+
+/** What the assistant thinks with: this computer, a service, or nothing. */
+export type AssistantBrain =
+	| "local"
+	| "openai"
+	| "google"
+	| "openrouter"
+	| null;
 
 export type SessionDetail = Session & { turns: TurnView[] };
 
@@ -97,6 +106,31 @@ export const api = {
 			...send("POST", input),
 			signal,
 		}),
+	assistant: () => request<{ brain: AssistantBrain }>("/api/assistant"),
+	assistantView: (sessionId: string) =>
+		request<AssistantView>(`/api/sessions/${sessionId}/assistant`),
+	sendToAssistant: (input: {
+		sessionId?: string;
+		text: string;
+		language: string;
+	}) =>
+		request<{ sessionId: string }>(
+			"/api/assistant/messages",
+			send("POST", input),
+		),
+	stopAssistant: (sessionId: string) =>
+		request<void>(
+			`/api/sessions/${sessionId}/assistant/stop`,
+			send("POST", {}),
+		),
+	answerAssistant: (
+		sessionId: string,
+		input: { entryId: string; approve: boolean; language: string },
+	) =>
+		request<void>(
+			`/api/sessions/${sessionId}/assistant/answers`,
+			send("POST", input),
+		),
 	cancelJob: (id: string) =>
 		request<void>(`/api/jobs/${id}/cancel`, { method: "POST" }),
 	agents: () => request<AgentsStatus>("/api/agents"),

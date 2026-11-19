@@ -592,7 +592,7 @@ test("the assistant answers in a session, and asks before paying", async () => {
 		text: "uma raposa",
 		language: "pt-BR",
 	});
-	expect(sent.status).toBe(202);
+	expect(sent.status).toBe(200);
 	const { sessionId } = (await sent.json()) as { sessionId: string };
 	// The fake models cost money: the person is asked first.
 	const asked = (await view(sessionId)).entries.at(-1);

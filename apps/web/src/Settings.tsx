@@ -16,6 +16,7 @@ function ProviderRow({ provider }: { provider: ProviderStatus }) {
 	const [key, setKey] = useState("");
 	const done = () => {
 		setKey("");
+		void client.invalidateQueries({ queryKey: ["assistant-brain"] });
 		return client.invalidateQueries({ queryKey: ["providers"] });
 	};
 	const save = useMutation({
@@ -113,7 +114,10 @@ function Translation() {
 	});
 	const choose = useMutation({
 		mutationFn: (change: Partial<Choices>) => api.saveSettings(change),
-		onSuccess: (saved) => client.setQueryData(["settings"], saved),
+		onSuccess: (saved) => {
+			client.setQueryData(["settings"], saved);
+			void client.invalidateQueries({ queryKey: ["assistant-brain"] });
+		},
 	});
 	if (!model) return null;
 	const chosen = settings.data?.translateWith ?? "local";
@@ -145,6 +149,12 @@ function Translation() {
 		{ value: "auto", label: t("settings.improveAuto"), usable: true },
 		local,
 		...clouds,
+	];
+	const assistantChosen = settings.data?.assistantWith ?? "auto";
+	const assistantOptions: typeof improveOptions = [
+		{ value: "auto", label: t("settings.assistantAuto"), usable: true },
+		...clouds,
+		{ ...local, label: t("settings.assistantLocal", { name: local.label }) },
 	];
 	const busy = ["queued", "downloading", "verifying"].includes(
 		live?.state ?? model.state,
@@ -206,6 +216,36 @@ function Translation() {
 								checked={improveChosen === option.value}
 								disabled={!option.usable || choose.isPending}
 								onChange={() => choose.mutate({ improveWith: option.value })}
+							/>
+							{option.label}
+							{!option.usable && (
+								<span className="text-xs">
+									{option.value === "local"
+										? t("settings.translateLocalMissing")
+										: t("settings.translateNoKey")}
+								</span>
+							)}
+						</label>
+					))}
+				</div>
+			</fieldset>
+			<fieldset className="mt-4">
+				<legend className="text-sm font-medium">
+					{t("settings.assistantWith")}
+				</legend>
+				<div className="mt-2 flex flex-col gap-1.5">
+					{assistantOptions.map((option) => (
+						<label
+							key={option.value}
+							className={`flex items-center gap-2 text-sm ${option.usable ? "" : "text-dim"}`}
+						>
+							<input
+								type="radio"
+								name="assistant-with"
+								value={option.value}
+								checked={assistantChosen === option.value}
+								disabled={!option.usable || choose.isPending}
+								onChange={() => choose.mutate({ assistantWith: option.value })}
 							/>
 							{option.label}
 							{!option.usable && (
