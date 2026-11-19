@@ -35,6 +35,14 @@ export interface WarmRequest {
 	fps?: number;
 	/** Steps between pictures shown while it forms; none when absent. */
 	previewInterval?: number;
+	/** The picture to redraw, base64. */
+	initImage?: string;
+	/** Pictures the model follows, base64. */
+	refImages?: string[];
+	/** What of the redrawn picture to change, base64: white is redrawn. */
+	maskImage?: string;
+	/** How much the redrawn picture changes, 0 to 1. */
+	strength?: number;
 }
 
 interface Running {
@@ -280,6 +288,10 @@ export class WarmEngines {
 						output_format: "webm",
 					}
 				: { batch_count: 1, output_format: "png" }),
+			...(request.initImage != null && { init_image: request.initImage }),
+			...(request.refImages?.length && { ref_images: request.refImages }),
+			...(request.maskImage != null && { mask_image: request.maskImage }),
+			...(request.strength != null && { strength: request.strength }),
 			// Only these two forms are known to work: an object here stops the
 			// server altogether.
 			...(request.previewInterval != null && {

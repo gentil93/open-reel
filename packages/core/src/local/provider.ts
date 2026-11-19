@@ -221,6 +221,36 @@ export function redrawSteps(steps: number, strength: number): number {
 	return Math.max(steps, Math.ceil(4 / strength));
 }
 
+/**
+ * The size, steps and redrawing of a job, the same whether the engine runs
+ * once or is kept loaded.
+ */
+export function shape(
+	runtime: LocalRuntime,
+	defaults: LocalModelDefaults,
+	params: GenerationParams,
+	references: number,
+	size: { width: number; height: number } | undefined,
+	hasMask: boolean,
+) {
+	const video = runtime.model.media === "video";
+	const { width, height } =
+		size ??
+		dimensions(
+			defaults.size,
+			params.aspectRatio ?? defaults.aspectRatios[0],
+			video ? 16 : 64,
+		);
+	const redrawing = redraws(runtime.model) && references > 0;
+	const masked = redrawing && hasMask;
+	const strength =
+		params.strength ?? (masked ? DEFAULT_MASK_STRENGTH : DEFAULT_STRENGTH);
+	const steps = redrawing
+		? redrawSteps(defaults.steps, strength)
+		: defaults.steps;
+	return { width, height, redrawing, masked, strength, steps };
+}
+
 /** The engine's arguments for one job, with paths as the engine sees them. */
 export async function engineArguments(
 	runtime: LocalRuntime,
@@ -247,20 +277,14 @@ export async function engineArguments(
 		return [...args, ...modelOptions(runtime)];
 	}
 	const video = runtime.model.media === "video";
-	const { width, height } =
-		size ??
-		dimensions(
-			defaults.size,
-			params.aspectRatio ?? defaults.aspectRatios[0],
-			video ? 16 : 64,
-		);
-	const redrawing = redraws(runtime.model) && references.length > 0;
-	const masked = redrawing && mask != null;
-	const strength =
-		params.strength ?? (masked ? DEFAULT_MASK_STRENGTH : DEFAULT_STRENGTH);
-	const steps = redrawing
-		? redrawSteps(defaults.steps, strength)
-		: defaults.steps;
+	const { width, height, redrawing, masked, strength, steps } = shape(
+		runtime,
+		defaults,
+		params,
+		references.length,
+		size,
+		mask != null,
+	);
 	const args = ["-M", video ? "vid_gen" : "img_gen"];
 	for (const [role, file] of Object.entries(runtime.files)) {
 		args.push(roleOption(role), await path(file));
@@ -293,7 +317,7 @@ export async function engineArguments(
 		}
 	}
 	if (redrawing) args.push("--strength", String(strength));
-	if (masked) args.push("--mask", await path(mask));
+	if (masked && mask) args.push("--mask", await path(mask));
 	const [lora] = loras;
 	if (lora) args.push("--lora-model-dir", await path(dirname(lora.path)));
 	args.push(...modelOptions(runtime));
@@ -594,8 +618,8 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 		if (
 			this.warm &&
 			!video &&
-			!handle.pictures?.length &&
 			// Not checked with LoRAs yet: the engine run once is.
+			// (The server takes them only as a list, not in the prompt.)
 			!handle.loras?.length &&
 			runtime.model.defaults.upscale == null &&
 			!runtime.throughWindows &&
@@ -603,10 +627,21 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 			(await Bun.file(server).exists())
 		) {
 			const defaults = runtime.model.defaults;
-			const { width, height } = dimensions(
-				defaults.size,
-				handle.params.aspectRatio ?? defaults.aspectRatios[0],
+			const pictures = (handle.pictures ?? []).map((p) =>
+				Buffer.from(p.data).toString("base64"),
 			);
+			const { width, height, redrawing, masked, strength, steps } = shape(
+				runtime,
+				defaults,
+				handle.params,
+				pictures.length,
+				handle.size,
+				handle.mask != null,
+			);
+			const given = defaults.references
+				? pictures.slice(0, defaults.references.max)
+				: [];
+			const asInit = defaults.references?.as === "init";
 			const argv = [server];
 			for (const [role, file] of Object.entries(runtime.files)) {
 				argv.push(roleOption(role), file);
@@ -623,7 +658,14 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 						width,
 						height,
 						seed: handle.params.seed ?? Math.floor(Math.random() * 2 ** 31),
-						steps: defaults.steps,
+						steps,
+						...(asInit && given[0] != null && { initImage: given[0] }),
+						...(!asInit && given.length > 0 && { refImages: given }),
+						...(masked &&
+							handle.mask && {
+								maskImage: Buffer.from(handle.mask).toString("base64"),
+							}),
+						...(redrawing && { strength }),
 						cfgScale: defaults.cfgScale,
 						sampler: defaults.sampler,
 						flowShift: defaults.flowShift,

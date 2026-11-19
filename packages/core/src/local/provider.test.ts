@@ -24,6 +24,7 @@ import {
 
 import { GpuLock } from "./gpu";
 import { picture, safetensors } from "./testing";
+import type { WarmRequest } from "./warm";
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -616,6 +617,78 @@ describe("running", () => {
 		});
 		expect(after("--strength")).toBe(String(DEFAULT_STRENGTH));
 		expect(await readdir(dir)).toEqual([]);
+	});
+
+	test("a picture to redraw goes to the model kept loaded, with its mask", async () => {
+		const { store, dir } = await setup(REDRAW);
+		// An engine with a server beside it, as the real ones have.
+		const executable = join(dir, "sd-cli");
+		await Bun.write(join(dir, "sd-server"), "");
+		store.runtime = async () => ({
+			...runtime(REDRAW, dir),
+			executable,
+			throughWindows: false,
+		});
+		const asked: WarmRequest[] = [];
+		const warm = {
+			loaded: null,
+			unused: true,
+			stop() {},
+			async stopAndWait() {},
+			async *run(_key: string, argv: string[], request: WarmRequest) {
+				expect(argv[0]).toBe(join(dir, "sd-server"));
+				asked.push(request);
+				yield {
+					type: "completed" as const,
+					outputs: [{ data: PNG, mime: "image/png" }],
+					costUsd: 0,
+				};
+			},
+		};
+		const local = new LocalProvider({
+			store: store as never,
+			catalog: [REDRAW],
+			spawn: () => {
+				throw new Error("the engine is not run once");
+			},
+			warm: warm as never,
+		});
+		await local.load();
+		const [model] = local.listModels();
+		const handle = await local.submit({
+			model: model as never,
+			params: params({ strength: 0.6 }),
+			references: [{ data: picture(1600, 900), mime: "image/png" }],
+			mask: { data: picture(800, 450), mime: "image/png" },
+		});
+		const events: ProviderEvent[] = [];
+		for await (const event of local.events(handle, {
+			apiKey: undefined,
+			signal: new AbortController().signal,
+		})) {
+			events.push(event);
+		}
+		expect(events.at(-1)?.type).toBe("completed");
+		const [request] = asked;
+		expect(request?.strength).toBe(0.6);
+		expect(request?.initImage?.length).toBeGreaterThan(0);
+		expect(request?.maskImage?.length).toBeGreaterThan(0);
+		expect(request?.refImages).toBeUndefined();
+		// The same size and steps as the engine run once would use.
+		const once = await engineArguments(
+			runtime(REDRAW),
+			REDRAW.defaults,
+			params({ strength: 0.6 }),
+			"/o.png",
+			async (p) => p,
+			["/s/old.png"],
+			handle.size,
+			"/s/mask.png",
+		);
+		expect(String(request?.steps)).toBe(
+			String(once[once.indexOf("--steps") + 1]),
+		);
+		expect(String(request?.width)).toBe(String(once[once.indexOf("-W") + 1]));
 	});
 
 	test("a mask reaches the engine at the size of the picture it marks", async () => {
