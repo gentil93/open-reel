@@ -6,7 +6,7 @@
 		<meta name="color-scheme" content="dark" />
 		<title>Hatchlight</title>
 	</head>
-	<body>
+	<body class="overflow-hidden">
 		<div class="sky" aria-hidden="true"></div>
 		<main class="relative flex h-full flex-col items-center justify-center gap-6 p-8 text-center">
 			<canvas id="frame" width="320" height="200" class="relative w-80 max-w-full rounded-2xl"></canvas>
@@ -16,6 +16,8 @@
 			</p>
 			<p id="status" class="text-sm font-medium text-dim" aria-live="polite"></p>
 			<pre id="detail" class="hidden max-w-xl whitespace-pre-wrap text-left font-mono text-xs text-danger"></pre>
+			<p id="hint" class="hidden max-w-xl text-sm text-dim"></p>
+			<button id="retry" type="button" class="cta hidden rounded-lg px-5 py-2 font-display text-base font-bold"></button>
 		</main>
 		<script type="module" src="/src/splash.ts"></script>
 	</body>

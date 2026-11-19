@@ -43,4 +43,31 @@ if (failed != null) {
 	status.classList.replace("text-dim", "text-danger");
 	detail.textContent = failed;
 	detail.classList.remove("hidden");
+	showRetry();
+}
+
+/**
+ * "Try again" asks the desktop app to start its server once more, for when
+ * what stopped it is gone, such as another Hatchlight using the same data.
+ */
+function showRetry() {
+	const invoke = (
+		window as {
+			__TAURI__?: { core: { invoke: (command: string) => Promise<unknown> } };
+		}
+	).__TAURI__?.core.invoke;
+	if (!invoke) return;
+	const hint = document.getElementById("hint") as HTMLElement;
+	const retry = document.getElementById("retry") as HTMLButtonElement;
+	hint.textContent = t("desktop.retryHint");
+	retry.textContent = t("desktop.retry");
+	hint.classList.remove("hidden");
+	retry.classList.remove("hidden");
+	retry.addEventListener("click", () => {
+		retry.disabled = true;
+		invoke("restart_server").catch((error: unknown) => {
+			detail.textContent = String(error);
+			retry.disabled = false;
+		});
+	});
 }

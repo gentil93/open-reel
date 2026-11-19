@@ -121,6 +121,8 @@
 	"composer.video": "Vídeo",
 	"composer.videoCount": "Vídeos",
 	"desktop.failed": "O Hatchlight não conseguiu iniciar.",
+	"desktop.retry": "Tentar de novo",
+	"desktop.retryHint": "Se outra janela do Hatchlight estiver aberta, feche-a e tente de novo.",
 	"desktop.starting": "Abrindo o Hatchlight…",
 	"errors.assetNotFound": "Essa imagem não existe mais.",
 	"errors.assistantBusy": "O assistente ainda está respondendo. Espere ou pare-o.",

@@ -1,0 +1,7 @@
+{
+	"$schema": "../gen/schemas/desktop-schema.json",
+	"identifier": "splash",
+	"description": "What the app's own splash page may ask of the window: to start the server again after it stopped.",
+	"windows": ["main"],
+	"permissions": ["allow-restart-server"]
+}

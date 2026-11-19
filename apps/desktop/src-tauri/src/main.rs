@@ -136,7 +136,10 @@ fn start_server(app: &AppHandle, window: WebviewWindow) -> Result<(), Box<dyn st
                     app.state::<update::ServerExited>()
                         .0
                         .store(true, Ordering::SeqCst);
-                    let stopped = format!("The server stopped (code {:?}).", status.code);
+                    let stopped = match status.code {
+                        Some(code) => format!("The server stopped (code {code})."),
+                        None => "The server stopped.".to_string(),
+                    };
                     if let Some(file) = log.as_mut() {
                         let _ = writeln!(file, "{stopped}");
                     }
@@ -152,6 +155,27 @@ fn start_server(app: &AppHandle, window: WebviewWindow) -> Result<(), Box<dyn st
         }
     });
     Ok(())
+}
+
+/// Starts the server again after it stopped: the splash's "Try again", for
+/// when what stopped it is gone, such as another copy of Hatchlight that was
+/// using the same data directory. Does nothing while a server is running.
+#[tauri::command]
+fn restart_server(app: AppHandle) -> Result<(), String> {
+    let exited = &app.state::<update::ServerExited>().0;
+    if !exited.load(Ordering::SeqCst) || app.state::<update::Updating>().0.load(Ordering::SeqCst) {
+        return Ok(());
+    }
+    let window = app
+        .get_webview_window("main")
+        .ok_or("The window is gone.")?;
+    drop(app.state::<Server>().0.lock().unwrap().take());
+    exited.store(false, Ordering::SeqCst);
+    let _ = window.navigate(splash_url());
+    start_server(&app, window).map_err(|error| {
+        exited.store(true, Ordering::SeqCst);
+        format!("Could not start the server: {error}")
+    })
 }
 
 fn main() {
@@ -173,7 +197,8 @@ fn main() {
         .manage(update::ServerExited::default())
         .invoke_handler(tauri::generate_handler![
             update::update_status,
-            update::install_update
+            update::install_update,
+            restart_server
         ])
         .setup(|app| {
             let navigation = app.handle().clone();
@@ -197,6 +222,8 @@ fn main() {
                 })
                 .build()?;
             if let Err(error) = start_server(app.handle(), window.clone()) {
+                // No server to wait for, so "Try again" can start one.
+                app.state::<update::ServerExited>().0.store(true, Ordering::SeqCst);
                 show_failure(&window, &format!("Could not start the server: {error}"));
             }
             // Independent of the server, so even a version whose server fails
