@@ -28,6 +28,7 @@ export const PROFILES = {
 		quality: 2,
 		text: false,
 		bestFor: ["illustration"],
+		sample: "sdxl.webp",
 	},
 	fluxSchnell: {
 		family: "flux-schnell",
@@ -56,6 +57,7 @@ export const PROFILES = {
 		quality: 3,
 		text: true,
 		bestFor: ["photo"],
+		sample: "z-image-turbo.webp",
 	},
 	nanoBanana: {
 		family: "nano-banana",

@@ -10,5 +10,5 @@ export const LINKS: {
 } = {
 	site: "https://hatchlight.app/",
 	repository: "https://github.com/hatchlight/hatchlight",
-	releases: null,
+	releases: "https://github.com/hatchlight/hatchlight/releases/latest",
 };

@@ -6,6 +6,7 @@
 	"cta.download": "Download",
 	"end.coming": "The desktop app is in the works. Star the project to hear when it ships.",
 	"end.source": "View the source",
+	"end.unsigned": "The installers are not signed yet. If Windows says it protected your computer, choose More info, then Run anyway.",
 	"end.title": "Generate your first image tonight.",
 	"footer.languages": "Language",
 	"footer.license": "Free and open source under the MIT license.",

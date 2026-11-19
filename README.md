@@ -31,9 +31,11 @@ welcome: see [Translate](CONTRIBUTING.md#translate).
 
 ## Install
 
-**Desktop app** (Windows, macOS, Linux): installers will be published on the
-[releases page](https://github.com/hatchlight/hatchlight/releases). Until the
-first release, run it from source.
+**Desktop app** (Windows, macOS, Linux): download the installer for your
+system from the
+[latest release](https://github.com/hatchlight/hatchlight/releases/latest).
+The installers are not signed yet: if Windows says it protected your computer,
+choose **More info**, then **Run anyway**.
 
 **From source**, with [Bun](https://bun.sh) 1.4 or newer:
 

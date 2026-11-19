@@ -6,6 +6,7 @@
 	"cta.download": "Baixar",
 	"end.coming": "O app para computador está a caminho. Dê uma estrela no projeto para saber quando sair.",
 	"end.source": "Ver o código",
+	"end.unsigned": "Os instaladores ainda não são assinados. Se o Windows disser que protegeu o computador, escolha Mais informações e depois Executar assim mesmo.",
 	"end.title": "Gere sua primeira imagem ainda hoje.",
 	"footer.languages": "Idioma",
 	"footer.license": "Gratuito e de código aberto, sob a licença MIT.",

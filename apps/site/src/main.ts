@@ -64,8 +64,8 @@ for (const button of $$<HTMLAnchorElement>("[data-download]")) {
 		button.textContent = t("runtime.comingSoon");
 	}
 }
-if (!LINKS.releases)
-	for (const note of $$("[data-coming]")) note.hidden = false;
+for (const note of $$(LINKS.releases ? "[data-released]" : "[data-coming]"))
+	note.hidden = false;
 
 /* ---------- picture strips ---------- */
 
