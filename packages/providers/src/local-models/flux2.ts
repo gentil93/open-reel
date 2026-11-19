@@ -176,6 +176,10 @@ export function flux2Models(): LocalModelSpec[] {
 				cfgScale: 1,
 				sampler: "euler",
 				references: { as: "ref", max: 4 },
+				// Following a picture at 1024 px fits a 12 GB card only with
+				// flash attention, and without showing the picture as it forms.
+				engineArgs: ["--flash-attn", "off,diffusion=on"],
+				previewsWhileFollowing: false,
 			},
 			demos: [
 				{
@@ -268,6 +272,10 @@ export function flux2Models(): LocalModelSpec[] {
 				steps: 20,
 				cfgScale: 4,
 				references: { as: "ref", max: 4 },
+				// Following a picture at 1024 px fits a 12 GB card only with
+				// flash attention, and without showing the picture as it forms.
+				engineArgs: ["--flash-attn", "off,diffusion=on"],
+				previewsWhileFollowing: false,
 			},
 			demos: [
 				{

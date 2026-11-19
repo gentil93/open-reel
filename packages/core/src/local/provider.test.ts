@@ -587,6 +587,27 @@ describe("running", () => {
 		expect(await readdir(dir)).toEqual([]);
 	});
 
+	test("a model that cannot show its picture forming while following one does not", async () => {
+		const edit: LocalModelSpec = {
+			...FLUX,
+			tasks: ["text-to-image", "image-edit"],
+			defaults: {
+				...FLUX.defaults,
+				references: { as: "ref", max: 1 },
+				previewsWhileFollowing: false,
+			},
+		};
+		const { provider, fake, calls } = await setup(edit);
+		const local = provider(fake([]));
+		await run(local, undefined, [
+			{ data: new Uint8Array([9, 8, 7]), mime: "image/png" },
+		]);
+		expect(calls[0]).not.toContain("--preview");
+		// From words alone it still does.
+		await run(local);
+		expect(calls[1]).toContain("--preview");
+	});
+
 	test("a picture to redraw keeps its shape and reaches the engine at its size", async () => {
 		const { provider, fake, calls, dir } = await setup(REDRAW);
 		let given: Uint8Array = new Uint8Array();

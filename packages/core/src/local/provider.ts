@@ -363,6 +363,11 @@ const PREVIEWS_PER_JOB = 4;
  * How many sampling steps go between pictures of a job in progress, or null
  * when there is nothing worth showing (a single step is the final picture).
  */
+/** Whether a job shows its picture as it forms, given what it follows. */
+function previews(defaults: LocalModelDefaults, pictures: number): boolean {
+	return pictures === 0 || defaults.previewsWhileFollowing !== false;
+}
+
 export function previewInterval(steps: number): number | null {
 	return steps > 1 ? Math.ceil(steps / PREVIEWS_PER_JOB) : null;
 }
@@ -669,7 +674,9 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 						cfgScale: defaults.cfgScale,
 						sampler: defaults.sampler,
 						flowShift: defaults.flowShift,
-						previewInterval: previewInterval(defaults.steps) ?? undefined,
+						previewInterval: previews(defaults, pictures.length)
+							? (previewInterval(steps) ?? undefined)
+							: undefined,
 					},
 					ctx.signal,
 					runtime.variant.memoryBytes,
@@ -737,7 +744,9 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 		// The engine writes the picture as it forms, numbered from 000.
 		const interval = video
 			? null
-			: previewInterval(runtime.model.defaults.steps);
+			: previews(runtime.model.defaults, references.length)
+				? previewInterval(runtime.model.defaults.steps)
+				: null;
 		const previewBase = output.replace(/\.png$/, "");
 		const previewFile = (index: number) =>
 			`${previewBase}-${String(index).padStart(3, "0")}.png`;

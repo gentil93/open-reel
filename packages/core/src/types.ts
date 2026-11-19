@@ -432,6 +432,11 @@ export interface LocalModelDefaults {
 	references?: { as: "ref" | "init"; max: number };
 	/** More engine options this model needs, e.g. `["--diffusion-fa"]`. */
 	engineArgs?: string[];
+	/**
+	 * False when showing the picture as it forms does not fit in memory
+	 * while the model follows a picture.
+	 */
+	previewsWhileFollowing?: boolean;
 	/** Upscalers: how many times larger the picture comes out. */
 	upscale?: number;
 }
