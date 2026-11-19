@@ -4,6 +4,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Waits a week after a release, so a hijacked version is usually pulled
+    # before it reaches a pull request here.
+    cooldown:
+      default-days: 7
     groups:
       actions:
         update-types: [minor, patch]
@@ -13,6 +17,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Waits a week after a release, so a hijacked version is usually pulled
+    # before it reaches a pull request here.
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     groups:
       bun:
@@ -23,6 +31,10 @@ updates:
     directory: /apps/desktop/src-tauri
     schedule:
       interval: weekly
+    # Waits a week after a release, so a hijacked version is usually pulled
+    # before it reaches a pull request here.
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     groups:
       cargo:
