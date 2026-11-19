@@ -12,6 +12,7 @@ import { api, assetUrl, previewUrl, type SessionDetail } from "./api";
 import { Composer, type Draft } from "./Composer";
 import { DevelopedImage, LatentFrame } from "./Develop";
 import { duration, usd } from "./format";
+import { Inspector } from "./Inspector";
 import { type I18n, useI18n } from "./i18n";
 import { Lightbox, type LightboxItem } from "./Lightbox";
 import { type JobProgress, useProgress } from "./live";
@@ -280,6 +281,8 @@ export function JobCard(props: {
 
 function TurnBlock(props: {
 	turn: TurnView;
+	/** Which turn it is, and how it was asked for. */
+	label: string;
 	models: Map<string, ModelSpec>;
 	onOpen(item: LightboxItem): void;
 	onUseAsReference(assetId: string): void;
@@ -290,6 +293,9 @@ function TurnBlock(props: {
 	const columns = Math.min(turn.jobs.length, 3);
 	return (
 		<article className="flex flex-col gap-3">
+			<p className="font-mono text-[11px] uppercase tracking-wider text-dim">
+				{props.label}
+			</p>
 			<div className="rise-in flex items-start gap-3">
 				{turn.referenceAssetIds.map((id) => (
 					<img
@@ -396,13 +402,8 @@ export function Chat({
 	// Until the sessions arrive it is unknown whether this is a first visit.
 	const deciding = !sessionId && !skipped && sessions.isPending;
 	const [open, setOpen] = useState<LightboxItem | null>(null);
-	const end = useRef<HTMLDivElement>(null);
-	const turnCount = session.data?.turns.length ?? 0;
-
-	// biome-ignore lint/correctness/useExhaustiveDependencies: scroll when a turn is added
-	useEffect(() => {
-		end.current?.scrollIntoView({ block: "end" });
-	}, [turnCount]);
+	// The picture in the inspector, once one is chosen.
+	const [selected, setSelected] = useState<LightboxItem | null>(null);
 
 	const create = useMutation({
 		mutationFn: (draft: Draft & { referenceAssetIds?: string[] }) =>
@@ -459,15 +460,33 @@ export function Chat({
 				}
 			: undefined;
 	const loadError = session.error ?? models.error ?? providers.error;
+	const assistant = useQuery({
+		queryKey: ["assistant", sessionId],
+		queryFn: () => api.assistantView(sessionId as string),
+		enabled: sessionId != null,
+	});
+	// Turns the assistant made, to say they were asked for in the chat.
+	const fromChat = new Set(
+		assistant.data?.entries.flatMap((e) => (e.turnId ? [e.turnId] : [])),
+	);
+	const turns = session.data?.turns ?? [];
+	// Until one is chosen, the newest picture made is shown.
+	const latest = turns
+		.toReversed()
+		.flatMap((turn) =>
+			turn.jobs.flatMap((job) =>
+				job.assets.map((asset) =>
+					itemOf(turn, job, asset, byId.get(job.modelId)),
+				),
+			),
+		)[0];
+	const shown = selected ?? latest ?? null;
 
 	return (
 		<>
-			<div className="min-h-0 flex-1 overflow-y-auto">
-				<div className="mx-auto flex max-w-5xl flex-col gap-10 p-6">
-					{loadError && (
-						<p className="text-sm text-danger">{i18n.explain(loadError)}</p>
-					)}
-					{firstRun && (
+			{firstRun ? (
+				<div className="min-h-0 flex-1 overflow-y-auto">
+					<div className="mx-auto max-w-5xl p-6">
 						<Welcome
 							busy={create.isPending}
 							error={create.error ? i18n.explain(create.error) : null}
@@ -477,43 +496,69 @@ export function Chat({
 								setSkipped(true);
 							}}
 						/>
-					)}
-					{!sessionId && !firstRun && sessions.data && (
-						<div className="rise-in py-16">
-							<p className="font-mono text-[11px] uppercase tracking-[0.18em] text-accent">
-								{t("chat.eyebrow")}
-							</p>
-							<h1 className="mt-3 font-display text-5xl leading-[0.95] font-extrabold tracking-tight sm:text-6xl">
-								{t("chat.heading")}
-							</h1>
-							<p className="mt-4 max-w-xl leading-relaxed text-dim">
-								{t("chat.intro")}
-							</p>
-						</div>
-					)}
-					{session.data?.turns.map((turn) => (
-						<TurnBlock
-							key={turn.id}
-							turn={turn}
-							models={byId}
+					</div>
+				</div>
+			) : (
+				!deciding && (
+					<div className="grid min-h-0 flex-1 max-lg:overflow-y-auto lg:grid-cols-[17rem_minmax(0,1fr)_19rem]">
+						<Composer
+							models={models.data ?? []}
+							providers={providers.data ?? []}
+							references={references}
+							setReferences={setReferences}
+							busy={create.isPending}
+							error={create.error ? i18n.explain(create.error) : null}
+							onSubmit={(draft) => create.mutate(draft)}
+						>
+							<div className="flex flex-col gap-10 p-6">
+								{loadError && (
+									<p className="text-sm text-danger">
+										{i18n.explain(loadError)}
+									</p>
+								)}
+								{!sessionId && sessions.data && (
+									<div className="rise-in py-6">
+										<p className="font-mono text-[11px] uppercase tracking-[0.18em] text-accent">
+											{t("chat.eyebrow")}
+										</p>
+										<h1 className="mt-3 font-display text-5xl leading-[0.95] font-extrabold tracking-tight">
+											{t("chat.heading")}
+										</h1>
+										<p className="mt-4 max-w-xl leading-relaxed text-dim">
+											{t("chat.intro")}
+										</p>
+									</div>
+								)}
+								{turns
+									.map((turn, index) => (
+										<TurnBlock
+											key={turn.id}
+											turn={turn}
+											label={[
+												t("chat.turn", { number: index + 1 }),
+												fromChat.has(turn.id) && t("chat.askedInChat"),
+												turn.jobs[0]?.params.aspectRatio,
+											]
+												.filter(Boolean)
+												.join(" · ")}
+											models={byId}
+											onOpen={setSelected}
+											onUseAsReference={addReference}
+											upscale={upscale}
+										/>
+									))
+									.toReversed()}
+							</div>
+						</Composer>
+						<Inspector
+							item={shown}
 							onOpen={setOpen}
 							onUseAsReference={addReference}
 							upscale={upscale}
+							talkHref={sessionId ? href.talk(sessionId) : undefined}
 						/>
-					))}
-					<div ref={end} />
-				</div>
-			</div>
-			{!firstRun && !deciding && (
-				<Composer
-					models={models.data ?? []}
-					providers={providers.data ?? []}
-					references={references}
-					setReferences={setReferences}
-					busy={create.isPending}
-					error={create.error ? i18n.explain(create.error) : null}
-					onSubmit={(draft) => create.mutate(draft)}
-				/>
+					</div>
+				)
 			)}
 			{open && (
 				<Lightbox
@@ -527,4 +572,21 @@ export function Chat({
 			)}
 		</>
 	);
+}
+
+/** A picture or video made, as the inspector and the lightbox show it. */
+function itemOf(
+	turn: TurnView,
+	job: JobView,
+	asset: { id: string; mime: string },
+	model: ModelSpec | undefined,
+): LightboxItem {
+	return {
+		assetId: asset.id,
+		mime: asset.mime,
+		prompt: turn.prompt,
+		modelName: model?.name ?? job.modelId,
+		params: job.params,
+		costUsd: job.costUsd == null ? null : job.costUsd / job.assets.length,
+	};
 }

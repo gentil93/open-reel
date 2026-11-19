@@ -2,6 +2,7 @@ import type { Media, ModelSpec, ProviderStatus } from "@open-reel/core/types";
 import { useMutation } from "@tanstack/react-query";
 import {
 	type Dispatch,
+	type ReactNode,
 	type SetStateAction,
 	useEffect,
 	useRef,
@@ -34,6 +35,8 @@ interface Props {
 	busy: boolean;
 	error: string | null;
 	onSubmit(draft: Draft): void;
+	/** Shown under the prompt: the session's results. */
+	children?: ReactNode;
 }
 
 const STORAGE_KEY = "open-reel.models";
@@ -243,8 +246,11 @@ export function Composer(props: Props) {
 	const control = "rounded-md border border-line bg-bg px-2 py-1.5 text-sm";
 
 	return (
-		<div className="border-t border-line bg-panel">
-			<div className="mx-auto flex max-w-5xl flex-col gap-3 px-6 py-4">
+		<>
+			<aside
+				aria-label={t("composer.parameters")}
+				className="flex min-h-0 flex-col gap-5 overflow-y-auto border-line bg-panel p-4 lg:border-r"
+			>
 				{models.some((m) => m.media === "video") && (
 					<div
 						className="flex gap-1"
@@ -270,7 +276,10 @@ export function Composer(props: Props) {
 					</div>
 				)}
 				<fieldset className="flex flex-wrap items-center gap-1.5">
-					<legend className="sr-only">{t("composer.models")}</legend>
+					<legend className="mb-2 font-mono text-[11px] uppercase tracking-wider text-dim">
+						{t("composer.models")}
+					</legend>
+
 					{offered
 						.filter((m) => ready.has(m.providerId) || chosen.includes(m.id))
 						.map((model) => {
@@ -310,149 +319,8 @@ export function Composer(props: Props) {
 					</button>
 				</fieldset>
 
-				{references.length > 0 && (
-					<ul
-						className="flex flex-wrap gap-2"
-						aria-label={t("composer.referenceImages")}
-					>
-						{references.map((id) => (
-							<li key={id} className="relative">
-								<button
-									type="button"
-									onClick={() => setAdjusting(id)}
-									aria-label={t("composer.adjust")}
-									title={t("composer.adjust")}
-									className="block rounded-md"
-								>
-									<img
-										src={assetUrl(id)}
-										alt={t("common.reference")}
-										className="size-16 rounded-md border border-line object-cover transition-opacity hover:opacity-80"
-									/>
-								</button>
-								{id === only && marked && (
-									// The marked area, as it was painted.
-									<img
-										src={marked.marks}
-										alt=""
-										className="pointer-events-none absolute inset-0 size-16 rounded-md object-cover opacity-55"
-									/>
-								)}
-								<button
-									type="button"
-									aria-label={t("composer.removeReference")}
-									onClick={() =>
-										setReferences(references.filter((r) => r !== id))
-									}
-									className="absolute -right-1.5 -top-1.5 size-5 rounded-full border border-line bg-panel text-xs leading-none"
-								>
-									×
-								</button>
-							</li>
-						))}
-						{only != null && canMask && (
-							<li className="flex flex-col items-start justify-center gap-1 text-sm">
-								<div className="flex gap-1.5">
-									<button
-										type="button"
-										onClick={() => setPainting(true)}
-										className="rounded-md border border-line px-2.5 py-1 text-dim hover:border-dim hover:text-ink"
-									>
-										{maskId ? t("composer.editArea") : t("composer.markArea")}
-									</button>
-									<button
-										type="button"
-										onClick={() => setExtending(true)}
-										className="rounded-md border border-line px-2.5 py-1 text-dim hover:border-dim hover:text-ink"
-									>
-										{t("composer.extend")}
-									</button>
-								</div>
-								{maskId && (
-									<button
-										type="button"
-										onClick={() => setMask(null)}
-										className="px-1 text-xs text-dim underline hover:text-ink"
-									>
-										{t("composer.removeMask")}
-									</button>
-								)}
-							</li>
-						)}
-					</ul>
-				)}
-
-				{suggestion != null && (
-					<section
-						aria-label={t("composer.suggestion")}
-						className="rounded-md border border-line bg-bg px-3 py-2"
-					>
-						<h3 className="font-mono text-xs uppercase tracking-wide text-dim">
-							{t("composer.suggestion")}
-						</h3>
-						<p className="mt-1 leading-relaxed">{suggestion}</p>
-						<div className="mt-2 flex flex-wrap gap-1.5 text-sm">
-							<button
-								type="button"
-								onClick={() => {
-									setPrompt(suggestion);
-									setSuggestion(null);
-								}}
-								className="aurora rounded-md px-3 py-1"
-							>
-								{t("composer.suggestionUse")}
-							</button>
-							<button
-								type="button"
-								onClick={improve}
-								disabled={improving != null}
-								className="rounded-md border border-line px-3 py-1 text-dim hover:border-dim hover:text-ink disabled:opacity-40"
-							>
-								{t("composer.suggestionAnother")}
-							</button>
-							<button
-								type="button"
-								onClick={() => setSuggestion(null)}
-								className="rounded-md px-3 py-1 text-dim hover:text-ink"
-							>
-								{t("composer.suggestionDiscard")}
-							</button>
-						</div>
-					</section>
-				)}
-
-				<textarea
-					value={prompt}
-					onChange={(event) => {
-						setPrompt(event.target.value);
-						setImproveError(null);
-					}}
-					onKeyDown={(event) => {
-						if (
-							event.key === "Enter" &&
-							!event.shiftKey &&
-							!event.nativeEvent.isComposing
-						) {
-							event.preventDefault();
-							submit();
-						}
-					}}
-					rows={2}
-					placeholder={
-						references.length > 0
-							? media === "video"
-								? t("composer.placeholder.motion")
-								: t("composer.placeholder.change")
-							: media === "video"
-								? t("composer.placeholder.video")
-								: t("composer.placeholder.image")
-					}
-					aria-label={t("composer.prompt")}
-					className="w-full resize-none rounded-md border border-line bg-bg px-3 py-2 leading-relaxed"
-				/>
-
-				<div className="flex flex-wrap items-center gap-2">
-					<label className="flex items-center gap-2 text-sm text-dim">
+				<div className="flex flex-col gap-2.5">
+					<label className="flex items-center justify-between gap-2 text-sm text-dim">
 						{t("composer.ratio")}
 						<select
 							value={ratios.includes(aspectRatio) ? aspectRatio : ""}
@@ -467,7 +335,7 @@ export function Composer(props: Props) {
 						</select>
 					</label>
 					{redrawing && strength != null && (
-						<label className="flex items-center gap-2 text-sm text-dim">
+						<label className="flex items-center justify-between gap-2 text-sm text-dim">
 							{t("composer.strength")}
 							<input
 								type="range"
@@ -487,7 +355,7 @@ export function Composer(props: Props) {
 						</label>
 					)}
 					{durations.length > 0 && (
-						<label className="flex items-center gap-2 text-sm text-dim">
+						<label className="flex items-center justify-between gap-2 text-sm text-dim">
 							{t("composer.length")}
 							<select
 								value={
@@ -510,7 +378,7 @@ export function Composer(props: Props) {
 						</label>
 					)}
 					<label
-						className="flex items-center gap-2 text-sm text-dim"
+						className="flex items-center justify-between gap-2 text-sm text-dim"
 						hidden={maxCount === 1 && media === "video"}
 					>
 						{media === "video"
@@ -537,25 +405,83 @@ export function Composer(props: Props) {
 							event.target.value = "";
 						}}
 					/>
-					{improving ? (
-						<button
-							type="button"
-							onClick={stopImproving}
-							className={`${control} text-dim hover:text-ink`}
+				</div>
+				<div className="flex flex-col gap-2">
+					<span className="font-mono text-[11px] uppercase tracking-wider text-dim">
+						{t("common.reference")}
+					</span>
+					{references.length > 0 && (
+						<ul
+							className="flex flex-wrap gap-2"
+							aria-label={t("composer.referenceImages")}
 						>
-							<span className="animate-pulse">{t("composer.improving")}</span> ·{" "}
-							{t("composer.improveStop")}
-						</button>
-					) : (
-						<button
-							type="button"
-							onClick={improve}
-							disabled={prompt.trim() === ""}
-							className={`${control} text-dim hover:text-ink disabled:opacity-40`}
-						>
-							✦ {t("composer.improve")}
-						</button>
+							{references.map((id) => (
+								<li key={id} className="relative">
+									<button
+										type="button"
+										onClick={() => setAdjusting(id)}
+										aria-label={t("composer.adjust")}
+										title={t("composer.adjust")}
+										className="block rounded-md"
+									>
+										<img
+											src={assetUrl(id)}
+											alt={t("common.reference")}
+											className="size-16 rounded-md border border-line object-cover transition-opacity hover:opacity-80"
+										/>
+									</button>
+									{id === only && marked && (
+										// The marked area, as it was painted.
+										<img
+											src={marked.marks}
+											alt=""
+											className="pointer-events-none absolute inset-0 size-16 rounded-md object-cover opacity-55"
+										/>
+									)}
+									<button
+										type="button"
+										aria-label={t("composer.removeReference")}
+										onClick={() =>
+											setReferences(references.filter((r) => r !== id))
+										}
+										className="absolute -right-1.5 -top-1.5 size-5 rounded-full border border-line bg-panel text-xs leading-none"
+									>
+										×
+									</button>
+								</li>
+							))}
+							{only != null && canMask && (
+								<li className="flex flex-col items-start justify-center gap-1 text-sm">
+									<div className="flex gap-1.5">
+										<button
+											type="button"
+											onClick={() => setPainting(true)}
+											className="rounded-md border border-line px-2.5 py-1 text-dim hover:border-dim hover:text-ink"
+										>
+											{maskId ? t("composer.editArea") : t("composer.markArea")}
+										</button>
+										<button
+											type="button"
+											onClick={() => setExtending(true)}
+											className="rounded-md border border-line px-2.5 py-1 text-dim hover:border-dim hover:text-ink"
+										>
+											{t("composer.extend")}
+										</button>
+									</div>
+									{maskId && (
+										<button
+											type="button"
+											onClick={() => setMask(null)}
+											className="px-1 text-xs text-dim underline hover:text-ink"
+										>
+											{t("composer.removeMask")}
+										</button>
+									)}
+								</li>
+							)}
+						</ul>
 					)}
+
 					<button
 						type="button"
 						onClick={() => fileInput.current?.click()}
@@ -566,21 +492,119 @@ export function Composer(props: Props) {
 							? t("composer.uploading")
 							: t("composer.addReference")}
 					</button>
-					<span className="ml-auto text-sm text-danger" role="alert">
-						{error}
-					</span>
-					<button
-						type="button"
-						onClick={submit}
-						disabled={!canSend}
-						className="cta rounded-lg px-5 py-2 font-display text-base font-bold"
-					>
-						{selected.length > 1
-							? t("composer.compare", { count: selected.length })
-							: t("composer.generate")}
-					</button>
 				</div>
-			</div>
+			</aside>
+			<section
+				aria-label={t("composer.promptAndResults")}
+				className="flex min-h-0 flex-col overflow-y-auto"
+			>
+				<div className="flex flex-col gap-3 border-b border-line p-4">
+					{suggestion != null && (
+						<section
+							aria-label={t("composer.suggestion")}
+							className="rounded-md border border-line bg-bg px-3 py-2"
+						>
+							<h3 className="font-mono text-xs uppercase tracking-wide text-dim">
+								{t("composer.suggestion")}
+							</h3>
+							<p className="mt-1 leading-relaxed">{suggestion}</p>
+							<div className="mt-2 flex flex-wrap gap-1.5 text-sm">
+								<button
+									type="button"
+									onClick={() => {
+										setPrompt(suggestion);
+										setSuggestion(null);
+									}}
+									className="aurora rounded-md px-3 py-1"
+								>
+									{t("composer.suggestionUse")}
+								</button>
+								<button
+									type="button"
+									onClick={improve}
+									disabled={improving != null}
+									className="rounded-md border border-line px-3 py-1 text-dim hover:border-dim hover:text-ink disabled:opacity-40"
+								>
+									{t("composer.suggestionAnother")}
+								</button>
+								<button
+									type="button"
+									onClick={() => setSuggestion(null)}
+									className="rounded-md px-3 py-1 text-dim hover:text-ink"
+								>
+									{t("composer.suggestionDiscard")}
+								</button>
+							</div>
+						</section>
+					)}
+
+					<textarea
+						value={prompt}
+						onChange={(event) => {
+							setPrompt(event.target.value);
+							setImproveError(null);
+						}}
+						onKeyDown={(event) => {
+							if (
+								event.key === "Enter" &&
+								!event.shiftKey &&
+								!event.nativeEvent.isComposing
+							) {
+								event.preventDefault();
+								submit();
+							}
+						}}
+						rows={2}
+						placeholder={
+							references.length > 0
+								? media === "video"
+									? t("composer.placeholder.motion")
+									: t("composer.placeholder.change")
+								: media === "video"
+									? t("composer.placeholder.video")
+									: t("composer.placeholder.image")
+						}
+						aria-label={t("composer.prompt")}
+						className="w-full resize-none rounded-md border border-line bg-bg px-3 py-2 leading-relaxed"
+					/>
+
+					<div className="flex flex-wrap items-center gap-2">
+						{improving ? (
+							<button
+								type="button"
+								onClick={stopImproving}
+								className={`${control} text-dim hover:text-ink`}
+							>
+								<span className="animate-pulse">{t("composer.improving")}</span>{" "}
+								· {t("composer.improveStop")}
+							</button>
+						) : (
+							<button
+								type="button"
+								onClick={improve}
+								disabled={prompt.trim() === ""}
+								className={`${control} text-dim hover:text-ink disabled:opacity-40`}
+							>
+								✦ {t("composer.improve")}
+							</button>
+						)}
+						<span className="ml-auto text-sm text-danger" role="alert">
+							{error}
+						</span>
+						<button
+							type="button"
+							onClick={submit}
+							disabled={!canSend}
+							className="cta rounded-lg px-5 py-2 font-display text-base font-bold"
+						>
+							{selected.length > 1
+								? t("composer.compare", { count: selected.length })
+								: t("composer.generate")}
+						</button>
+					</div>
+				</div>
+				{props.children}
+			</section>
 			{adjusting != null && (
 				<Adjust
 					src={assetUrl(adjusting)}
@@ -645,6 +669,6 @@ export function Composer(props: Props) {
 					}}
 				/>
 			)}
-		</div>
+		</>
 	);
 }

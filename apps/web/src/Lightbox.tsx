@@ -2,7 +2,7 @@ import type { GenerationParams } from "@open-reel/core/types";
 import { useEffect, useRef } from "react";
 import { assetUrl } from "./api";
 import { usd } from "./format";
-import { useI18n } from "./i18n";
+import { type I18n, useI18n } from "./i18n";
 
 export interface LightboxItem {
 	assetId: string;
@@ -11,6 +11,31 @@ export interface LightboxItem {
 	modelName: string | null;
 	params: GenerationParams | null;
 	costUsd: number | null;
+}
+
+/** What is known about a picture or video made, as label and value. */
+export function itemFacts(i18n: I18n, item: LightboxItem): [string, unknown][] {
+	const { t } = i18n;
+	return (
+		[
+			[t("lightbox.model"), item.modelName],
+			[t("lightbox.ratio"), item.params?.aspectRatio],
+			[
+				t("lightbox.length"),
+				item.params?.durationSeconds &&
+					t("format.seconds", { seconds: item.params.durationSeconds }),
+			],
+			[t("lightbox.seed"), item.params?.seed],
+			[
+				t("lightbox.cost"),
+				item.costUsd == null
+					? null
+					: item.costUsd === 0
+						? t("picker.free")
+						: usd(i18n, item.costUsd),
+			],
+		] as [string, unknown][]
+	).filter(([, value]) => value != null);
 }
 
 interface Props {
@@ -28,24 +53,7 @@ export function Lightbox({ item, onClose, onUseAsReference }: Props) {
 	}, []);
 
 	const video = item.mime.startsWith("video/");
-	const facts = [
-		[t("lightbox.model"), item.modelName],
-		[t("lightbox.ratio"), item.params?.aspectRatio],
-		[
-			t("lightbox.length"),
-			item.params?.durationSeconds &&
-				t("format.seconds", { seconds: item.params.durationSeconds }),
-		],
-		[t("lightbox.seed"), item.params?.seed],
-		[
-			t("lightbox.cost"),
-			item.costUsd == null
-				? null
-				: item.costUsd === 0
-					? t("picker.free")
-					: usd(i18n, item.costUsd),
-		],
-	].filter(([, value]) => value != null);
+	const facts = itemFacts(i18n, item);
 
 	return (
 		// biome-ignore lint/a11y/useKeyWithClickEvents: clicking the backdrop closes; Esc already does so natively
@@ -83,7 +91,7 @@ export function Lightbox({ item, onClose, onUseAsReference }: Props) {
 						{facts.map(([label, value]) => (
 							<div key={label} className="contents">
 								<dt className="text-dim">{label}</dt>
-								<dd>{value}</dd>
+								<dd>{String(value)}</dd>
 							</div>
 						))}
 					</dl>
