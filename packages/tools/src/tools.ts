@@ -16,6 +16,42 @@ export interface ToolImage {
 	/** Base64. */
 	data: string;
 	mimeType: string;
+	/** Which picture it is, e.g. "ast_1 by FLUX.1 schnell". */
+	label?: string;
+}
+
+/** A smaller copy of a picture to show an agent, or null if it cannot. */
+export async function shrinkPicture(data: Uint8Array): Promise<{
+	size: { width: number; height: number };
+	image: ToolImage;
+} | null> {
+	try {
+		const size = await new Bun.Image(data).metadata();
+		const small = await new Bun.Image(data)
+			.resize(PREVIEW_SIDE, PREVIEW_SIDE, {
+				fit: "inside",
+				withoutEnlargement: true,
+			})
+			.webp({ quality: 85 })
+			.bytes();
+		return {
+			size,
+			image: {
+				data: Buffer.from(small).toString("base64"),
+				mimeType: "image/webp",
+			},
+		};
+	} catch {
+		return null;
+	}
+}
+
+/** Says which picture each preview is, in the order they come. */
+export function previewsLine(images: ToolImage[]): string[] {
+	const labels = images.flatMap((image) => (image.label ? [image.label] : []));
+	return labels.length > 0
+		? [`Previews below, in order: ${labels.join("; ")}.`]
+		: [];
 }
 
 export interface ToolResult {
@@ -210,29 +246,6 @@ export function createTools(reel: Reel, options: ToolsOptions): Tool[] {
 		return ids;
 	}
 
-	/** A smaller copy of a picture to show the agent, or null if it cannot. */
-	async function preview(data: Uint8Array) {
-		try {
-			const size = await new Bun.Image(data).metadata();
-			const small = await new Bun.Image(data)
-				.resize(PREVIEW_SIDE, PREVIEW_SIDE, {
-					fit: "inside",
-					withoutEnlargement: true,
-				})
-				.webp({ quality: 85 })
-				.bytes();
-			return {
-				size,
-				image: {
-					data: Buffer.from(small).toString("base64"),
-					mimeType: "image/webp",
-				},
-			};
-		} catch {
-			return null;
-		}
-	}
-
 	/** Says how a turn's jobs stand, with previews of what they made. */
 	async function report(
 		jobs: JobView[],
@@ -258,10 +271,10 @@ export function createTools(reel: Reel, options: ToolsOptions): Tool[] {
 			for (const asset of job.assets) {
 				const shown =
 					asset.mime.startsWith("image/") && images.length < MAX_PREVIEWS
-						? await preview((await reel.asset(asset.id)).data)
+						? await shrinkPicture((await reel.asset(asset.id)).data)
 						: null;
 				if (shown) {
-					images.push(shown.image);
+					images.push({ ...shown.image, label: `${asset.id} by ${name}` });
 					made.push(`${asset.id} (${shown.size.width}x${shown.size.height})`);
 				} else {
 					made.push(`${asset.id} (${asset.mime})`);
@@ -362,6 +375,7 @@ export function createTools(reel: Reel, options: ToolsOptions): Tool[] {
 			`Session ${session.id}, turn ${turn.id} (the user can open it at ${reel.sessionUrl(session.id)}).`,
 			...(await report(jobs, models, images)),
 		];
+		lines.push(...previewsLine(images));
 		if (!done(jobs)) {
 			lines.push(
 				stopped
@@ -550,6 +564,7 @@ export function createTools(reel: Reel, options: ToolsOptions): Tool[] {
 					lines.push(`Turn ${turn.id}: "${turn.prompt}"`);
 					lines.push(...(await report(turn.jobs, models, images)));
 				}
+				lines.push(...previewsLine(images));
 				return { text: lines.join("\n"), images };
 			},
 		}),
@@ -583,7 +598,9 @@ export function createTools(reel: Reel, options: ToolsOptions): Tool[] {
 			readOnly: true,
 			async run({ asset_id }) {
 				const { data, mime } = await reel.asset(asset_id);
-				const shown = mime.startsWith("image/") ? await preview(data) : null;
+				const shown = mime.startsWith("image/")
+					? await shrinkPicture(data)
+					: null;
 				if (!shown) {
 					return text(
 						`${asset_id} is a ${mime} that cannot be shown${options.files ? "; save_image saves it" : ""}.`,

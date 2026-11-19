@@ -21,8 +21,10 @@ import type { Reel } from "./reel";
 import { estimate, isLocal, SpendGuard } from "./spend";
 import {
 	createTools,
+	shrinkPicture,
 	TOOLS_INSTRUCTIONS,
 	type Tool,
+	type ToolImage,
 	type ToolResult,
 } from "./tools";
 
@@ -100,6 +102,9 @@ export function assistantInstructions(language?: string): string {
 		"- Leave models out unless the person names one: the best free model on this computer is used. Use paid models only when the person asks; they are asked to approve the cost.",
 		"- Call list_models when the person asks what can be used, or names a model you do not know.",
 		"- The pictures you make appear to the person on their own: do not repeat their ids or links.",
+		"- When you can see the results, look before you answer: say in one sentence whether they match what was asked, and if something is clearly off (cut off, wrong count, misspelled text, wrong colors) offer one concrete fix as a question. Do not make it again unasked.",
+		"- To change a picture you made, start from it: give its id in reference_images, with a model that edits or redraws pictures, rather than making a new one from words.",
+		"- When several models made the same prompt, say which result fits the request best and why, in a sentence.",
 		TOOLS_INSTRUCTIONS,
 	].join("\n");
 }
@@ -200,13 +205,21 @@ function resultMessage(
 			text: result.isError ? `Error: ${result.text}` : result.text,
 		},
 	];
-	if (vision) {
-		for (const image of result.images) {
-			content.push({ type: "image", ...image });
-		}
-	}
+	if (vision) content.push(...pictureParts(result.images));
 	return { role: "tool", callId: call.id, name: call.name, content };
 }
+
+/** Pictures for the model, each said what it is first. */
+function pictureParts(images: ToolImage[]): ChatPart[] {
+	return images.flatMap(({ label, data, mimeType }) => [
+		...(label ? [{ type: "text" as const, text: label }] : []),
+		{ type: "image" as const, data, mimeType },
+	]);
+}
+
+/** Recent results shown again, so a model that sees can talk about them. */
+const SEEN_TURNS = 2;
+const SEEN_PICTURES = 8;
 
 /** Kept without pictures: they are large, and the turn holds them. */
 const withoutPictures = (message: ChatMessage): ChatMessage =>
@@ -571,9 +584,9 @@ export class Assistant {
 				return;
 			}
 			const specs = tools.map(toolSpec);
-			const messages = conversation(
-				await this.options.store.list(ctx, sessionId),
-			);
+			const kept = await this.options.store.list(ctx, sessionId);
+			const messages = conversation(kept);
+			if (brain.vision) await this.showAgain(ctx, sessionId, kept, messages);
 			const instructions = assistantInstructions(language);
 			for (let step = 0; step < this.maxSteps; step++) {
 				const reply = await brain.chat(
@@ -648,7 +661,8 @@ export class Assistant {
 					messages.push(message);
 					await this.options.store.update(ctx, entry.id, {
 						...bodyOf(entry),
-						message: withoutPictures(message),
+						// Kept as words only: the pictures come back from the turn.
+						message: resultMessage(call, result, false),
 						...(result.turnId && { turnId: result.turnId }),
 					});
 					this.changed(ctx, sessionId);
@@ -671,6 +685,57 @@ export class Assistant {
 					code: error instanceof CodedError ? (error.code ?? null) : null,
 				},
 			});
+		}
+	}
+
+	/**
+	 * Puts the pictures of the latest results back into the conversation:
+	 * they are not kept with it, and the person often talks about them.
+	 */
+	private async showAgain(
+		ctx: UserContext,
+		sessionId: string,
+		entries: AssistantEntry[],
+		messages: ChatMessage[],
+	) {
+		const recent = entries
+			.filter((e) => e.turnId && e.message.role === "tool")
+			.slice(-SEEN_TURNS);
+		if (recent.length === 0) return;
+		const reel = this.options.reel(ctx);
+		const [detail, models] = await Promise.all([
+			reel.session(sessionId),
+			reel.models(),
+		]);
+		let shown = 0;
+		for (const entry of recent) {
+			const turn = detail.turns.find((t) => t.id === entry.turnId);
+			const { message } = entry;
+			if (!turn || message.role !== "tool") continue;
+			const images: ToolImage[] = [];
+			for (const job of turn.jobs) {
+				const name =
+					models.find((m) => m.id === job.modelId)?.name ?? job.modelId;
+				for (const asset of job.assets) {
+					if (!asset.mime.startsWith("image/") || shown >= SEEN_PICTURES) {
+						continue;
+					}
+					const small = await shrinkPicture(
+						(await reel.asset(asset.id)).data,
+					).catch(() => null);
+					if (!small) continue;
+					shown++;
+					images.push({ ...small.image, label: `${asset.id} by ${name}` });
+				}
+			}
+			// The same object conversation() kept: ids can repeat across turns.
+			const at = messages.indexOf(message);
+			const found = messages[at];
+			if (at < 0 || found?.role !== "tool" || images.length === 0) continue;
+			messages[at] = {
+				...found,
+				content: [...found.content, ...pictureParts(images)],
+			};
 		}
 	}
 

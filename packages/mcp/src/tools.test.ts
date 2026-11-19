@@ -107,7 +107,11 @@ test("a generation is waited for, compared across models, and shown", async () =
 	expect(said).toMatch(/Session ses_\w+/);
 	expect(said).toContain("Fake alpha: done");
 	expect(said).toContain("Fake beta: done");
-	expect(idsIn(said)).toHaveLength(2);
+	expect(new Set(idsIn(said)).size).toBe(2);
+	// Which preview is which, to compare them.
+	expect(said).toMatch(
+		/Previews below, in order: ast_\w+ by Fake alpha; ast_\w+ by Fake beta\./,
+	);
 	const images = imagesOf(result);
 	expect(images).toHaveLength(2);
 	expect(images[0]).toMatchObject({ mimeType: "image/webp" });

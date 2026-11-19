@@ -5,6 +5,7 @@ import {
 	type ChatReply,
 	CodedError,
 } from "@hatchlight/core";
+import { picture } from "@hatchlight/core/testing";
 import type {
 	AssistantEntry,
 	CreateTurnInput,
@@ -41,7 +42,7 @@ const paid = {
 } as unknown as ModelSpec;
 
 /** Hatchlight with sessions in memory; every turn is done at once. */
-function fakeReel() {
+function fakeReel(pictures = false) {
 	const sessions = new Map<string, SessionDetail>();
 	const inputs: CreateTurnInput[] = [];
 	let next = 0;
@@ -74,7 +75,9 @@ function fakeReel() {
 					providerId: modelId.split("/")[0],
 					status: "succeeded",
 					costUsd: null,
-					assets: [],
+					assets: pictures
+						? [{ id: `ast_${next}${i}`, mime: "image/png" }]
+						: [],
 				})),
 			} as unknown as TurnView;
 			session.turns.push(turn);
@@ -85,7 +88,8 @@ function fakeReel() {
 		},
 		gallery: async () => [],
 		asset: async () => {
-			throw new Error("no assets");
+			if (!pictures) throw new Error("no assets");
+			return { data: picture(64, 48), mime: "image/png" };
 		},
 		sessionUrl: (id) => `#/s/${id}`,
 	};
@@ -148,9 +152,10 @@ const call = (name: string, args: Record<string, unknown>, id = "c1") => ({
 
 function setup(
 	brain: ChatModel | null,
-	options: { maxSteps?: number; limitUsd?: number } = {},
+	options: { maxSteps?: number; limitUsd?: number; pictures?: boolean } = {},
 ) {
-	const { reel, inputs, start } = fakeReel();
+	const { pictures, ...rest } = options;
+	const { reel, inputs, start } = fakeReel(pictures);
 	const store = memoryStore();
 	let sessions = 0;
 	const assistant = new Assistant({
@@ -163,7 +168,7 @@ function setup(
 			return { id };
 		},
 		pollMs: 1,
-		...options,
+		...rest,
 	});
 	const idle = async (sessionId: string) => {
 		for (let i = 0; i < 500; i++) {
@@ -491,5 +496,58 @@ describe("the assistant, after its review", () => {
 		expect(fit(messages, undefined)).toBe(messages);
 		expect(fit(messages, 10_000)).toEqual(messages);
 		expect(fit(messages, 300)).toEqual([user("the latest")]);
+	});
+});
+
+describe("an assistant that can see", () => {
+	const picturesIn = (messages: ChatMessage[]) =>
+		messages.flatMap((m) =>
+			m.role === "assistant"
+				? []
+				: m.content.filter((p) => p.type === "image").map(() => m.role),
+		);
+	const labelsIn = (messages: ChatMessage[]) =>
+		messages.flatMap((m) =>
+			m.role === "tool"
+				? m.content.flatMap((p) =>
+						p.type === "text" && p.text.startsWith("ast_") ? [p.text] : [],
+					)
+				: [],
+		);
+
+	test("looks at what it made, and again when the person talks about it", async () => {
+		const brain = scripted(
+			call("generate", { prompt: "a fox", models: ["local/z"] }),
+			{ text: "A fox, as asked.", toolCalls: [] },
+			{ text: "Sure.", toolCalls: [] },
+		);
+		const seeing = { ...brain, vision: true };
+		const { assistant, idle } = setup(seeing, { pictures: true });
+		const { sessionId } = await assistant.send(ctx, { text: "a fox" });
+		await idle(sessionId);
+		// Right after making it, with which picture it is.
+		const after = brain.seen[1] ?? [];
+		expect(picturesIn(after)).toEqual(["tool"]);
+		expect(labelsIn(after)).toEqual(["ast_10 by Z"]);
+		// Pictures are not kept, yet the next message sees them again.
+		await assistant.send(ctx, { sessionId, text: "make it bigger" });
+		await idle(sessionId);
+		const next = brain.seen[2] ?? [];
+		expect(picturesIn(next)).toEqual(["tool"]);
+		expect(labelsIn(next)).toEqual(["ast_10 by Z"]);
+	});
+
+	test("a model that cannot see is sent no pictures", async () => {
+		const brain = scripted(
+			call("generate", { prompt: "a fox", models: ["local/z"] }),
+			{ text: "Done.", toolCalls: [] },
+			{ text: "Sure.", toolCalls: [] },
+		);
+		const { assistant, idle } = setup(brain, { pictures: true });
+		const { sessionId } = await assistant.send(ctx, { text: "a fox" });
+		await idle(sessionId);
+		await assistant.send(ctx, { sessionId, text: "bigger" });
+		await idle(sessionId);
+		for (const sent of brain.seen) expect(picturesIn(sent)).toEqual([]);
 	});
 });
