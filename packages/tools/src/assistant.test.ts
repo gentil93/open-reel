@@ -15,6 +15,7 @@ import {
 	Assistant,
 	type AssistantStore,
 	conversation,
+	fit,
 	toolSpec,
 } from "./assistant";
 import type { Reel, SessionDetail } from "./reel";
@@ -410,5 +411,85 @@ describe("the tools as the model is told about them", () => {
 		expect(properties.prompt).toBeDefined();
 		expect(properties.session_id).toBeUndefined();
 		expect(generate.parameters.required).toEqual(["prompt"]);
+	});
+});
+
+describe("the assistant, after its review", () => {
+	test("a stop right after a yes makes nothing", async () => {
+		const brain = scripted(
+			call("generate", { prompt: "a fox", models: ["fal/x"] }),
+		);
+		const { assistant, inputs, idle } = setup(brain);
+		const { sessionId } = await assistant.send(ctx, { text: "use X" });
+		await idle(sessionId);
+		const asked = (await assistant.view(ctx, sessionId)).entries.at(-1);
+		await assistant.answer(ctx, sessionId, asked?.id as string, true);
+		assistant.stop(ctx, sessionId);
+		await idle(sessionId);
+		expect(inputs).toHaveLength(0);
+		const view = await assistant.view(ctx, sessionId);
+		expect(view.spentUsd).toBe(0);
+		expect(view.entries.find((e) => e.id === asked?.id)?.confirm?.state).toBe(
+			"declined",
+		);
+	});
+
+	test("a yes runs only what it was given for", async () => {
+		const brain = scripted(
+			call("generate", { prompt: "a fox", models: ["fal/x"] }),
+		);
+		const { assistant, inputs, idle, store } = setup(brain);
+		const { sessionId } = await assistant.send(ctx, { text: "use X" });
+		await idle(sessionId);
+		const asked = store.entries.at(-1) as AssistantEntry;
+		// The price quoted was lower than what it costs now.
+		if (asked.confirm) asked.confirm.usd = 0.01;
+		await assistant.answer(ctx, sessionId, asked.id, true);
+		await idle(sessionId);
+		expect(inputs).toHaveLength(0);
+		expect(
+			JSON.stringify(store.entries.find((e) => e.id === asked.id)),
+		).toContain("price changed");
+	});
+
+	test("a result is kept in its place, with its turn", async () => {
+		const brain = scripted(call("generate", { prompt: "a fox" }), {
+			text: "Done.",
+			toolCalls: [],
+		});
+		const { assistant, idle } = setup(brain);
+		const { sessionId } = await assistant.send(ctx, { text: "a fox" });
+		await idle(sessionId);
+		const view = await assistant.view(ctx, sessionId);
+		expect(view.entries.map((e) => e.message.role)).toEqual([
+			"user",
+			"assistant",
+			"tool",
+			"assistant",
+		]);
+		expect(view.entries[2]?.turnId).toBe("trn_1");
+		expect(JSON.stringify(view.entries[2]?.message)).not.toContain(
+			"no result came back",
+		);
+	});
+
+	test("an old part of a long conversation is left out, from a message of the person's", () => {
+		const user = (text: string): ChatMessage => ({
+			role: "user",
+			content: [{ type: "text", text }],
+		});
+		const messages: ChatMessage[] = [
+			user("x".repeat(500)),
+			{
+				role: "assistant",
+				text: "",
+				toolCalls: [{ id: "a", name: "list_models", arguments: {} }],
+			},
+			{ role: "tool", callId: "a", name: "list_models", content: [] },
+			user("the latest"),
+		];
+		expect(fit(messages, undefined)).toBe(messages);
+		expect(fit(messages, 10_000)).toEqual(messages);
+		expect(fit(messages, 300)).toEqual([user("the latest")]);
 	});
 });

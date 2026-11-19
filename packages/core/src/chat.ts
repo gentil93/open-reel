@@ -43,6 +43,8 @@ export interface ChatReply {
 export interface ChatModel {
 	/** Whether pictures in the conversation reach the model. */
 	readonly vision: boolean;
+	/** How much of a conversation fits, in characters; unset, all of it. */
+	readonly contextChars?: number;
 	/** The model's next turn: words, tool calls, or both. */
 	chat(
 		instructions: string,

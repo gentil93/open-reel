@@ -32,7 +32,7 @@
 	"assistant.send": "Enviar",
 	"assistant.spent": "Gasto nesta conversa: {spent} de {limit}",
 	"assistant.stop": "Parar",
-	"assistant.stopped": "Parado.",
+	"assistant.stopped": "Parado. Imagens que já estavam sendo feitas continuam; cancele-as nos cartões delas.",
 	"assistant.thinking": "Pensando…",
 	"assistant.tooManySteps": "O assistente deu passos demais e parou. Peça de novo, de forma mais simples.",
 	"bestFor.cinema": "Cenas de cinema",

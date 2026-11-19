@@ -126,6 +126,11 @@ interface Server {
 export class LocalTranslator implements Translator, LanguageModel, ChatModel {
 	/** The small model reads words only. */
 	readonly vision = false;
+	/**
+	 * The conversation's share of the server's context, with room for the
+	 * instructions, the tools and the answer.
+	 */
+	readonly contextChars = 12_000;
 
 	private store: LocalModelStore;
 	private model: string;

@@ -292,7 +292,8 @@ export function Assistant({ sessionId, addReference }: Props) {
 							entry={entry}
 							turns={turns}
 							models={byModel}
-							answering={answer.isPending || busy}
+							// Until the view shows the answer, a second click would find nothing.
+							answering={answer.isPending || busy || view.isFetching}
 							onAnswer={(e, approve) =>
 								answer.mutate({ entryId: e.id, approve })
 							}

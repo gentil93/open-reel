@@ -157,23 +157,26 @@ export class SqliteRepository implements Repository {
 	}
 
 	async listEntries(ctx: UserContext, sessionId: string) {
-		return this.db
-			.select()
-			.from(schema.messages)
-			.where(
-				and(
-					eq(schema.messages.sessionId, sessionId),
-					eq(schema.messages.userId, ctx.userId),
-				),
-			)
-			.orderBy(schema.messages.createdAt, schema.messages.id)
-			.all()
-			.map(({ id, sessionId, createdAt, body }) => ({
-				...body,
-				id,
-				sessionId,
-				createdAt,
-			}));
+		return (
+			this.db
+				.select()
+				.from(schema.messages)
+				.where(
+					and(
+						eq(schema.messages.sessionId, sessionId),
+						eq(schema.messages.userId, ctx.userId),
+					),
+				)
+				// In the order written: several can share a millisecond.
+				.orderBy(sql`rowid`)
+				.all()
+				.map(({ id, sessionId, createdAt, body }) => ({
+					...body,
+					id,
+					sessionId,
+					createdAt,
+				}))
+		);
 	}
 
 	async listTurns(ctx: UserContext, sessionId: string) {

@@ -32,7 +32,7 @@
 	"assistant.send": "Send",
 	"assistant.spent": "Spent in this conversation: {spent} of {limit}",
 	"assistant.stop": "Stop",
-	"assistant.stopped": "Stopped.",
+	"assistant.stopped": "Stopped. Pictures already being made go on; cancel them on their cards.",
 	"assistant.thinking": "Thinking…",
 	"assistant.tooManySteps": "The assistant took too many steps and stopped. Ask again, more simply.",
 	"bestFor.cinema": "Cinematic shots",

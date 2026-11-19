@@ -60,6 +60,15 @@ describe("the assistant on Gemini", () => {
 		]);
 	});
 
+	test("keeps what the person says next apart from the results", () => {
+		const next = geminiContents([
+			...turn,
+			{ role: "user", content: [{ type: "text", text: "bigger" }] },
+		]);
+		expect(next).toHaveLength(4);
+		expect(next.at(-1)).toEqual({ role: "user", parts: [{ text: "bigger" }] });
+	});
+
 	test("reads calls and words, skipping its thoughts", () => {
 		expect(
 			geminiReply({

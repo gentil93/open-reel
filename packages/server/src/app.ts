@@ -236,7 +236,7 @@ export function createApp(options: AppOptions): Hono {
 		c.json(await service.getSession(user(c), c.req.param("id"))),
 	);
 	app.delete("/api/sessions/:id", async (c) => {
-		options.assistant?.stop(user(c), c.req.param("id"));
+		options.assistant?.forget(user(c), c.req.param("id"));
 		await service.deleteSession(user(c), c.req.param("id"));
 		return c.body(null, 204);
 	});

@@ -162,6 +162,29 @@ export function conversation(entries: AssistantEntry[]): ChatMessage[] {
 	return out;
 }
 
+/**
+ * The latest part of a conversation that fits a model's context, starting
+ * at something the person said, so no result is left without its call.
+ */
+export function fit(
+	messages: ChatMessage[],
+	chars: number | undefined,
+): ChatMessage[] {
+	if (chars == null) return messages;
+	const size = (m: ChatMessage) => JSON.stringify(m).length;
+	let total = messages.reduce((sum, m) => sum + size(m), 0);
+	let start = 0;
+	while (total > chars && start < messages.length - 1) {
+		total -= size(messages[start] as ChatMessage);
+		start++;
+		while (start < messages.length - 1 && messages[start]?.role !== "user") {
+			total -= size(messages[start] as ChatMessage);
+			start++;
+		}
+	}
+	return messages.slice(start);
+}
+
 const errorText = (error: unknown) =>
 	error instanceof Error ? error.message : String(error);
 
@@ -224,6 +247,15 @@ export class Assistant {
 	async view(ctx: UserContext, sessionId: string): Promise<AssistantView> {
 		const entries = await this.options.store.list(ctx, sessionId);
 		const guard = await this.guard(ctx, sessionId, entries);
+		// Turns no tool waited for to the end (stopped, or still running then)
+		// are counted once they end.
+		const held = guard.heldKeys();
+		if (held.length > 0) {
+			const detail = await this.options.reel(ctx).session(sessionId);
+			for (const turn of detail.turns) {
+				if (held.includes(turn.id)) guard.settle(turn);
+			}
+		}
 		const work = this.working.get(this.key(ctx, sessionId));
 		return {
 			entries,
@@ -291,9 +323,15 @@ export class Assistant {
 				);
 			}
 			entry = found;
-			brain = approve
-				? await this.needBrain(ctx)
-				: await this.options.brain(ctx);
+			othersWaiting = entries.some(
+				(e) => e.id !== entryId && e.confirm?.state === "asked",
+			);
+			// Needed only when the model is asked to go on.
+			brain = othersWaiting
+				? null
+				: approve
+					? await this.needBrain(ctx)
+					: await this.options.brain(ctx);
 			if (!approve) {
 				await this.decide(
 					ctx,
@@ -301,9 +339,6 @@ export class Assistant {
 					"The person said no to the cost; nothing was made. Do not use paid models again unless they ask.",
 				);
 			}
-			othersWaiting = entries.some(
-				(e) => e.id !== entryId && e.confirm?.state === "asked",
-			);
 		} catch (error) {
 			this.release(ctx, sessionId);
 			throw error;
@@ -320,7 +355,9 @@ export class Assistant {
 			work,
 			next,
 			language,
-			approve ? (tools) => this.approved(ctx, work, tools, entry) : undefined,
+			approve
+				? (tools, guard) => this.approved(ctx, work, tools, guard, entry)
+				: undefined,
 		);
 	}
 
@@ -329,20 +366,51 @@ export class Assistant {
 		ctx: UserContext,
 		work: Work,
 		tools: Tool[],
+		guard: SpendGuard,
 		entry: AssistantEntry,
 	) {
 		const { confirm, message } = entry;
 		if (!confirm || message.role !== "tool") return;
-		const body = bodyOf(entry);
-		const yes = { ...confirm, state: "approved" as const };
-		await this.options.store.update(ctx, entry.id, { ...body, confirm: yes });
-		this.changed(ctx, entry.sessionId);
 		const call = {
 			id: message.callId,
 			name: message.name,
 			arguments: confirm.arguments,
 		};
-		const result = await this.call(ctx, entry.sessionId, work, tools, call);
+		if (work.controller.signal.aborted) {
+			await this.decide(ctx, entry, "Stopped before it ran; nothing was made.");
+			return;
+		}
+		// What runs must be what the person said yes to.
+		const now = await this.paidCost(this.options.reel(ctx), call, guard);
+		if (
+			now &&
+			(now.names.join("\n") !== confirm.modelNames.join("\n") ||
+				now.usd > confirm.usd + 1e-9)
+		) {
+			await this.decide(
+				ctx,
+				entry,
+				"The models or the price changed after the person said yes; nothing was made. Ask again.",
+			);
+			return;
+		}
+		const body = bodyOf(entry);
+		const yes = { ...confirm, state: "approved" as const };
+		await this.options.store.update(ctx, entry.id, { ...body, confirm: yes });
+		this.changed(ctx, entry.sessionId);
+		const result = await this.call(
+			ctx,
+			entry.sessionId,
+			work,
+			tools,
+			call,
+			(turnId) =>
+				this.options.store.update(ctx, entry.id, {
+					...body,
+					confirm: yes,
+					turnId,
+				}),
+		);
 		await this.options.store.update(ctx, entry.id, {
 			...body,
 			confirm: yes,
@@ -350,6 +418,12 @@ export class Assistant {
 			...(result.turnId && { turnId: result.turnId }),
 		});
 		this.changed(ctx, entry.sessionId);
+	}
+
+	/** A session is gone: its work stops and its spending is forgotten. */
+	forget(ctx: UserContext, sessionId: string): void {
+		this.stop(ctx, sessionId);
+		this.guards.delete(this.key(ctx, sessionId));
 	}
 
 	/** Stops the assistant's work on a conversation; what it made stays. */
@@ -458,7 +532,7 @@ export class Assistant {
 		brain: ChatModel | null,
 		language: string | undefined,
 		/** Runs first, before the model is asked. */
-		before?: (tools: Tool[]) => Promise<void>,
+		before?: (tools: Tool[], guard: SpendGuard) => Promise<void>,
 	) {
 		void this.loop(ctx, sessionId, work, brain, language, before)
 			.catch((error) => console.error(error))
@@ -471,7 +545,7 @@ export class Assistant {
 		work: Work,
 		brain: ChatModel | null,
 		language: string | undefined,
-		before?: (tools: Tool[]) => Promise<void>,
+		before?: (tools: Tool[], guard: SpendGuard) => Promise<void>,
 	) {
 		const { signal } = work.controller;
 		const reel = this.options.reel(ctx);
@@ -491,7 +565,7 @@ export class Assistant {
 				waitMs: this.options.waitMs,
 				pollMs: this.options.pollMs,
 			});
-			if (before) await before(tools);
+			if (before) await before(tools, guard);
 			if (!brain || signal.aborted) {
 				if (signal.aborted) await say({ note: "stopped" });
 				return;
@@ -502,7 +576,12 @@ export class Assistant {
 			);
 			const instructions = assistantInstructions(language);
 			for (let step = 0; step < this.maxSteps; step++) {
-				const reply = await brain.chat(instructions, messages, specs, signal);
+				const reply = await brain.chat(
+					instructions,
+					fit(messages, brain.contextChars),
+					specs,
+					signal,
+				);
 				const said: ChatMessage = {
 					role: "assistant",
 					text: reply.text,
@@ -516,6 +595,7 @@ export class Assistant {
 				for (const call of reply.toolCalls) {
 					if (signal.aborted) break;
 					const cost = await this.paidCost(reel, call, guard);
+					if (signal.aborted) break;
 					if (cost) {
 						asked = true;
 						await this.add(ctx, sessionId, {
@@ -539,13 +619,39 @@ export class Assistant {
 						});
 						continue;
 					}
-					const result = await this.call(ctx, sessionId, work, tools, call);
+					// Written first, so a turn it makes is linked even if the
+					// server stops before the call ends.
+					const entry = await this.add(ctx, sessionId, {
+						message: resultMessage(
+							call,
+							{
+								text: "Started, but no result came back.",
+								images: [],
+								isError: true,
+							},
+							false,
+						),
+					});
+					const result = await this.call(
+						ctx,
+						sessionId,
+						work,
+						tools,
+						call,
+						(turnId) =>
+							this.options.store.update(ctx, entry.id, {
+								...bodyOf(entry),
+								turnId,
+							}),
+					);
 					const message = resultMessage(call, result, brain.vision);
 					messages.push(message);
-					await this.add(ctx, sessionId, {
-						message,
+					await this.options.store.update(ctx, entry.id, {
+						...bodyOf(entry),
+						message: withoutPictures(message),
 						...(result.turnId && { turnId: result.turnId }),
 					});
+					this.changed(ctx, sessionId);
 				}
 				if (signal.aborted) {
 					await say({ note: "stopped" });
@@ -575,8 +681,11 @@ export class Assistant {
 		work: Work,
 		tools: Tool[],
 		call: ToolCall,
+		/** Keeps the turn the call made, as soon as it is made. */
+		onTurn?: (turnId: string) => Promise<void>,
 	): Promise<ToolResult> {
 		const tool = tools.find((t) => t.name === call.name);
+		let linked: Promise<void> | undefined;
 		if (!tool) {
 			return {
 				text: `There is no tool named ${call.name}.`,
@@ -592,12 +701,14 @@ export class Assistant {
 				progress: async () => {},
 				started: (turnId) => {
 					work.turnId = turnId;
+					linked = onTurn?.(turnId).catch((error) => console.error(error));
 					this.changed(ctx, sessionId);
 				},
 			});
 		} catch (error) {
 			return { text: errorText(error), images: [], isError: true };
 		} finally {
+			await linked;
 			if (work.turnId) {
 				work.turnId = null;
 				this.changed(ctx, sessionId);

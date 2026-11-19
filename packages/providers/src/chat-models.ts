@@ -61,14 +61,16 @@ const geminiParts = (parts: ChatPart[]): GeminiPart[] =>
 /** The conversation in Gemini's format: tool results go as the user's. */
 export function geminiContents(messages: ChatMessage[]): unknown[] {
 	const contents: { role: string; parts: GeminiPart[] }[] = [];
-	const add = (role: string, parts: GeminiPart[]) => {
+	let answering = false;
+	const add = (role: string, parts: GeminiPart[], results = false) => {
 		const last = contents.at(-1);
-		// Results of one turn's calls answer it together.
-		if (last && last.role === role && role === "user") {
+		// Results of one turn's calls answer it together; nothing else joins.
+		if (last && results && answering) {
 			last.parts.push(...parts);
 		} else {
 			contents.push({ role, parts });
 		}
+		answering = results;
 	};
 	for (const message of messages) {
 		if (message.role === "user") {
@@ -86,15 +88,19 @@ export function geminiContents(messages: ChatMessage[]): unknown[] {
 				.filter((p) => p.type === "text")
 				.map((p) => (p.type === "text" ? p.text : ""))
 				.join("\n");
-			add("user", [
-				{
-					functionResponse: {
-						name: message.name,
-						response: { result: text },
+			add(
+				"user",
+				[
+					{
+						functionResponse: {
+							name: message.name,
+							response: { result: text },
+						},
 					},
-				},
-				...geminiParts(message.content.filter((p) => p.type === "image")),
-			]);
+					...geminiParts(message.content.filter((p) => p.type === "image")),
+				],
+				true,
+			);
 		}
 	}
 	return contents;

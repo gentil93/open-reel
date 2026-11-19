@@ -1161,11 +1161,12 @@ describe("assistant conversations", () => {
 				content: [{ type: "text" as const, text }],
 			},
 		});
-		await repo.addEntry(said("msg_b", "second", 2), "ana");
-		await repo.addEntry(said("msg_a", "first", 1), "ana");
+		// Written in the same millisecond, with ids in no order: kept as written.
+		await repo.addEntry(said("msg_b", "first", 1), "ana");
+		await repo.addEntry(said("msg_a", "second", 1), "ana");
 		expect((await repo.listEntries(ana, session.id)).map((e) => e.id)).toEqual([
-			"msg_a",
 			"msg_b",
+			"msg_a",
 		]);
 		// Someone else can neither read nor change them.
 		expect(await repo.listEntries({ userId: "bia" }, session.id)).toEqual([]);
@@ -1178,7 +1179,9 @@ describe("assistant conversations", () => {
 			...body,
 			confirm: { arguments: {}, modelNames: ["X"], usd: 1, state: "asked" },
 		});
-		const [first] = await repo.listEntries(ana, sessionId);
+		const first = (await repo.listEntries(ana, sessionId)).find(
+			(e) => e.id === id,
+		);
 		expect(first).toMatchObject({ id, createdAt, confirm: { state: "asked" } });
 		expect(first?.note).toBeUndefined();
 

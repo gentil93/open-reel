@@ -90,6 +90,11 @@ export class SpendGuard {
 		return { ok: true, usd };
 	}
 
+	/** What holds are kept under: turns, or calls not yet made. */
+	heldKeys(): string[] {
+		return [...this.held.keys()];
+	}
+
 	/** Lets a hold go: what it was for never started. */
 	release(key: string): void {
 		this.held.delete(key);

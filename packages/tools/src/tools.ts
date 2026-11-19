@@ -303,6 +303,10 @@ export function createTools(reel: Reel, options: ToolsOptions): Tool[] {
 			input.durationSeconds,
 		);
 		if (!held.ok) return failure(held.reason);
+		if (context.signal.aborted) {
+			spend.release(pending);
+			return failure("Stopped before it started; nothing was made.");
+		}
 
 		let session: { id: string };
 		let turn: Awaited<ReturnType<Reel["createTurn"]>>["turn"];
