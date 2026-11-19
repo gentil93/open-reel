@@ -1,3 +1,4 @@
+import { storedValue } from "@hatchlight/core/legacy";
 import {
 	MAX_LORAS,
 	type Media,
@@ -60,7 +61,7 @@ export function rememberModels(ids: string[]): void {
 
 function savedModels(): string[] {
 	try {
-		const value = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
+		const value = JSON.parse(storedValue(localStorage, STORAGE_KEY) ?? "[]");
 		return Array.isArray(value) ? value : [];
 	} catch {
 		return [];

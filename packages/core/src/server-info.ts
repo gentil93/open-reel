@@ -1,5 +1,6 @@
 import { readFile, rename, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
+import { legacyName } from "./legacy";
 
 /** Where a running Hatchlight can be reached, for other processes to find. */
 export interface ServerInfo {
@@ -11,23 +12,32 @@ export interface ServerInfo {
 export const serverInfoFile = (dataDir: string) =>
 	join(dataDir, "hatchlight.server.json");
 
-/** Says where this server listens, once it owns the data directory. */
+/** The same file under the old name, where versions before the rename look. */
+export const legacyServerInfoFile = (dataDir: string) =>
+	join(dataDir, legacyName(basename(serverInfoFile(dataDir))));
+
+/**
+ * Says where this server listens, once it owns the data directory: under
+ * both names, so an agent set up before the rename uses this server rather
+ * than starting another.
+ */
 export async function writeServerInfo(
 	dataDir: string,
 	info: ServerInfo,
 ): Promise<void> {
-	// Whole or not at all: a reader never sees half of it.
-	const file = serverInfoFile(dataDir);
-	const tmp = `${file}.${process.pid}.tmp`;
-	await writeFile(tmp, JSON.stringify(info));
-	await rename(tmp, file);
+	for (const file of [serverInfoFile(dataDir), legacyServerInfoFile(dataDir)]) {
+		// Whole or not at all: a reader never sees half of it.
+		const tmp = `${file}.${process.pid}.tmp`;
+		await writeFile(tmp, JSON.stringify(info));
+		await rename(tmp, file);
+	}
 }
 
 /** Removes what `writeServerInfo` wrote, if it is still this process's. */
 export async function clearServerInfo(dataDir: string): Promise<void> {
-	const info = await readServerInfo(dataDir, () => true);
-	if (info?.pid === process.pid) {
-		await rm(serverInfoFile(dataDir), { force: true });
+	for (const file of [serverInfoFile(dataDir), legacyServerInfoFile(dataDir)]) {
+		const info = await readInfo(file, () => true);
+		if (info?.pid === process.pid) await rm(file, { force: true });
 	}
 }
 
@@ -41,14 +51,27 @@ const running = (pid: number) => {
 	}
 };
 
-/** The server running on a data directory, or null when none is. */
+/**
+ * The server running on a data directory, or null when none is. A server
+ * from before the rename says so under the old name, and is found too.
+ */
 export async function readServerInfo(
 	dataDir: string,
 	alive: (pid: number) => boolean = running,
 ): Promise<ServerInfo | null> {
+	return (
+		(await readInfo(serverInfoFile(dataDir), alive)) ??
+		(await readInfo(legacyServerInfoFile(dataDir), alive))
+	);
+}
+
+async function readInfo(
+	file: string,
+	alive: (pid: number) => boolean,
+): Promise<ServerInfo | null> {
 	try {
 		const info = JSON.parse(
-			await readFile(serverInfoFile(dataDir), "utf8"),
+			await readFile(file, "utf8"),
 		) as Partial<ServerInfo>;
 		if (
 			typeof info.pid !== "number" ||

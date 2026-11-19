@@ -11,6 +11,7 @@
 import { cp, mkdir, readdir, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { $ } from "bun";
+import { APP_NAME, LEGACY_NAME } from "../packages/core/src/legacy";
 
 const PORT = 4100;
 const PROGRAM = "hatchlight-preview.exe";
@@ -35,22 +36,32 @@ const dir = (await $`wslpath -u ${windowsDir}`.text()).trim();
  */
 async function stopServer(): Promise<boolean> {
 	const appData = (await $`cmd.exe /c echo %APPDATA%`.quiet().text()).trim();
-	const file = (
-		await $`wslpath -u ${`${appData}\\hatchlight\\hatchlight.server.json`}`.text()
-	).trim();
-	const pid = await Bun.file(file)
-		.json()
-		.then((info: { pid?: unknown }) => info.pid)
-		.catch(() => null);
-	if (typeof pid !== "number" || !Number.isInteger(pid)) return false;
-	// The installed app writes the same file; only a preview is stopped.
-	const listed = await $`tasklist.exe /FI ${`PID eq ${pid}`} /NH`
-		.quiet()
-		.nothrow()
-		.text();
-	if (!listed.includes(PROGRAM)) return false;
-	await $`taskkill.exe /PID ${pid} /T /F`.quiet().nothrow();
-	return true;
+	// An install from before the rename keeps its data directory, and a
+	// preview from then said where it listens under the old name.
+	const names = [APP_NAME, LEGACY_NAME];
+	const previews = names.map((name) => `${name}-preview.exe`);
+	let stopped = false;
+	for (const folder of names) {
+		for (const name of names) {
+			const file = (
+				await $`wslpath -u ${`${appData}\\${folder}\\${name}.server.json`}`.text()
+			).trim();
+			const pid = await Bun.file(file)
+				.json()
+				.then((info: { pid?: unknown }) => info.pid)
+				.catch(() => null);
+			if (typeof pid !== "number" || !Number.isInteger(pid)) continue;
+			// The installed app writes the same file; only a preview is stopped.
+			const listed = await $`tasklist.exe /FI ${`PID eq ${pid}`} /NH`
+				.quiet()
+				.nothrow()
+				.text();
+			if (!previews.some((program) => listed.includes(program))) continue;
+			await $`taskkill.exe /PID ${pid} /T /F`.quiet().nothrow();
+			stopped = true;
+		}
+	}
+	return stopped;
 }
 
 const stopped = await stopServer();
@@ -59,12 +70,12 @@ if (process.argv.includes("--stop")) {
 	process.exit(0);
 }
 
-// The installed app holds the same data directory while it is open.
-const app = await $`tasklist.exe /FI "IMAGENAME eq hatchlight-server.exe" /NH`
-	.quiet()
-	.nothrow()
-	.text();
-if (app.includes("hatchlight-server.exe")) {
+// The installed app holds the same data directory while it is open, under
+// either name.
+const tasks = await $`tasklist.exe /NH`.quiet().nothrow().text();
+if (
+	[APP_NAME, LEGACY_NAME].some((name) => tasks.includes(`${name}-server.exe`))
+) {
 	console.error(
 		"The Hatchlight app is open. Close it first: both use the same data.",
 	);

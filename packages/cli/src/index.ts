@@ -3,6 +3,7 @@ import { writeSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import {
+	appEnv,
 	chosenModelsDir,
 	clearServerInfo,
 	defaultDataDir,
@@ -89,7 +90,7 @@ const dataDir = values["data-dir"] ?? defaultDataDir();
 // folder can be changed in the app, and every Hatchlight sharing the default
 // one follows that choice.
 const fixedModelsDir =
-	process.env.HATCHLIGHT_MODELS_DIR ??
+	appEnv(process.env, "MODELS_DIR") ??
 	(values["data-dir"] ? join(dataDir, "models") : null);
 const defaultModels = fixedModelsDir ? null : await defaultModelsDir(dataDir);
 const modelsDir =

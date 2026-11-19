@@ -12,6 +12,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { envVariable, LEGACY_NAME } from "@hatchlight/core";
 import {
 	Agents,
 	type AgentsSetup,
@@ -94,6 +95,95 @@ test("Claude Desktop gets Hatchlight next to what it already had", async () => {
 		theme: "dark",
 		mcpServers: { other: { command: "other" } },
 	});
+});
+
+test("connecting again moves the entry from before the rename to the new name", async () => {
+	const { agents, config, read } = await claude();
+	const program = `C:\\Program Files\\${LEGACY_NAME}\\${LEGACY_NAME}-server.exe`;
+	const legacy = { command: program, args: ["mcp", "--allow-paid"] };
+	await writeFile(
+		config,
+		JSON.stringify({
+			mcpServers: { other: { command: "other" }, [LEGACY_NAME]: legacy },
+		}),
+	);
+	// It still runs, so it shows as connected, to be connected again.
+	expect((await agents.status()).claudeDesktop).toMatchObject({
+		connected: true,
+		current: false,
+		policy: { allowPaid: true, spendLimitUsd: null },
+	});
+
+	await agents.connectClaudeDesktop({ allowPaid: false, spendLimitUsd: null });
+	expect(await read()).toEqual({
+		mcpServers: {
+			other: { command: "other" },
+			hatchlight: { command: "wsl.exe", args: ["-d", "Ubuntu", "-e", "bun"] },
+		},
+	});
+
+	await writeFile(
+		config,
+		JSON.stringify({ mcpServers: { [LEGACY_NAME]: legacy } }),
+	);
+	await agents.disconnectClaudeDesktop();
+	expect(await read()).toEqual({ mcpServers: {} });
+});
+
+test("what the person added to the entry from before the rename is kept", async () => {
+	const { agents, config, read } = await claude();
+	const models = envVariable(LEGACY_NAME, "MODELS_DIR");
+	await writeFile(
+		config,
+		JSON.stringify({
+			mcpServers: {
+				[LEGACY_NAME]: {
+					command: "wsl.exe",
+					args: [
+						"-d",
+						"Ubuntu",
+						"-e",
+						"bun",
+						`/home/a/${LEGACY_NAME}/packages/cli/src/index.ts`,
+						"mcp",
+						"--data-dir",
+						"/data",
+						"--allow-paid",
+						"--spend-limit",
+						"3",
+					],
+					env: { [models]: "/models", WSLENV: `${models}/p`, OTHER: "x" },
+				},
+			},
+		}),
+	);
+	await agents.connectClaudeDesktop({ allowPaid: false, spendLimitUsd: null });
+	expect(await read()).toEqual({
+		mcpServers: {
+			hatchlight: {
+				command: "wsl.exe",
+				args: ["-d", "Ubuntu", "-e", "bun", "--data-dir", "/data"],
+				env: {
+					HATCHLIGHT_MODELS_DIR: "/models",
+					WSLENV: "HATCHLIGHT_MODELS_DIR/p",
+					OTHER: "x",
+				},
+			},
+		},
+	});
+});
+
+test("an entry under the old name that is not this app's is left alone", async () => {
+	const { agents, config, read } = await claude();
+	const someone = { command: "npx", args: ["-y", "another-reel-server"] };
+	await writeFile(
+		config,
+		JSON.stringify({ mcpServers: { [LEGACY_NAME]: someone } }),
+	);
+	expect((await agents.status()).claudeDesktop.connected).toBe(false);
+	await agents.connectClaudeDesktop({ allowPaid: false, spendLimitUsd: null });
+	await agents.disconnectClaudeDesktop();
+	expect(await read()).toEqual({ mcpServers: { [LEGACY_NAME]: someone } });
 });
 
 test("settings that cannot be read are left alone, and the reason is shown", async () => {
@@ -200,6 +290,15 @@ test("each system's Claude Desktop settings are found where it keeps them", asyn
 	]);
 	expect(linux.code.env).toEqual({ HATCHLIGHT_MODELS_DIR: resolve("models") });
 	expect(linux.desktop).toEqual(linux.code);
+});
+
+test("folders set under the old variable names go on under the new ones", async () => {
+	const setup = await agentsSetup({
+		platform: "darwin",
+		env: { [envVariable(LEGACY_NAME, "DATA_DIR")]: "/data" },
+		home: "/Users/a",
+	});
+	expect(setup.code.env).toEqual({ HATCHLIGHT_DATA_DIR: "/data" });
 });
 
 test("Claude from the Microsoft Store is set up in its own package", async () => {

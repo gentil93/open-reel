@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { envVariable, LEGACY_NAME } from "./legacy";
 import {
 	chosenModelsDir,
 	defaultDataDir,
@@ -36,6 +37,43 @@ describe("defaultDataDir", () => {
 		expect(defaultDataDir("win32", { HATCHLIGHT_DATA_DIR: "/x" }, "")).toBe(
 			"/x",
 		);
+		expect(
+			defaultDataDir(
+				"win32",
+				{ [envVariable(LEGACY_NAME, "DATA_DIR")]: "/old" },
+				"",
+			),
+		).toBe("/old");
+	});
+
+	test("stays in the folder from before the rename while the new one has no gallery", async () => {
+		const home = await mkdtemp(join(tmpdir(), "hatchlight-paths-"));
+		try {
+			const share = join(home, ".local", "share");
+			const current = join(share, "hatchlight");
+			const legacy = join(share, LEGACY_NAME);
+			expect(defaultDataDir("linux", {}, home)).toBe(current);
+			await mkdir(legacy, { recursive: true });
+			expect(defaultDataDir("linux", {}, home)).toBe(legacy);
+			// A new folder that exists but has no gallery does not count.
+			await mkdir(current);
+			expect(defaultDataDir("linux", {}, home)).toBe(legacy);
+			await writeFile(join(legacy, `${LEGACY_NAME}.sqlite`), "");
+			expect(defaultDataDir("linux", {}, home)).toBe(legacy);
+			await writeFile(join(current, "hatchlight.sqlite"), "");
+			expect(defaultDataDir("linux", {}, home)).toBe(current);
+		} finally {
+			await rm(home, { recursive: true });
+		}
+		const roaming = "C:\\Users\\ana\\AppData\\Roaming";
+		expect(
+			defaultDataDir(
+				"win32",
+				{ APPDATA: roaming },
+				"",
+				(path) => path === `${roaming}\\${LEGACY_NAME}`,
+			),
+		).toBe(`${roaming}\\${LEGACY_NAME}`);
 	});
 });
 
@@ -73,6 +111,33 @@ describe("defaultModelsDir", () => {
 		expect(
 			await defaultModelsDir("/d", "win32", { HATCHLIGHT_MODELS_DIR: "/m" }),
 		).toBe("/m");
+		expect(
+			await defaultModelsDir("/d", "win32", {
+				[envVariable(LEGACY_NAME, "MODELS_DIR")]: "/old",
+			}),
+		).toBe("/old");
+	});
+
+	test("stay in the folder from before the rename while the new one has none", async () => {
+		const local = "C:\\Users\\ana\\AppData\\Local";
+		const legacy = `${local}\\${LEGACY_NAME}`;
+		const models = (...present: string[]) =>
+			defaultModelsDir("C:\\data", "win32", { LOCALAPPDATA: local }, (path) =>
+				present.includes(path),
+			);
+		expect(await models(`${legacy}\\models`)).toBe(`${legacy}\\models`);
+		// Moved elsewhere then: the note of where is next to the old folder.
+		expect(await models(`${legacy}\\models-location.json`)).toBe(
+			`${legacy}\\models`,
+		);
+		// Something else in the new folder, such as a preview, does not count.
+		expect(
+			await models(`${local}\\hatchlight\\preview`, `${legacy}\\models`),
+		).toBe(`${legacy}\\models`);
+		expect(
+			await models(`${local}\\hatchlight\\models`, `${legacy}\\models`),
+		).toBe(`${local}\\hatchlight\\models`);
+		expect(await models()).toBe(`${local}\\hatchlight\\models`);
 	});
 });
 

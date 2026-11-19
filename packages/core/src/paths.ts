@@ -1,25 +1,82 @@
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, posix, win32 } from "node:path";
+import { APP_NAME, appEnv, LEGACY_NAME } from "./legacy";
 import { detectHardware } from "./local/hardware";
+
+type Exists = (path: string) => boolean;
+
+/**
+ * The app's folder in `parent`, or the one under the old name while only
+ * that one has `inside`: an install made before the rename keeps its
+ * folder. It is never moved, since another process may be using it.
+ */
+export function appFolder(
+	parent: string,
+	path: typeof posix,
+	exists: Exists,
+	inside: string[],
+): string {
+	const current = path.join(parent, APP_NAME);
+	const legacy = path.join(parent, LEGACY_NAME);
+	const has = (folder: string) =>
+		inside.some((name) => exists(path.join(folder, name)));
+	return !has(current) && has(legacy) ? legacy : current;
+}
+
+/**
+ * The data folder in `parent`: the one with a gallery, the new one first.
+ * A new folder without one (made by a preview or a test run, say) does not
+ * hide the gallery made before the rename; with no gallery anywhere, the
+ * old folder is used while it is there.
+ */
+function dataFolder(
+	parent: string,
+	path: typeof posix,
+	exists: Exists,
+): string {
+	const current = path.join(parent, APP_NAME);
+	const legacy = path.join(parent, LEGACY_NAME);
+	if (exists(path.join(current, `${APP_NAME}.sqlite`))) return current;
+	if (exists(path.join(legacy, `${LEGACY_NAME}.sqlite`))) return legacy;
+	return exists(legacy) ? legacy : current;
+}
 
 /** Directory for the database, assets and stored keys, where each system expects it. */
 export function defaultDataDir(
 	platform: NodeJS.Platform = process.platform,
 	env: Record<string, string | undefined> = process.env,
 	home: string = homedir(),
+	exists: Exists = existsSync,
 ): string {
-	if (env.HATCHLIGHT_DATA_DIR) return env.HATCHLIGHT_DATA_DIR;
+	const explicit = appEnv(env, "DATA_DIR");
+	if (explicit) return explicit;
 	if (platform === "win32") {
-		return win32.join(
+		return dataFolder(
 			env.APPDATA ?? win32.join(home, "AppData", "Roaming"),
-			"hatchlight",
+			win32,
+			exists,
 		);
 	}
 	if (platform === "darwin") {
-		return join(home, "Library", "Application Support", "hatchlight");
+		return dataFolder(
+			join(home, "Library", "Application Support"),
+			posix,
+			exists,
+		);
 	}
-	return join(env.XDG_DATA_HOME ?? join(home, ".local", "share"), "hatchlight");
+	return dataFolder(
+		env.XDG_DATA_HOME ?? join(home, ".local", "share"),
+		posix,
+		exists,
+	);
 }
+
+/**
+ * What makes a folder the one holding the models: the models, or where they
+ * were moved to. Anything else in it, such as a preview of the app, does not.
+ */
+const MODELS = ["models", "models-location.json"];
 
 /**
  * `\\?\C:\...` turns into `C:\...`: in that form Windows takes no forward
@@ -52,11 +109,13 @@ export async function defaultModelsDir(
 	dataDir: string,
 	platform: NodeJS.Platform = process.platform,
 	env: Record<string, string | undefined> = process.env,
+	exists: Exists = existsSync,
 ): Promise<string> {
-	if (env.HATCHLIGHT_MODELS_DIR) return env.HATCHLIGHT_MODELS_DIR;
+	const explicit = appEnv(env, "MODELS_DIR");
+	if (explicit) return explicit;
 	if (platform === "win32") {
 		return env.LOCALAPPDATA
-			? win32.join(env.LOCALAPPDATA, "hatchlight", "models")
+			? win32.join(appFolder(env.LOCALAPPDATA, win32, exists, MODELS), "models")
 			: win32.join(dataDir, "models");
 	}
 	if (
@@ -68,7 +127,7 @@ export async function defaultModelsDir(
 			windows && !windows.includes("%")
 				? await output(["wslpath", "-u", windows])
 				: null;
-		if (linux) return join(linux, "hatchlight", "models");
+		if (linux) return join(appFolder(linux, posix, exists, MODELS), "models");
 	}
 	return join(dataDir, "models");
 }

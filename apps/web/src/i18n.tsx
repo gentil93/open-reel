@@ -1,3 +1,4 @@
+import { storedValue } from "@hatchlight/core/legacy";
 import {
 	createTranslator,
 	type Language,
@@ -36,7 +37,7 @@ const codes = languages.map((language) => language.code);
 
 function initialLanguage(): string {
 	try {
-		const saved = localStorage.getItem(STORAGE_KEY);
+		const saved = storedValue(localStorage, STORAGE_KEY);
 		if (saved && codes.includes(saved)) return saved;
 	} catch {
 		// Storage can be unavailable; fall back to the browser's languages.

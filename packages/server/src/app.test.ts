@@ -7,6 +7,7 @@ import {
 	type ChatReply,
 	CodedError,
 	FakeProvider,
+	LEGACY_NAME,
 	type LocalEngineSpec,
 	type LocalModelSpec,
 } from "@hatchlight/core";
@@ -16,6 +17,7 @@ import {
 	createApp,
 	createRuntime,
 	DataDirInUseError,
+	databaseFile,
 	type Runtime,
 	type RuntimeOptions,
 } from "./index";
@@ -312,6 +314,57 @@ test("a lock left by a dead process is taken over", async () => {
 	runtime.close();
 	expect(await Bun.file(join(root, "hatchlight.lock")).exists()).toBe(false);
 	await rm(root, { recursive: true });
+});
+
+test("a process from before the rename keeps its data directory", async () => {
+	const root = await mkdtemp(join(tmpdir(), "hatchlight-lock-"));
+	cleanups.push(() => rm(root, { recursive: true }));
+	await Bun.write(join(root, `${LEGACY_NAME}.lock`), String(process.pid));
+	await expect(
+		createRuntime({ dataDir: root, providers: [new FakeProvider()] }),
+	).rejects.toBeInstanceOf(DataDirInUseError);
+	// Its lock is left as it was, and no new one stays behind.
+	expect(await Bun.file(join(root, `${LEGACY_NAME}.lock`)).text()).toBe(
+		String(process.pid),
+	);
+	expect(await Bun.file(join(root, "hatchlight.lock")).exists()).toBe(false);
+});
+
+test("the data directory is locked under both names, and freed under both", async () => {
+	const root = await mkdtemp(join(tmpdir(), "hatchlight-lock-"));
+	cleanups.push(() => rm(root, { recursive: true }));
+	const legacy = join(root, `${LEGACY_NAME}.lock`);
+	// Left by a process from before the rename that died.
+	await Bun.write(legacy, "2147483646");
+	const runtime = await createRuntime({
+		dataDir: root,
+		providers: [new FakeProvider()],
+	});
+	for (const lock of [join(root, "hatchlight.lock"), legacy]) {
+		expect(await Bun.file(lock).text()).toBe(String(process.pid));
+	}
+	runtime.close();
+	for (const lock of [join(root, "hatchlight.lock"), legacy]) {
+		expect(await Bun.file(lock).exists()).toBe(false);
+	}
+});
+
+test("the gallery from before the rename is kept, under its old name", async () => {
+	const root = await mkdtemp(join(tmpdir(), "hatchlight-db-"));
+	cleanups.push(() => rm(root, { recursive: true }));
+	const current = join(root, "hatchlight.sqlite");
+	const legacy = join(root, `${LEGACY_NAME}.sqlite`);
+	expect(databaseFile(root)).toBe(current);
+	await Bun.write(legacy, "");
+	expect(databaseFile(root)).toBe(legacy);
+	const runtime = await createRuntime({
+		dataDir: root,
+		providers: [new FakeProvider()],
+	});
+	runtime.close();
+	expect(await Bun.file(current).exists()).toBe(false);
+	await Bun.write(current, "");
+	expect(databaseFile(root)).toBe(current);
 });
 
 test("the event stream reports a job from start to finish", async () => {

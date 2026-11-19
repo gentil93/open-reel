@@ -1,3 +1,4 @@
+import { storedValue } from "@hatchlight/core/legacy";
 import type { JobView, ModelSpec, TurnView } from "@hatchlight/core/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -24,7 +25,7 @@ const WELCOMED_KEY = "hatchlight.welcomed";
 /** Whether this browser has been through the welcome, or skipped it. */
 function welcomed(): boolean {
 	try {
-		return localStorage.getItem(WELCOMED_KEY) === "1";
+		return storedValue(localStorage, WELCOMED_KEY) === "1";
 	} catch {
 		return false;
 	}

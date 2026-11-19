@@ -77,6 +77,9 @@ readable only by you:
 | macOS   | `~/Library/Application Support/hatchlight`                 |
 | Linux   | `$XDG_DATA_HOME/hatchlight` or `~/.local/share/hatchlight` |
 
+Installs made before the rename to Hatchlight
+keep using their `open-reel` folders and `OPEN_REEL_*` variables.
+
 `HATCHLIGHT_DATA_DIR` or `--data-dir` puts it elsewhere. Under WSL, models are
 kept on the Windows side, where the graphics card driver reads them fastest.
 

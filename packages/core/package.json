@@ -7,7 +7,8 @@
 		".": "./src/index.ts",
 		"./types": "./src/types.ts",
 		"./testing": "./src/local/testing.ts",
-		"./errors": "./src/errors.ts"
+		"./errors": "./src/errors.ts",
+		"./legacy": "./src/legacy.ts"
 	},
 	"scripts": {
 		"typecheck": "tsc -p ."

@@ -1,7 +1,8 @@
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
+	appEnv,
 	assistantChoice,
 	type ChatMessage,
 	type ChatModel,
@@ -19,6 +20,7 @@ import {
 	LocalModelStore,
 	LocalProvider,
 	LocalTranslator,
+	legacyName,
 	type ProviderAdapter,
 	ProviderRegistry,
 	promptStyle,
@@ -135,11 +137,31 @@ export class DataDirInUseError extends Error {}
  * directory is claimed with a lock file holding the owner's process id.
  */
 function lockDataDir(dataDir: string): () => void {
-	const path = join(dataDir, "hatchlight.lock");
+	const name = "hatchlight.lock";
+	const path = join(dataDir, name);
+	takeLock(path);
+	// A version from before the rename locks the directory under the old
+	// name, and only looks there: both are held, so neither starts beside
+	// the other.
+	const legacy = join(dataDir, legacyName(name));
+	try {
+		takeLock(legacy);
+	} catch (error) {
+		rmSync(path, { force: true });
+		throw error;
+	}
+	return () => {
+		rmSync(legacy, { force: true });
+		rmSync(path, { force: true });
+	};
+}
+
+/** Creates the lock file at `path`, unless a live process holds it. */
+function takeLock(path: string): void {
 	for (let attempt = 0; attempt < 2; attempt++) {
 		try {
 			writeFileSync(path, String(process.pid), { flag: "wx" });
-			return () => rmSync(path, { force: true });
+			return;
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
 			const owner = Number(readFileSync(path, "utf8"));
@@ -191,10 +213,21 @@ export interface RuntimeOptions {
 	checkEngine?: (executable: string) => Promise<string | null>;
 }
 
+/**
+ * The gallery's database in a data directory: the one under the old name
+ * while only that one is there, so pictures made before the rename stay.
+ */
+export function databaseFile(dataDir: string): string {
+	const name = "hatchlight.sqlite";
+	const current = join(dataDir, name);
+	const legacy = join(dataDir, legacyName(name));
+	return !existsSync(current) && existsSync(legacy) ? legacy : current;
+}
+
 /** Wires the core on a data directory. Call `start()` once ready to run jobs. */
 export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 	const providers = options.providers ?? builtinProviders();
-	const fake = process.env.HATCHLIGHT_FAKE === "1";
+	const fake = appEnv(process.env, "FAKE") === "1";
 	if (fake) {
 		const fakeProvider = new FakeProvider();
 		fakeProvider.delayMs = 1500;
@@ -221,7 +254,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 	await mkdir(options.dataDir, { recursive: true, mode: 0o700 });
 	const unlock = lockDataDir(options.dataDir);
 	const repo = new SqliteRepository(
-		join(options.dataDir, "hatchlight.sqlite"),
+		databaseFile(options.dataDir),
 		options.migrationsDir,
 	);
 	const assets = new FsAssetStore(join(options.dataDir, "assets"));

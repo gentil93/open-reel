@@ -25,6 +25,11 @@ pub struct Updating(pub AtomicBool);
 #[derive(Default)]
 pub struct ServerExited(pub AtomicBool);
 
+/// The app's name before Hatchlight in environment variables, as
+/// `LEGACY_NAME` in packages/core/src/legacy.ts: a development build set up
+/// then keeps its update feed.
+const LEGACY_ENV_NAME: &str = "OPEN_REEL";
+
 /// How often a running app looks for a newer version.
 const RECHECK: Duration = Duration::from_secs(6 * 60 * 60);
 /// How long to wait for the server to stop before installing anyway.
@@ -68,7 +73,9 @@ async fn check(app: AppHandle) {
         // Lets a development build try updates against another feed, such as a
         // test prerelease.
         if cfg!(debug_assertions) {
-            if let Ok(feed) = std::env::var("HATCHLIGHT_UPDATE_URL") {
+            if let Ok(feed) = std::env::var("HATCHLIGHT_UPDATE_URL")
+                .or_else(|_| std::env::var(format!("{LEGACY_ENV_NAME}_UPDATE_URL")))
+            {
                 builder = builder.endpoints(vec![feed.parse()?])?;
             }
         }

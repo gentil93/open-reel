@@ -2,10 +2,10 @@ import { join } from "node:path";
 import { defineConfig } from "vite";
 import { LANGUAGES } from "./src/languages";
 
-// Relative asset paths, so the site works from any folder of a static host.
+// Served from the root of its own domain, hatchlight.app (public/CNAME).
 // Each language is its own page, rendered by scripts/render.ts.
 export default defineConfig({
-	base: "./",
+	base: "/",
 	build: {
 		rollupOptions: {
 			input: Object.fromEntries(

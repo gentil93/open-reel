@@ -6,6 +6,7 @@ export * from "./errors";
 export * from "./ids";
 export * from "./improve";
 export * from "./keys";
+export * from "./legacy";
 export * from "./local/checkpoints";
 export * from "./local/engines";
 export * from "./local/hardware";

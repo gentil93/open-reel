@@ -10,7 +10,13 @@ import {
 	writeFile,
 } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { ValidationError } from "@hatchlight/core";
+import {
+	APP_NAME,
+	appEnv,
+	envVariable,
+	LEGACY_NAME,
+	ValidationError,
+} from "@hatchlight/core";
 
 /** How a program starts `hatchlight mcp`. */
 export interface Launch {
@@ -75,6 +81,39 @@ export function wslPath(windows: string): string | null {
 /** The name Hatchlight goes by in agents' settings. */
 const NAME = "hatchlight";
 
+/**
+ * Whether an entry under the old name starts this app as an MCP server:
+ * with the same program as now, or with one named after the app then.
+ * Anything else under that name is someone else's, and stays.
+ */
+function isOurLegacyEntry(entry: unknown, desktop: Launch): boolean {
+	if (!entry || typeof entry !== "object") return false;
+	const { command, args } = entry as { command?: unknown; args?: unknown };
+	if (typeof command !== "string" || !Array.isArray(args)) return false;
+	const words = args.map(String);
+	if (!words.includes("mcp")) return false;
+	return (
+		command === desktop.command ||
+		[command, ...words].some((word) =>
+			word.split(/[\\/]/).some((part) => part.startsWith(LEGACY_NAME)),
+		)
+	);
+}
+
+/** The entry under the old name, when it is this app's. */
+function legacyEntry(config: Config, desktop: Launch): unknown {
+	const entry = config.mcpServers?.[LEGACY_NAME];
+	return isOurLegacyEntry(entry, desktop) ? entry : undefined;
+}
+
+/** Removes this app's entry under the old name; whether there was one. */
+function removeLegacyEntry(config: Config, desktop: Launch): boolean {
+	if (!config.mcpServers || !legacyEntry(config, desktop)) return false;
+	const { [LEGACY_NAME]: _, ...rest } = config.mcpServers;
+	config.mcpServers = rest;
+	return true;
+}
+
 /** The options `hatchlight mcp` takes for a policy. */
 export function policyArgs(policy: AgentPolicy): string[] {
 	if (!policy.allowPaid) return [];
@@ -84,6 +123,47 @@ export function policyArgs(policy: AgentPolicy): string[] {
 			? ["--spend-limit", String(policy.spendLimitUsd)]
 			: []),
 	];
+}
+
+/** The options of `hatchlight mcp` that take a value. */
+const VALUED = new Set(["--data-dir", "--resources", "--spend-limit"]);
+
+/**
+ * The options an entry gives `mcp` that are neither its policy nor set by
+ * `desktop` itself, such as a --data-dir the person added.
+ */
+function addedArgs(args: string[], desktop: Launch): string[] {
+	const at = args.indexOf("mcp");
+	if (at < 0) return [];
+	const set = new Set(["--allow-paid", "--spend-limit", ...desktop.args]);
+	const added: string[] = [];
+	for (let i = at + 1; i < args.length; i++) {
+		const arg = args[i] as string;
+		const option = VALUED.has(arg) ? args.slice(i, i + 2) : [arg];
+		if (!set.has(arg)) added.push(...option);
+		i += option.length - 1;
+	}
+	return added;
+}
+
+/**
+ * An entry's environment with the variables named after the old name
+ * renamed, WSLENV's list of them included.
+ */
+function renamedEnv(env: unknown): Record<string, string> {
+	if (!env || typeof env !== "object" || Array.isArray(env)) return {};
+	const before = envVariable(LEGACY_NAME, "");
+	const now = envVariable(APP_NAME, "");
+	const rename = (name: string) =>
+		name.startsWith(before) ? now + name.slice(before.length) : name;
+	return Object.fromEntries(
+		Object.entries(env).map(([key, value]) => [
+			rename(key),
+			key === "WSLENV"
+				? String(value).split(":").map(rename).join(":")
+				: String(value),
+		]),
+	);
 }
 
 /** The policy an entry's options say, back. */
@@ -231,7 +311,10 @@ export class Agents {
 				},
 			};
 		}
-		const entry = config.mcpServers?.[NAME] as
+		const named = config.mcpServers?.[NAME];
+		// Connected before the rename: it still works, and connecting again
+		// moves it to the new name.
+		const entry = (named ?? legacyEntry(config, desktop)) as
 			| { command?: unknown; args?: unknown }
 			| undefined;
 		const args = Array.isArray(entry?.args) ? entry.args.map(String) : [];
@@ -243,6 +326,7 @@ export class Agents {
 				available: true,
 				connected: entry != null,
 				current:
+					named != null &&
 					entry?.command === desktop.command &&
 					desktop.args.every((arg, i) => args[i] === arg),
 				policy: entry ? policyOf(args) : null,
@@ -254,13 +338,28 @@ export class Agents {
 	/** Adds Hatchlight to Claude Desktop, or updates what it may spend. */
 	connectClaudeDesktop(policy: AgentPolicy): Promise<void> {
 		return this.change(async (config, { desktop }) => {
+			// Replacing the entry from before the rename keeps what the person
+			// added to it.
+			const before = config.mcpServers?.[NAME]
+				? undefined
+				: (legacyEntry(config, desktop) as
+						| { args: unknown[]; env?: unknown }
+						| undefined);
+			removeLegacyEntry(config, desktop);
+			const env = {
+				...renamedEnv(before?.env),
+				...(desktop.env ?? {}),
+			};
 			config.mcpServers = {
 				...(config.mcpServers ?? {}),
 				[NAME]: {
 					command: desktop.command,
-					args: [...desktop.args, ...policyArgs(policy)],
-					...(desktop.env &&
-						Object.keys(desktop.env).length > 0 && { env: desktop.env }),
+					args: [
+						...desktop.args,
+						...addedArgs(before?.args.map(String) ?? [], desktop),
+						...policyArgs(policy),
+					],
+					...(Object.keys(env).length > 0 && { env }),
 				},
 			};
 			return true;
@@ -268,8 +367,9 @@ export class Agents {
 	}
 
 	disconnectClaudeDesktop(): Promise<void> {
-		return this.change(async (config) => {
-			if (!config.mcpServers?.[NAME]) return false;
+		return this.change(async (config, { desktop }) => {
+			const removed = removeLegacyEntry(config, desktop);
+			if (!config.mcpServers?.[NAME]) return removed;
 			const { [NAME]: _, ...rest } = config.mcpServers;
 			config.mcpServers = rest;
 			return true;
@@ -367,11 +467,13 @@ export async function agentsSetup(options: {
 			...(options.resources ? ["--resources", resolve(options.resources)] : []),
 		],
 	};
-	// The places it was told to keep things go with it.
+	// The places it was told to keep things go with it, under the new
+	// names even when they were set under the old ones.
 	const kept = Object.fromEntries(
-		["HATCHLIGHT_DATA_DIR", "HATCHLIGHT_MODELS_DIR"].flatMap((key) =>
-			env[key] ? [[key, resolve(env[key] as string)]] : [],
-		),
+		["DATA_DIR", "MODELS_DIR"].flatMap((suffix) => {
+			const value = appEnv(env, suffix);
+			return value ? [[envVariable(APP_NAME, suffix), resolve(value)]] : [];
+		}),
 	);
 	if (Object.keys(kept).length > 0) code.env = kept;
 
