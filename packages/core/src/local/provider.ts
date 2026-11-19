@@ -59,14 +59,32 @@ export interface EngineLora extends HandleLora {
 }
 
 /**
+ * The prompt without `<lora:…>`, `<lyco:…>` and `<hypernet:…>` tags, each
+ * replaced by a space. Each tag ends at the first `>`; scanned by hand, where
+ * a regular expression would take quadratic time on many unclosed tags.
+ */
+function withoutNetworkTags(prompt: string): string {
+	const tag = /<(?:lora|lyco|hypernet):/gi;
+	let kept = "";
+	let from = 0;
+	for (;;) {
+		tag.lastIndex = from;
+		const found = tag.exec(prompt);
+		const end = found ? prompt.indexOf(">", found.index) : -1;
+		if (!found || end < 0) return kept + prompt.slice(from);
+		kept += `${prompt.slice(from, found.index)} `;
+		from = end + 1;
+	}
+}
+
+/**
  * The prompt with the LoRAs named the way the engine reads them,
  * `<lora:name:weight>`, and their trigger words when missing.
  */
 export function loraPrompt(prompt: string, loras: HandleLora[]): string {
 	// LoRAs come only from the shelf, checked against the model: a tag
 	// pasted with a prompt found online would skip that.
-	const written = prompt
-		.replace(/<(lora|lyco|hypernet):[^>]*>/gi, " ")
+	const written = withoutNetworkTags(prompt)
 		.replace(/\s{2,}/g, " ")
 		.trim();
 	const used = loras.filter((lora) => lora.weight !== 0);

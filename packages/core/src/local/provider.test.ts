@@ -357,6 +357,15 @@ describe("engine arguments", () => {
 		expect(
 			loraPrompt("<LyCO:x:1> a fox", [{ id: "p", weight: 1, trigger: null }]),
 		).toBe("a fox <lora:p:1>");
+		expect(loraPrompt("a <lora:x a <lora:y:1> fox", [])).toBe("a fox");
+		expect(loraPrompt("a fox <lora:unclosed", [])).toBe("a fox <lora:unclosed");
+	});
+
+	test("a prompt full of unclosed LoRA tags is read in linear time", () => {
+		const prompt = "<lora:".repeat(50_000);
+		const started = performance.now();
+		expect(loraPrompt(prompt, [])).toBe(prompt);
+		expect(performance.now() - started).toBeLessThan(500);
 	});
 
 	test("a file with an unknown role is refused rather than guessed", async () => {

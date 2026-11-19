@@ -479,7 +479,7 @@ export async function agentsSetup(options: {
 
 	if (platform === "win32") {
 		const join = (...parts: string[]) =>
-			parts.map((p) => p.replace(/\\+$/, "")).join("\\");
+			parts.map(withoutTrailingBackslashes).join("\\");
 		const appData = env.APPDATA ?? join(home, "AppData", "Roaming");
 		const local = env.LOCALAPPDATA ?? join(home, "AppData", "Local");
 		const folder = (await storeFolder(local, join)) ?? join(appData, "Claude");
@@ -557,4 +557,12 @@ export async function agentsSetup(options: {
 		shell: "posix",
 		claudeDesktopConfig: `${config}/Claude/${CONFIG_FILE}`,
 	};
+}
+
+/** The path without the backslashes it ends with. A loop, where a regular
+ * expression would take quadratic time on a long run of backslashes. */
+function withoutTrailingBackslashes(path: string): string {
+	let end = path.length;
+	while (end > 0 && path[end - 1] === "\\") end--;
+	return path.slice(0, end);
 }

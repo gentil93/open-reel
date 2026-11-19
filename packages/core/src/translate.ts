@@ -37,11 +37,29 @@ export function sameWords(a: string, b: string): boolean {
 }
 
 /**
+ * The reply without its <think>…</think> blocks. Scanned by hand, where a
+ * regular expression would take quadratic time on many unclosed <think>.
+ */
+function withoutReasoning(reply: string): string {
+	const open = "<think>";
+	const close = "</think>";
+	let kept = "";
+	let from = 0;
+	for (;;) {
+		const start = reply.indexOf(open, from);
+		const end = start < 0 ? -1 : reply.indexOf(close, start + open.length);
+		if (end < 0) return kept + reply.slice(from);
+		kept += reply.slice(from, start);
+		from = end + close.length;
+	}
+}
+
+/**
  * The translation from a language model's reply: without the reasoning some
  * models write first, a label such as "Translation:", or quotes around it.
  */
 export function cleanTranslation(reply: string): string {
-	let text = reply.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+	let text = withoutReasoning(reply).trim();
 	text = text.replace(/^(english|translation|prompt)\s*:\s*/i, "").trim();
 	const quoted = text.match(/^["“'«](.*)["”'»]$/s);
 	if (quoted?.[1] && !/["“”«»]/.test(quoted[1])) text = quoted[1].trim();

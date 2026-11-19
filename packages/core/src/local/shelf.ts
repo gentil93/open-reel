@@ -76,7 +76,8 @@ export function shelfId(
 			.replace(/[̀-ͯ]/g, "")
 			.toLowerCase()
 			.replace(/[^a-z0-9]+/g, "-")
-			.replace(/^-+|-+$/g, "")
+			// One dash at most at each end, after the line above.
+			.replace(/^-|-$/g, "")
 			.slice(0, 56) || fallback;
 	if (!taken(base)) return base;
 	for (let n = 2; ; n++) {

@@ -12,6 +12,11 @@ export interface KeyStore {
 
 type KeyFile = Record<string, Record<string, string>>;
 
+/** Names that would reach an object's prototype instead of a key of its own. */
+function isPrototypeName(name: string): boolean {
+	return name === "__proto__" || name === "constructor" || name === "prototype";
+}
+
 /** API keys in a JSON file readable only by the owner. */
 export class FileKeyStore implements KeyStore {
 	/** Serializes changes so concurrent ones cannot overwrite each other. */
@@ -45,22 +50,36 @@ export class FileKeyStore implements KeyStore {
 	}
 
 	async get(ctx: UserContext, providerId: string) {
-		return (await this.read())[ctx.userId]?.[providerId];
+		const data = await this.read();
+		if (!Object.hasOwn(data, ctx.userId)) return undefined;
+		const keys = data[ctx.userId];
+		return keys && Object.hasOwn(keys, providerId)
+			? keys[providerId]
+			: undefined;
 	}
 
 	async set(ctx: UserContext, providerId: string, key: string) {
+		if (isPrototypeName(ctx.userId) || isPrototypeName(providerId)) {
+			throw new Error(`Not a provider: ${providerId}`);
+		}
 		await this.change((data) => {
 			data[ctx.userId] = { ...data[ctx.userId], [providerId]: key };
 		});
 	}
 
 	async delete(ctx: UserContext, providerId: string) {
+		if (isPrototypeName(ctx.userId) || isPrototypeName(providerId)) return;
 		await this.change((data) => {
-			delete data[ctx.userId]?.[providerId];
+			if (!Object.hasOwn(data, ctx.userId)) return;
+			const keys = data[ctx.userId];
+			if (keys && Object.hasOwn(keys, providerId)) delete keys[providerId];
 		});
 	}
 
 	async list(ctx: UserContext) {
-		return Object.keys((await this.read())[ctx.userId] ?? {});
+		const data = await this.read();
+		return Object.hasOwn(data, ctx.userId)
+			? Object.keys(data[ctx.userId] ?? {})
+			: [];
 	}
 }
