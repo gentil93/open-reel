@@ -572,6 +572,39 @@ test("a whole model is added from a file, set up, and deleted", async () => {
 	expect(await gone.json()).toMatchObject({ code: "checkpointMissing" });
 });
 
+test("the trainer reports itself, and nothing trains before it is installed", async () => {
+	const { call } = await setup();
+	const status = await (await call("/api/trainer")).json();
+	expect(status).toMatchObject({
+		state: "missing",
+		install: null,
+		training: null,
+	});
+	const train = await call("/api/trainings", {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify({
+			name: "x",
+			trigger: "qzx",
+			steps: 800,
+			pictures: [],
+		}),
+	});
+	expect(train.status).toBe(400);
+	expect(await train.json()).toMatchObject({ code: "trainerMissing" });
+	const bad = await call("/api/trainings", {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify({
+			name: "x",
+			trigger: "qzx",
+			steps: 800,
+			pictures: [{}],
+		}),
+	});
+	expect(bad.status).toBe(400);
+});
+
 test("a model's demo is served from this origin, and never as a page", async () => {
 	const { call } = await setup();
 	const demo = await call("/api/local-models/tiny/demos/0");

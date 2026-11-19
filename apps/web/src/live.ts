@@ -2,6 +2,7 @@ import type {
 	EngineEvent,
 	JobView,
 	LocalModelEvent,
+	TrainerEvent,
 } from "@hatchlight/core/types";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useSyncExternalStore } from "react";
@@ -99,6 +100,7 @@ export function useLiveJobs(): void {
 				void client.invalidateQueries({ queryKey: ["assistant"] });
 				void client.invalidateQueries({ queryKey: ["local-models"] });
 				void client.invalidateQueries({ queryKey: ["loras"] });
+				void client.invalidateQueries({ queryKey: ["trainer"] });
 			}
 			connectedBefore = true;
 		});
@@ -119,6 +121,14 @@ export function useLiveJobs(): void {
 			// Installed models can be picked in the composer.
 			void client.invalidateQueries({ queryKey: ["models"] });
 			void client.invalidateQueries({ queryKey: ["checkpoints"] });
+		});
+		source.addEventListener("trainer.changed", (message) => {
+			const event = JSON.parse(message.data) as TrainerEvent;
+			client.setQueryData(["trainer"], event.trainer);
+			// A finished training put a LoRA on the shelf.
+			if (event.trainer.training?.state === "done") {
+				void client.invalidateQueries({ queryKey: ["loras"] });
+			}
 		});
 		source.addEventListener("loras.changed", () => {
 			void client.invalidateQueries({ queryKey: ["loras"] });

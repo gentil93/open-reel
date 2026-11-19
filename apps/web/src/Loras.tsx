@@ -8,6 +8,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { api } from "./api";
 import { type I18n, useI18n } from "./i18n";
+import { TrainPanel } from "./Training";
 
 /** A LoRA chosen for the next picture, and how strongly. */
 export interface ChosenLora {
@@ -115,6 +116,7 @@ export function LoraShelf() {
 		onSuccess: () => client.invalidateQueries({ queryKey: ["loras"] }),
 	});
 	const adding = add.isPending ? add.variables : null;
+	const [training, setTraining] = useState(false);
 	return (
 		<section className="mt-10">
 			<div className="flex flex-wrap items-end justify-between gap-3">
@@ -126,14 +128,24 @@ export function LoraShelf() {
 						{t("loras.intro")}
 					</p>
 				</div>
-				<button
-					type="button"
-					onClick={() => input.current?.click()}
-					disabled={adding != null}
-					className="rounded-md border border-line px-4 py-2 text-sm hover:border-dim disabled:opacity-40"
-				>
-					{t("loras.add")}
-				</button>
+				<div className="flex gap-2">
+					<button
+						type="button"
+						onClick={() => setTraining((open) => !open)}
+						aria-expanded={training}
+						className="rounded-md border border-line px-4 py-2 text-sm hover:border-dim"
+					>
+						{t("training.open")}
+					</button>
+					<button
+						type="button"
+						onClick={() => input.current?.click()}
+						disabled={adding != null}
+						className="rounded-md border border-line px-4 py-2 text-sm hover:border-dim disabled:opacity-40"
+					>
+						{t("loras.add")}
+					</button>
+				</div>
 				<input
 					ref={input}
 					type="file"
@@ -146,6 +158,7 @@ export function LoraShelf() {
 					}}
 				/>
 			</div>
+			{training && <TrainPanel />}
 			{adding && (
 				<p className="mt-3 text-sm text-dim" role="status">
 					{t("loras.adding", { name: adding.name, size: bytes(adding.size) })}

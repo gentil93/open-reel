@@ -28,6 +28,8 @@ import {
 	ReelService,
 	type SettingsStore,
 	SqliteRepository,
+	Trainer,
+	type TrainerOptions,
 	type UserContext,
 	ValidationError,
 	writerChoice,
@@ -46,6 +48,8 @@ export interface Runtime {
 	service: ReelService;
 	engine: JobEngine;
 	models: LocalModelStore;
+	/** Trains LoRAs on this computer. */
+	trainer: Trainer;
 	settings: SettingsStore;
 	/** Makes and changes pictures by talking with the person. */
 	assistant: Assistant;
@@ -212,6 +216,12 @@ export interface RuntimeOptions {
 	assistantModel?: ChatModel;
 	/** Tries a freshly installed engine. Defaults to running it. */
 	checkEngine?: (executable: string) => Promise<string | null>;
+	/** Where the LoRA trainer is installed. Defaults to `trainer` in the data directory. */
+	trainerDir?: string;
+	/** Stand-ins for the trainer's downloads and programs, in tests. */
+	trainerOptions?: Partial<
+		Pick<TrainerOptions, "fetch" | "run" | "freeMemory">
+	>;
 }
 
 /**
@@ -243,6 +253,24 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 		hardware: options.hardware,
 		checkEngine: options.checkEngine,
 		locationFile: options.modelsLocationFile,
+	});
+	const trainer = new Trainer({
+		dir: options.trainerDir ?? join(options.dataDir, "trainer"),
+		gpu: models.gpu,
+		loras: models.loras,
+		// LoRAs are trained on SDXL, the model installed from the catalog.
+		baseModel: async () => {
+			const runtime = await models.runtime("sdxl-base").catch(() => null);
+			const file = runtime?.files.model;
+			if (!runtime || !file) {
+				throw new ValidationError(
+					"Install Stable Diffusion XL in Models first: LoRAs are trained on it",
+					"trainingNeedsBase",
+				);
+			}
+			return { file, scratch: runtime.scratch };
+		},
+		...options.trainerOptions,
 	});
 	// Installed local models are offered next to the remote ones.
 	const local = new LocalProvider({ store: models, catalog });
@@ -392,6 +420,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 		service,
 		engine,
 		models,
+		trainer,
 		settings,
 		assistant,
 		// A model standing in (tests, trying the app) shows as this computer's.
@@ -420,6 +449,8 @@ export async function createRuntime(options: RuntimeOptions): Promise<Runtime> {
 		start: () => engine.start(),
 		close: () => {
 			// Downloads stop with the process; what they fetched is resumed later.
+			trainer.cancelTraining();
+			trainer.cancelInstall();
 			void models.close();
 			local.close();
 			translator.stop();

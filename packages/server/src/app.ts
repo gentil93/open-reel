@@ -14,6 +14,7 @@ import {
 	type ReelService,
 	type SettingsStore,
 	TRANSLATE_WITH,
+	type Trainer,
 	type UserContext,
 	ValidationError,
 } from "@hatchlight/core";
@@ -38,6 +39,8 @@ export interface AppOptions {
 	resolveUser?: (c: Context) => UserContext;
 	/** Connects AI agents to this installation; absent where it cannot. */
 	agents?: Agents;
+	/** Trains LoRAs on this computer; absent where it cannot. */
+	trainer?: Trainer;
 	/** Makes and changes pictures by talking; absent where it cannot. */
 	assistant?: Assistant;
 	/** What a person's assistant thinks with now. */
@@ -72,6 +75,13 @@ const UPSTREAM_CODES = new Set<ErrorCode>([
 
 const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+/** The pictures training can use, and the extension each is written with. */
+const TRAINING_TYPES: Record<string, string> = {
+	"image/png": "png",
+	"image/jpeg": "jpg",
+	"image/webp": "webp",
+};
+
 /** More than any JSON request the interface sends. */
 const MAX_JSON_BYTES = 1024 * 1024;
 
@@ -505,6 +515,73 @@ export function createApp(options: AppOptions): Hono {
 		await models.checkpoints.remove(c.req.param("id"));
 		return c.body(null, 204);
 	});
+	// The LoRA trainer, shared like the models it trains on.
+	const trainer = () => {
+		if (!options.trainer) throw new NotFoundError("No trainer here");
+		return options.trainer;
+	};
+	app.get("/api/trainer", async (c) => c.json(await trainer().status()));
+	app.post("/api/trainer/install", async (c) => {
+		await trainer().install();
+		return c.body(null, 202);
+	});
+	app.post("/api/trainer/install/cancel", (c) => {
+		trainer().cancelInstall();
+		return c.body(null, 204);
+	});
+	app.delete("/api/trainer", async (c) => {
+		await trainer().remove();
+		return c.body(null, 204);
+	});
+	app.post("/api/trainings", async (c) => {
+		const body = await json(c);
+		const { name, trigger, steps, pictures } = body;
+		if (typeof name !== "string" || typeof trigger !== "string") {
+			throw new ValidationError("name and trigger must be text");
+		}
+		if (typeof steps !== "number") {
+			throw new ValidationError("steps must be a number");
+		}
+		if (!Array.isArray(pictures) || pictures.length > 200) {
+			throw new ValidationError("pictures must be a list of pictures");
+		}
+		// Before reading up to 200 pictures for nothing.
+		await trainer().assertCanTrain();
+		const read = [];
+		for (const picture of pictures) {
+			const { assetId, caption } = (picture ?? {}) as Record<string, unknown>;
+			if (
+				typeof assetId !== "string" ||
+				(caption != null && typeof caption !== "string")
+			) {
+				throw new ValidationError(
+					"Each picture needs an assetId and may have a caption",
+				);
+			}
+			const { asset, blob } = await service.getAssetFile(user(c), assetId);
+			// What the training scripts read.
+			const extension = TRAINING_TYPES[asset.mime];
+			if (!extension) {
+				throw new ValidationError(
+					"Only PNG, JPEG and WebP pictures can be trained on",
+					"uploadType",
+				);
+			}
+			read.push({
+				data: new Uint8Array(await blob.arrayBuffer()),
+				extension,
+				caption: typeof caption === "string" ? caption.slice(0, 500) : "",
+			});
+		}
+		return c.json(
+			await trainer().train({ name, trigger, steps, pictures: read }),
+			202,
+		);
+	});
+	app.post("/api/trainings/cancel", (c) => {
+		trainer().cancelTraining();
+		return c.body(null, 204);
+	});
 	app.get("/api/local-models/:id/demos/:index", async (c) => {
 		const index = Number(c.req.param("index"));
 		if (!Number.isInteger(index)) throw new NotFoundError("Demo not found");
@@ -629,6 +706,7 @@ export function createApp(options: AppOptions): Hono {
 				if (target === userId) send(event);
 			});
 			const unsubscribeModels = models.subscribe(send);
+			const unsubscribeTrainer = options.trainer?.subscribe(send);
 			const unsubscribeAssistant = options.assistant?.subscribe(
 				(target, event) => {
 					if (target === userId) send(event);
@@ -637,6 +715,7 @@ export function createApp(options: AppOptions): Hono {
 			const unsubscribe = () => {
 				unsubscribeJobs();
 				unsubscribeModels();
+				unsubscribeTrainer?.();
 				unsubscribeAssistant?.();
 			};
 			stream.onAbort(unsubscribe);

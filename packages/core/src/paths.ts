@@ -133,6 +133,26 @@ export async function defaultModelsDir(
 }
 
 /**
+ * Where the LoRA trainer (Python, PyTorch and the training scripts) is
+ * installed. Never the models folder: under WSL that folder is on the
+ * Windows side, where a Linux Python environment runs too slowly, and the
+ * trainer is a program of this system rather than a file to share.
+ */
+export function defaultTrainerDir(
+	dataDir: string,
+	platform: NodeJS.Platform = process.platform,
+	env: Record<string, string | undefined> = process.env,
+): string {
+	const explicit = appEnv(env, "TRAINER_DIR");
+	if (explicit) return explicit;
+	// The local app data, not the roaming one: several gigabytes.
+	if (platform === "win32" && env.LOCALAPPDATA) {
+		return win32.join(env.LOCALAPPDATA, APP_NAME, "trainer");
+	}
+	return join(dataDir, "trainer");
+}
+
+/**
  * Where a models folder chosen by hand is written down: next to the default
  * one, so every Hatchlight that shares the default folder (the desktop app
  * and Hatchlight under WSL) follows the same choice.

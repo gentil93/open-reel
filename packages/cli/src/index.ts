@@ -8,6 +8,7 @@ import {
 	clearServerInfo,
 	defaultDataDir,
 	defaultModelsDir,
+	defaultTrainerDir,
 	MAX_CHECKPOINT_BYTES,
 	modelsLocationFile,
 	plainPath,
@@ -98,6 +99,7 @@ const modelsDir =
 const runtime = await createRuntime({
 	dataDir,
 	modelsDir,
+	trainerDir: defaultTrainerDir(dataDir),
 	modelsLocationFile: defaultModels
 		? modelsLocationFile(defaultModels)
 		: undefined,

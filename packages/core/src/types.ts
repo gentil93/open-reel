@@ -75,6 +75,74 @@ export interface CheckpointInfo {
 	addedAt: number;
 }
 
+/** Where the LoRA trainer is: not installed, being installed, or ready. */
+export type TrainerState = "missing" | "installing" | "ready";
+
+/** What an install of the trainer is doing. */
+export type TrainerInstallStep =
+	| "uv"
+	| "scripts"
+	| "python"
+	| "packages"
+	| "checking";
+
+/** What a training is doing, in words every platform says the same way. */
+export type TrainingStage =
+	| "waitingGpu"
+	| "loading"
+	| "caching"
+	| "training"
+	| "saving";
+
+/** A LoRA being trained, or the last one that was. */
+export interface TrainingView {
+	id: string;
+	name: string;
+	trigger: string;
+	state: "running" | "done" | "failed" | "canceled";
+	stage: TrainingStage;
+	step: number;
+	steps: number;
+	/** At the pace so far; null until the steps have started. */
+	secondsLeft: number | null;
+	startedAt: number;
+	finishedAt: number | null;
+	/** System memory still free, watched so training never freezes the computer. */
+	freeMemoryBytes: number | null;
+	/** The LoRA it made, on the shelf. */
+	loraId: string | null;
+	error: {
+		message: string;
+		code: string | null;
+		params: ErrorParams | null;
+	} | null;
+}
+
+export interface TrainerStatus {
+	state: TrainerState;
+	install: {
+		step: TrainerInstallStep;
+		/** Bytes of the current download, when the step is one. */
+		receivedBytes: number | null;
+		totalBytes: number | null;
+	} | null;
+	/** Why the last install failed, until the next one. */
+	error: {
+		message: string;
+		code: string | null;
+		params: ErrorParams | null;
+	} | null;
+	/** About what an install downloads, to tell people before they start. */
+	downloadBytes: number;
+	training: TrainingView | null;
+}
+
+/** The trainer changed: an install moved on, or a training did. */
+export interface TrainerEvent {
+	type: "trainer.changed";
+	trainer: TrainerStatus;
+}
+
 export const generationParamsSchema = z.object({
 	prompt: z.string().trim().min(1),
 	aspectRatio: z

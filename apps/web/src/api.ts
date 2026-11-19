@@ -10,6 +10,8 @@ import type {
 	ProviderStatus,
 	Session,
 	Settings,
+	TrainerStatus,
+	TrainingView,
 	TurnView,
 } from "@hatchlight/core/types";
 
@@ -178,6 +180,20 @@ export const api = {
 	) => request<CheckpointInfo>(`/api/checkpoints/${id}`, send("PATCH", change)),
 	deleteCheckpoint: (id: string) =>
 		request<void>(`/api/checkpoints/${id}`, { method: "DELETE" }),
+	trainer: () => request<TrainerStatus>("/api/trainer"),
+	installTrainer: () =>
+		request<void>("/api/trainer/install", { method: "POST" }),
+	removeTrainer: () => request<void>("/api/trainer", { method: "DELETE" }),
+	cancelTrainerInstall: () =>
+		request<void>("/api/trainer/install/cancel", { method: "POST" }),
+	train: (input: {
+		name: string;
+		trigger: string;
+		steps: number;
+		pictures: { assetId: string; caption: string }[];
+	}) => request<TrainingView>("/api/trainings", send("POST", input)),
+	cancelTraining: () =>
+		request<void>("/api/trainings/cancel", { method: "POST" }),
 	loras: () => request<LoraInfo[]>("/api/loras"),
 	addLora: (file: File) =>
 		request<LoraInfo>(
