@@ -32,6 +32,8 @@ export interface AgentPolicy {
 export interface AgentsStatus {
 	/** `claude mcp add …`, without the options of a policy. */
 	claudeCode: string[];
+	/** The same from Linux in WSL, for a Windows installation. */
+	claudeCodeWsl: string[] | null;
 	/** The shell those words are for, to quote them. */
 	shell: "posix" | "powershell";
 	claudeDesktop: {

@@ -333,6 +333,32 @@ function Translation() {
 	);
 }
 
+/** A command to copy, with its button. */
+function CopyLine({ text }: { text: string }) {
+	const { t } = useI18n();
+	const [copied, setCopied] = useState(false);
+	return (
+		<div className="mt-3 flex items-start gap-2">
+			<code className="min-w-0 flex-1 break-all rounded-md border border-line bg-bg px-3 py-2 font-mono text-xs leading-relaxed">
+				{text}
+			</code>
+			<button
+				type="button"
+				disabled={!text}
+				onClick={() =>
+					void navigator.clipboard?.writeText(text).then(() => {
+						setCopied(true);
+						setTimeout(() => setCopied(false), 2000);
+					})
+				}
+				className="rounded-md border border-line px-3 py-2 text-sm text-dim hover:text-ink"
+			>
+				{copied ? t("settings.agentsCopied") : t("settings.agentsCopy")}
+			</button>
+		</div>
+	);
+}
+
 /** An argument as a shell reads it: quoted when it has to be. */
 const shellWord = (word: string, shell: "posix" | "powershell") =>
 	/^[\w@%+=:,./-]+$/.test(word)
@@ -363,7 +389,6 @@ function Agents() {
 	const [allowPaid, setAllowPaid] = useState<boolean | null>(null);
 	const [limit, setLimit] = useState<string | null>(null);
 	const [unlimited, setUnlimited] = useState<boolean | null>(null);
-	const [copied, setCopied] = useState(false);
 	const [restart, setRestart] = useState(false);
 	const desktop = status.data?.claudeDesktop;
 	// Until changed here, what Claude Desktop was set up with.
@@ -402,6 +427,13 @@ function Agents() {
 		status.data && validLimit
 			? [...status.data.claudeCode, ...policyArgs(policy)]
 					.map((word) => shellWord(word, shell))
+					.join(" ")
+			: "";
+	// Linux in WSL reads POSIX shell words, whatever the app runs on.
+	const commandWsl =
+		status.data?.claudeCodeWsl && validLimit
+			? [...status.data.claudeCodeWsl, ...policyArgs(policy)]
+					.map((word) => shellWord(word, "posix"))
 					.join(" ")
 			: "";
 	// Up to date: the same limits, and this installation as it is now.
@@ -515,24 +547,15 @@ function Agents() {
 			<div className={`${card} mt-3`}>
 				<h3 className="font-medium">Claude Code</h3>
 				<p className="mt-1 text-sm text-dim">{t("settings.agentsCode")}</p>
-				<div className="mt-3 flex items-start gap-2">
-					<code className="min-w-0 flex-1 break-all rounded-md border border-line bg-bg px-3 py-2 font-mono text-xs leading-relaxed">
-						{command}
-					</code>
-					<button
-						type="button"
-						disabled={!command}
-						onClick={() =>
-							void navigator.clipboard?.writeText(command).then(() => {
-								setCopied(true);
-								setTimeout(() => setCopied(false), 2000);
-							})
-						}
-						className="rounded-md border border-line px-3 py-2 text-sm text-dim hover:text-ink"
-					>
-						{copied ? t("settings.agentsCopied") : t("settings.agentsCopy")}
-					</button>
-				</div>
+				<CopyLine text={command} />
+				{commandWsl && (
+					<>
+						<p className="mt-3 text-sm text-dim">
+							{t("settings.agentsCodeWsl")}
+						</p>
+						<CopyLine text={commandWsl} />
+					</>
+				)}
 			</div>
 			{error && <p className="mt-2 text-sm text-danger">{explain(error)}</p>}
 		</section>

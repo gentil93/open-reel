@@ -12,7 +12,13 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { Agents, type AgentsSetup, agentsSetup, storeFolder } from "./agents";
+import {
+	Agents,
+	type AgentsSetup,
+	agentsSetup,
+	storeFolder,
+	wslPath,
+} from "./agents";
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -210,4 +216,32 @@ test("Claude from the Microsoft Store is set up in its own package", async () =>
 	await mkdir(join(local, "Packages", "Claude_old"), { recursive: true });
 	await mkdir(used, { recursive: true });
 	expect(await storeFolder(local, join)).toBe(used);
+});
+
+test("a Windows installation is offered to Claude Code inside WSL too", async () => {
+	expect(wslPath("C:\\Users\\a\\open-reel.exe")).toBe(
+		"/mnt/c/Users/a/open-reel.exe",
+	);
+	expect(wslPath("\\\\server\\share\\open-reel.exe")).toBeNull();
+	const windows = await agentsSetup({
+		platform: "win32",
+		env: {
+			APPDATA: "C:\\Users\\a\\AppData\\Roaming",
+			LOCALAPPDATA: "C:\\nowhere",
+			OPEN_REEL_MODELS_DIR: "D:\\models",
+		},
+		program: "C:\\Program Files\\open-reel\\open-reel.exe",
+	});
+	expect(windows.codeInWsl?.command).toBe(
+		"/mnt/c/Program Files/open-reel/open-reel.exe",
+	);
+	// Its arguments and settings stay Windows paths: the Windows program reads them.
+	expect(windows.codeInWsl?.args).toEqual(windows.code.args);
+	expect(windows.codeInWsl?.env?.WSLENV).toBe("OPEN_REEL_MODELS_DIR");
+	const share = await agentsSetup({
+		platform: "win32",
+		env: { APPDATA: "C:\\a", LOCALAPPDATA: "C:\\b" },
+		program: "\\\\server\\share\\open-reel.exe",
+	});
+	expect(share.codeInWsl).toBeUndefined();
 });

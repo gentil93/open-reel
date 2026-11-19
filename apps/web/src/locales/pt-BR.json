@@ -471,6 +471,7 @@
 	"session.mode": "Como trabalhar nesta sessão",
 	"settings.agents": "Usar com agentes de IA",
 	"settings.agentsCode": "Rode isto uma vez num terminal:",
+	"settings.agentsCodeWsl": "No Linux do WSL, se o Claude Code estiver instalado lá:",
 	"settings.agentsConnect": "Conectar ao Claude Desktop",
 	"settings.agentsConnected": "Conectado",
 	"settings.agentsCopied": "Copiado",

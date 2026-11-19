@@ -8,7 +8,7 @@
  *
  * It uses the same data as the installed app, so close the app first.
  */
-import { cp, mkdir, rm } from "node:fs/promises";
+import { cp, mkdir, readdir, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { $ } from "bun";
 
@@ -27,12 +27,35 @@ const localAppData = (
 const windowsDir = `${localAppData}\\open-reel\\preview`;
 const dir = (await $`wslpath -u ${windowsDir}`.text()).trim();
 
-// A running preview holds its program open, so it is stopped first.
-// With the engines it started (/T): a model kept loaded would otherwise
-// outlive it, holding memory and its files.
-await $`taskkill.exe /IM ${PROGRAM} /T /F`.quiet().nothrow();
+/**
+ * Stops the preview's server: the one its data directory says is running,
+ * with the engines it started (/T), since a model kept loaded would
+ * otherwise outlive it. Only that one: agents may run this same program as
+ * their MCP server, and those keep running.
+ */
+async function stopServer(): Promise<boolean> {
+	const appData = (await $`cmd.exe /c echo %APPDATA%`.quiet().text()).trim();
+	const file = (
+		await $`wslpath -u ${`${appData}\\open-reel\\open-reel.server.json`}`.text()
+	).trim();
+	const pid = await Bun.file(file)
+		.json()
+		.then((info: { pid?: unknown }) => info.pid)
+		.catch(() => null);
+	if (typeof pid !== "number" || !Number.isInteger(pid)) return false;
+	// The installed app writes the same file; only a preview is stopped.
+	const listed = await $`tasklist.exe /FI ${`PID eq ${pid}`} /NH`
+		.quiet()
+		.nothrow()
+		.text();
+	if (!listed.includes(PROGRAM)) return false;
+	await $`taskkill.exe /PID ${pid} /T /F`.quiet().nothrow();
+	return true;
+}
+
+const stopped = await stopServer();
 if (process.argv.includes("--stop")) {
-	console.log("Stopped.");
+	console.log(stopped ? "Stopped." : "No preview was running.");
 	process.exit(0);
 }
 
@@ -94,6 +117,18 @@ await step("Building the interface", () =>
 
 await step("Compiling the server for Windows", async () => {
 	await mkdir(dir, { recursive: true });
+	// Agents may be running the program as their MCP server: Windows keeps
+	// it from being replaced, but lets it be renamed. Old copies go once
+	// nothing runs them.
+	for (const name of await readdir(dir)) {
+		if (name.startsWith(`${PROGRAM}.old-`)) {
+			await rm(join(dir, name), { force: true }).catch(() => {});
+		}
+	}
+	await rename(
+		join(dir, PROGRAM),
+		join(dir, `${PROGRAM}.old-${Date.now()}`),
+	).catch(() => {});
 	await $`bun build --compile --minify --target=bun-windows-x64 ${join(root, "packages/cli/src/index.ts")} --outfile ${join(dir, PROGRAM)}`.quiet();
 	await rm(join(dir, "resources"), { recursive: true, force: true });
 	await cp(join(root, "apps/web/dist"), join(dir, "resources/web"), {

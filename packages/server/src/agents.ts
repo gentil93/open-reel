@@ -25,6 +25,11 @@ export interface AgentsSetup {
 	desktop: Launch;
 	/** As an agent on this same system, such as Claude Code, starts it. */
 	code: Launch;
+	/**
+	 * As Claude Code inside WSL starts this Windows program, when it runs
+	 * on Windows from a drive WSL can reach.
+	 */
+	codeInWsl?: Launch;
 	/** Where Claude Desktop keeps its settings, or null if unknown here. */
 	claudeDesktopConfig: string | null;
 	/** The shell the Claude Code command is written for. */
@@ -40,6 +45,8 @@ export interface AgentPolicy {
 export interface AgentsStatus {
 	/** `claude mcp add …`, without the policy's options. */
 	claudeCode: string[];
+	/** The same from Linux in WSL, for a Windows installation; else null. */
+	claudeCodeWsl: string[] | null;
 	/** The shell those words are for, to quote them. */
 	shell: "posix" | "powershell";
 	claudeDesktop: {
@@ -52,6 +59,17 @@ export interface AgentsStatus {
 		/** Why its settings could not be read, when they could not. */
 		problem: string | null;
 	};
+}
+
+/**
+ * A Windows path as WSL reaches it, C:\x → /mnt/c/x, under WSL's usual
+ * mount root; null for one it cannot reach, such as a network share.
+ */
+export function wslPath(windows: string): string | null {
+	const match = windows.match(/^([A-Za-z]):[\\/](.*)$/);
+	if (!match) return null;
+	const [, drive, rest] = match as unknown as [string, string, string];
+	return `/mnt/${drive.toLowerCase()}/${rest.replaceAll("\\", "/")}`;
 }
 
 /** The name open-reel goes by in agents' settings. */
@@ -166,26 +184,28 @@ export class Agents {
 	async status(): Promise<AgentsStatus> {
 		const {
 			code,
+			codeInWsl,
 			desktop,
 			shell,
 			claudeDesktopConfig: path,
 		} = await this.get();
-		const env = Object.entries(code.env ?? {}).flatMap(([key, value]) => [
-			"-e",
-			`${key}=${value}`,
-		]);
-		const claudeCode = [
+		const addCommand = (launch: Launch) => [
 			"claude",
 			"mcp",
 			"add",
 			NAME,
 			"--scope",
 			"user",
-			...env,
+			...Object.entries(launch.env ?? {}).flatMap(([key, value]) => [
+				"-e",
+				`${key}=${value}`,
+			]),
 			"--",
-			code.command,
-			...code.args,
+			launch.command,
+			...launch.args,
 		];
+		const claudeCode = addCommand(code);
+		const claudeCodeWsl = codeInWsl ? addCommand(codeInWsl) : null;
 		const none = {
 			available: false,
 			connected: false,
@@ -194,7 +214,7 @@ export class Agents {
 			problem: null,
 		};
 		if (!path || !(await exists(dirname(path)))) {
-			return { claudeCode, shell, claudeDesktop: none };
+			return { claudeCode, claudeCodeWsl, shell, claudeDesktop: none };
 		}
 		let config: Config;
 		try {
@@ -202,6 +222,7 @@ export class Agents {
 		} catch (error) {
 			return {
 				claudeCode,
+				claudeCodeWsl,
 				shell,
 				claudeDesktop: {
 					...none,
@@ -216,6 +237,7 @@ export class Agents {
 		const args = Array.isArray(entry?.args) ? entry.args.map(String) : [];
 		return {
 			claudeCode,
+			claudeCodeWsl,
 			shell,
 			claudeDesktop: {
 				available: true,
@@ -328,6 +350,8 @@ export async function agentsSetup(options: {
 	env?: Record<string, string | undefined>;
 	platform?: NodeJS.Platform;
 	home?: string;
+	/** The program that runs open-reel; this one by default. */
+	program?: string;
 }): Promise<AgentsSetup> {
 	const env = options.env ?? process.env;
 	const platform = options.platform ?? process.platform;
@@ -335,7 +359,7 @@ export async function agentsSetup(options: {
 	const compiled = /\$bunfs|~BUN/.test(Bun.main);
 	// Agents start it from anywhere: every path is made whole.
 	const code: Launch = {
-		command: process.execPath,
+		command: options.program ?? process.execPath,
 		args: [
 			...(compiled ? [] : [Bun.main]),
 			"mcp",
@@ -357,8 +381,22 @@ export async function agentsSetup(options: {
 		const appData = env.APPDATA ?? join(home, "AppData", "Roaming");
 		const local = env.LOCALAPPDATA ?? join(home, "AppData", "Local");
 		const folder = (await storeFolder(local, join)) ?? join(appData, "Claude");
+		const program = wslPath(code.command);
 		return {
 			code,
+			...(program && {
+				codeInWsl: {
+					command: program,
+					args: code.args,
+					// Passed on to the Windows program as they are: Windows paths.
+					...(code.env && {
+						env: {
+							...code.env,
+							WSLENV: Object.keys(code.env).join(":"),
+						},
+					}),
+				},
+			}),
 			desktop: code,
 			shell: "powershell",
 			claudeDesktopConfig: join(folder, CONFIG_FILE),
