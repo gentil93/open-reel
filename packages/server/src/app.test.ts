@@ -477,6 +477,48 @@ test("a LoRA is added from a file, listed, and deleted", async () => {
 	expect(await gone.json()).toMatchObject({ code: "loraMissing" });
 });
 
+test("a whole model is added from a file, set up, and deleted", async () => {
+	const { call } = await setup();
+	const file = safetensors([
+		"model.diffusion_model.input_blocks.0.0.weight",
+		"conditioner.embedders.1.model.ln_final.weight",
+		"first_stage_model.decoder.conv_in.weight",
+	]);
+	const added = await call(
+		`/api/checkpoints?${new URLSearchParams({ name: "Juggernaut XL.safetensors" })}`,
+		{ method: "POST", body: file },
+	);
+	expect(added.status).toBe(201);
+	expect(await added.json()).toMatchObject({
+		id: "juggernaut-xl",
+		base: "sdxl",
+		steps: 30,
+	});
+	const patch = (body: object) =>
+		call("/api/checkpoints/juggernaut-xl", {
+			method: "PATCH",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify(body),
+		});
+	const changed = await patch({ steps: 8, cfgScale: 2, id: "ignored" });
+	expect(await changed.json()).toMatchObject({
+		id: "juggernaut-xl",
+		steps: 8,
+		cfgScale: 2,
+	});
+	expect((await patch({ steps: -1 })).status).toBe(400);
+	expect(await (await call("/api/checkpoints")).json()).toMatchObject([
+		{ id: "juggernaut-xl", steps: 8 },
+	]);
+	expect(
+		(await call("/api/checkpoints/juggernaut-xl", { method: "DELETE" })).status,
+	).toBe(204);
+	const gone = await call("/api/checkpoints/juggernaut-xl", {
+		method: "DELETE",
+	});
+	expect(await gone.json()).toMatchObject({ code: "checkpointMissing" });
+});
+
 test("a model's demo is served from this origin, and never as a page", async () => {
 	const { call } = await setup();
 	const demo = await call("/api/local-models/tiny/demos/0");

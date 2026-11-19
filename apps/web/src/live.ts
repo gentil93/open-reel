@@ -118,6 +118,7 @@ export function useLiveJobs(): void {
 			void client.invalidateQueries({ queryKey: ["local-models"] });
 			// Installed models can be picked in the composer.
 			void client.invalidateQueries({ queryKey: ["models"] });
+			void client.invalidateQueries({ queryKey: ["checkpoints"] });
 		});
 		source.addEventListener("loras.changed", () => {
 			void client.invalidateQueries({ queryKey: ["loras"] });

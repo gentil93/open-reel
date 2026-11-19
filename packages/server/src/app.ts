@@ -8,6 +8,7 @@ import {
 	type JobEngine,
 	LOCAL_USER,
 	type LocalModelStore,
+	MAX_CHECKPOINT_BYTES,
 	MAX_LORA_BYTES,
 	NotFoundError,
 	type ReelService,
@@ -162,7 +163,9 @@ export function createApp(options: AppOptions): Hono {
 	// set their own limits.
 	app.use("/api/*", async (c, next) => {
 		const path = new URL(c.req.url).pathname;
-		if (path === "/api/loras" || path === "/api/assets") return next();
+		if (["/api/loras", "/api/checkpoints", "/api/assets"].includes(path)) {
+			return next();
+		}
 		return bodyLimit({
 			maxSize: MAX_JSON_BYTES,
 			onError: (c) => c.json({ error: "The request is too large" }, 413),
@@ -448,12 +451,58 @@ export function createApp(options: AppOptions): Hono {
 				);
 			}
 			const body = c.req.raw.body;
-			if (!body) throw new ValidationError("Empty upload");
+			if (!body) throw new ValidationError("Empty upload", "loraUnreadable");
 			return c.json(await models.loras.add(body, name), 201);
 		},
 	);
 	app.delete("/api/loras/:id", async (c) => {
 		await models.loras.remove(c.req.param("id"));
+		return c.body(null, 204);
+	});
+
+	// Whole models added by hand, shared like the others.
+	app.get("/api/checkpoints", async (c) =>
+		c.json(await models.checkpoints.list()),
+	);
+	app.post(
+		"/api/checkpoints",
+		bodyLimit({
+			maxSize: MAX_CHECKPOINT_BYTES,
+			onError: (c) =>
+				c.json(
+					{
+						error: "This file is too large",
+						code: "checkpointTooLarge",
+						params: {},
+					},
+					413,
+				),
+		}),
+		async (c) => {
+			const name = c.req.query("name") ?? "";
+			if (!/\.safetensors$/i.test(name)) {
+				throw new ValidationError(
+					"Choose a .safetensors file",
+					"checkpointUnreadable",
+				);
+			}
+			const body = c.req.raw.body;
+			if (!body) {
+				throw new ValidationError("Empty upload", "checkpointUnreadable");
+			}
+			return c.json(await models.checkpoints.add(body, name), 201);
+		},
+	);
+	app.patch("/api/checkpoints/:id", async (c) => {
+		const body = await json(c);
+		const change: Record<string, unknown> = {};
+		for (const key of ["name", "steps", "cfgScale", "clipSkip"]) {
+			if (key in body) change[key] = body[key];
+		}
+		return c.json(await models.checkpoints.update(c.req.param("id"), change));
+	});
+	app.delete("/api/checkpoints/:id", async (c) => {
+		await models.checkpoints.remove(c.req.param("id"));
 		return c.body(null, 204);
 	});
 	app.get("/api/local-models/:id/demos/:index", async (c) => {

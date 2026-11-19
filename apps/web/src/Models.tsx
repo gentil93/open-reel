@@ -9,6 +9,7 @@ import type {
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { api, demoUrl } from "./api";
+import { CheckpointShelf } from "./Checkpoints";
 import { remaining } from "./format";
 import { type I18n, isMessageKey, useI18n } from "./i18n";
 import { LoraShelf } from "./Loras";
@@ -951,6 +952,7 @@ export function Models() {
 						<Folder disk={disk} />
 					</dl>
 				)}
+				<CheckpointShelf />
 				<LoraShelf />
 				{view.data && <Catalog view={view.data} />}
 			</div>

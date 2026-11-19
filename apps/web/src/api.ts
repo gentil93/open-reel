@@ -1,6 +1,7 @@
 import type {
 	Asset,
 	AssistantView,
+	CheckpointInfo,
 	CreateTurnInput,
 	GalleryItem,
 	LocalModelsView,
@@ -159,6 +160,24 @@ export const api = {
 		request<void>(`/api/local-models/${id}/cancel`, { method: "POST" }),
 	deleteModel: (id: string) =>
 		request<void>(`/api/local-models/${id}`, { method: "DELETE" }),
+	checkpoints: () => request<CheckpointInfo[]>("/api/checkpoints"),
+	addCheckpoint: (file: File) =>
+		request<CheckpointInfo>(
+			`/api/checkpoints?${new URLSearchParams({ name: file.name })}`,
+			{
+				method: "POST",
+				headers: { "content-type": "application/octet-stream" },
+				body: file,
+			},
+		),
+	updateCheckpoint: (
+		id: string,
+		change: Partial<
+			Pick<CheckpointInfo, "name" | "steps" | "cfgScale" | "clipSkip">
+		>,
+	) => request<CheckpointInfo>(`/api/checkpoints/${id}`, send("PATCH", change)),
+	deleteCheckpoint: (id: string) =>
+		request<void>(`/api/checkpoints/${id}`, { method: "DELETE" }),
 	loras: () => request<LoraInfo[]>("/api/loras"),
 	addLora: (file: File) =>
 		request<LoraInfo>(

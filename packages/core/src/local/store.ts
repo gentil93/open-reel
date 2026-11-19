@@ -31,6 +31,7 @@ import type {
 	LocalModelsView,
 	LocalModelVariant,
 } from "../types";
+import { CheckpointShelf } from "./checkpoints";
 import { type BuildChoice, chooseBuild, chooseVariant, fitOf } from "./engines";
 import { isLocked, tryFileLock, withFileLock } from "./file-lock";
 import { GpuLock } from "./gpu";
@@ -46,6 +47,7 @@ const MOVED_ENTRIES = [
 	"engines",
 	"demos",
 	"loras",
+	"checkpoints",
 	"broken-engines.json",
 ];
 
@@ -354,6 +356,8 @@ export class LocalModelStore {
 	readonly gpu: GpuLock;
 	/** LoRAs, kept in the models folder so they move with it. */
 	readonly loras: LoraShelf;
+	/** Whole models added by hand, kept and moved like the LoRAs. */
+	readonly checkpoints: CheckpointShelf;
 	private locationFile: string | null;
 	private moving: LocalModelsView["disk"]["moving"] = null;
 	private moveTask: Promise<void> = Promise.resolve();
@@ -377,6 +381,13 @@ export class LocalModelStore {
 			root: () => this.root,
 			check: () => this.notMoving(),
 			changed: () => this.emit({ type: "loras.changed" }),
+		});
+		this.checkpoints = new CheckpointShelf({
+			root: () => this.root,
+			check: () => this.notMoving(),
+			// A checkpoint is a model: the composer and Models offer it.
+			changed: () => this.emit({ type: "models.changed" }),
+			release: () => this.letGo(),
 		});
 		this.gpu = new GpuLock({
 			root: this.root,
@@ -824,6 +835,7 @@ export class LocalModelStore {
 				this.installs.size > 0 ||
 				this.gpu.inUse() ||
 				this.loras.busy ||
+				this.checkpoints.busy ||
 				(await locked("blobs")) ||
 				(await locked("engines")) ||
 				(await locked("installed"));
@@ -999,6 +1011,41 @@ export class LocalModelStore {
 					this.blob(file.sha256),
 				]),
 			),
+		};
+	}
+
+	/**
+	 * What it takes to run a checkpoint added by hand, as `model` (made from
+	 * its notes) with the engine the catalog's models of its family use.
+	 */
+	async checkpointRuntime(
+		id: string,
+		model: LocalModelSpec,
+	): Promise<LocalRuntime> {
+		await this.follow();
+		this.notMoving();
+		const [variant] = model.variants;
+		await this.checkpoints.get(id);
+		if (!variant) throw new Error(`${model.name} has no variant`);
+		const hardware = await this.machine();
+		const choice = this.chooser(hardware)(variant.engine);
+		if (!choice || !(await this.installedBuilds()).has(choice.build.id)) {
+			throw new ValidationError(
+				`${model.name} needs the engine of the Stable Diffusion models. Install one of them first.`,
+				"checkpointNeedsEngine",
+				{ model: model.name },
+			);
+		}
+		const dir = this.engineDir(choice.build.id);
+		return {
+			model,
+			variant,
+			build: choice.build,
+			executable: join(dir, ...choice.build.executable.split(/[\\/]/)),
+			throughWindows: choice.throughWindows,
+			fit: fitOf(variant, hardware, choice),
+			scratch: join(this.root, "tmp"),
+			files: { model: this.checkpoints.path(id) },
 		};
 	}
 

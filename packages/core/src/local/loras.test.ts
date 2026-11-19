@@ -2,13 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readdir, rm, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-	LoraShelf,
-	loraBaseOf,
-	loraId,
-	readSafetensorsHeader,
-	triggerOf,
-} from "./loras";
+import { LoraShelf, loraBaseOf, loraId, triggerOf } from "./loras";
+import { readSafetensorsHeader } from "./shelf";
 import { safetensors } from "./testing";
 
 const dirs: string[] = [];
@@ -41,10 +36,13 @@ const KOHYA_NOTES = {
 	}),
 };
 
+const notALora = () => new Error("not a LoRA");
+
 describe("reading a LoRA", () => {
 	test("the header gives the tensor names and the trainer's notes", async () => {
 		const header = await readSafetensorsHeader(
 			new Blob([safetensors(SDXL_KEYS, { ss_output_name: "fox" })]),
+			notALora,
 		);
 		expect(header.keys).toEqual(SDXL_KEYS);
 		expect(header.metadata).toEqual({ ss_output_name: "fox" });
@@ -56,9 +54,9 @@ describe("reading a LoRA", () => {
 			new Uint8Array(64),
 			new TextEncoder().encode("PK\u0003\u0004 a zip, not a LoRA"),
 		]) {
-			await expect(readSafetensorsHeader(new Blob([bytes]))).rejects.toThrow(
-				"not a LoRA",
-			);
+			await expect(
+				readSafetensorsHeader(new Blob([bytes]), notALora),
+			).rejects.toThrow("not a LoRA");
 		}
 	});
 

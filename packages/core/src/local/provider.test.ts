@@ -4,6 +4,7 @@ import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+	CheckpointShelf,
 	DEFAULT_MASK_STRENGTH,
 	DEFAULT_STRENGTH,
 	dimensions,
@@ -400,12 +401,18 @@ describe("running", () => {
 				models: [{ id: model.id, installed: true, ready: true }],
 			}),
 			runtime: async () => ({ ...runtime(model, dir), throughWindows: false }),
+			checkpointRuntime: async (id: string, spec: LocalModelSpec) => ({
+				...runtime(spec, dir),
+				throughWindows: false,
+				files: { model: `/checkpoints/${id}.safetensors` },
+			}),
 			subscribe: (listener: (event: { type: string }) => void) => {
 				listeners.push(listener);
 				return () => {};
 			},
 			gpu: new GpuLock({ root: gpuRoot, capacity: async () => 12 * 2 ** 30 }),
 			loras: new LoraShelf({ root: () => gpuRoot }),
+			checkpoints: new CheckpointShelf({ root: () => gpuRoot }),
 		};
 		const calls: string[][] = [];
 		let killed = 0;
@@ -1046,6 +1053,58 @@ describe("running", () => {
 			}
 		};
 		await expect(run()).rejects.toMatchObject({ code: "loraMissing" });
+	});
+
+	test("a checkpoint added by hand is offered once its engine is here, and runs with its settings", async () => {
+		const SDXL_BASE: LocalModelSpec = {
+			...FLUX,
+			id: "sdxl-base",
+			name: "Stable Diffusion XL",
+			variants: [
+				{ id: "v", label: "v", engine: "sd", memoryBytes: 1, files: [] },
+			],
+		};
+		const { provider, fake, calls, store } = await setup(SDXL_BASE);
+		await store.checkpoints.add(
+			new Blob([
+				safetensors(
+					[
+						"model.diffusion_model.input_blocks.0.0.weight",
+						"conditioner.embedders.1.model.ln_final.weight",
+						"first_stage_model.decoder.conv_in.weight",
+					],
+					{ "modelspec.title": "Pony" },
+				),
+			]),
+			"pony.safetensors",
+		);
+		await store.checkpoints.update("pony", { steps: 6, cfgScale: 2 });
+		const local = provider(fake([]));
+		await local.load();
+		const model = local.listModels().find((m) => m.id === "local/ckpt-pony");
+		expect(model).toMatchObject({ name: "Pony", media: "image" });
+		const handle = await local.submit({
+			model: model as never,
+			params: params({ seed: 3 }),
+			references: [],
+		});
+		for await (const _ of local.events(handle, {
+			apiKey: undefined,
+			signal: new AbortController().signal,
+		})) {
+		}
+		const argv = calls[0] ?? [];
+		expect(argv.slice(argv.indexOf("-m"), argv.indexOf("-m") + 2)).toEqual([
+			"-m",
+			"/checkpoints/pony.safetensors",
+		]);
+		expect(argv[argv.indexOf("--steps") + 1]).toBe("6");
+		expect(argv[argv.indexOf("--cfg-scale") + 1]).toBe("2");
+		expect(argv[argv.indexOf("--clip-skip") + 1]).toBe("2");
+		// Deleted, it is no longer offered.
+		await store.checkpoints.remove("pony");
+		await local.load();
+		expect(local.listModels().map((m) => m.id)).toEqual(["local/sdxl-base"]);
 	});
 
 	test("pictures and videos wait in separate lines", async () => {

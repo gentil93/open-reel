@@ -1,6 +1,6 @@
 import { mkdir, rm } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { ValidationError } from "../errors";
+import { NotFoundError, ValidationError } from "../errors";
 import { sniffMime } from "../mime";
 import type {
 	ProviderAdapter,
@@ -9,6 +9,7 @@ import type {
 	ProviderRequest,
 } from "../provider";
 import {
+	type CheckpointInfo,
 	DEFAULT_MASK_STRENGTH,
 	DEFAULT_STRENGTH,
 	type GenerationParams,
@@ -17,6 +18,11 @@ import {
 	MAX_LORAS,
 	type ModelSpec,
 } from "../types";
+import {
+	CHECKPOINT_TEMPLATES,
+	checkpointModelId,
+	checkpointOf,
+} from "./checkpoints";
 import type { LocalModelStore, LocalRuntime } from "./store";
 import { WarmEngines } from "./warm";
 
@@ -391,6 +397,57 @@ export function operationsOf(model: LocalModelSpec): ModelSpec["operations"] {
 	return operations;
 }
 
+/**
+ * A checkpoint added by hand, as a model: run like the catalog model of its
+ * family, with its own name, steps and guidance.
+ */
+export function checkpointSpec(
+	info: CheckpointInfo,
+	template: LocalModelSpec,
+): LocalModelSpec {
+	const [variant] = template.variants;
+	// A larger file (32-bit weights) takes more memory to run.
+	const templateBytes =
+		variant?.files.reduce((sum, file) => sum + file.size, 0) ?? 0;
+	const scale = templateBytes > 0 ? Math.max(1, info.size / templateBytes) : 1;
+	return {
+		...template,
+		id: checkpointModelId(info.id),
+		name: info.name,
+		author: "",
+		summary: "",
+		homepage: "",
+		// Its license is its authors', not the base model's: unknown here.
+		license: "",
+		licenseUrl: "",
+		commercial: { kind: "none" },
+		demos: [],
+		profile: undefined,
+		variants: variant
+			? [
+					{
+						...variant,
+						id: "file",
+						label: "file",
+						files: [],
+						memoryBytes: Math.round(variant.memoryBytes * scale),
+					},
+				]
+			: [],
+		defaults: {
+			...template.defaults,
+			steps: info.steps,
+			cfgScale: info.cfgScale,
+			engineArgs: [
+				...(template.defaults.engineArgs ?? []),
+				...(info.clipSkip != null
+					? ["--clip-skip", String(info.clipSkip)]
+					: []),
+			],
+		},
+	};
+}
+
 /** The engine's server program, next to its one-shot program. */
 function serverProgram(executable: string): string {
 	return join(
@@ -414,6 +471,9 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 	maxConcurrency = 1;
 	onChange: (() => void) | null = null;
 	private installed: string[] = [];
+	/** Checkpoints added by hand, as models; offered once their engine is here. */
+	private checkpoints: LocalModelSpec[] = [];
+	private loading: Promise<void> = Promise.resolve();
 	private store: LocalModelStore;
 	private catalog: LocalModelSpec[];
 	private spawn: Spawn;
@@ -435,15 +495,40 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 
 	/** Reads which models are installed. */
 	async load(): Promise<void> {
+		// One at a time, so an older look never overwrites a newer one.
+		const next = this.loading.then(
+			() => this.loadNow(),
+			() => this.loadNow(),
+		);
+		this.loading = next.catch(() => {});
+		return next;
+	}
+
+	private async loadNow(): Promise<void> {
 		const view = await this.store.list();
 		// Offered only once its engine is there too.
 		const installed = view.models.filter((m) => m.ready).map((m) => m.id);
+		const engines = new Set(
+			this.catalog
+				.filter((model) => installed.includes(model.id))
+				.flatMap((model) => model.variants.map((v) => v.engine)),
+		);
+		const checkpoints = (await this.store.checkpoints.list().catch(() => []))
+			.flatMap((info) => {
+				const template = this.catalog.find(
+					(model) => model.id === CHECKPOINT_TEMPLATES[info.base],
+				);
+				return template ? [checkpointSpec(info, template)] : [];
+			})
+			.filter((model) => model.variants.some((v) => engines.has(v.engine)));
 		// A loaded model holds its files open, and Windows cannot delete them.
 		const loaded = this.warm ? this.warm.loaded?.split(":")[0] : null;
-		if (this.warm && loaded && !installed.includes(loaded)) this.warm.stop();
-		if (installed.join() === this.installed.join()) return;
+		const offered = [...installed, ...checkpoints.map((model) => model.id)];
+		if (this.warm && loaded && !offered.includes(loaded)) this.warm.stop();
+		const before = JSON.stringify([this.installed, this.checkpoints]);
 		this.installed = installed;
-		this.onChange?.();
+		this.checkpoints = checkpoints;
+		if (JSON.stringify([installed, checkpoints]) !== before) this.onChange?.();
 	}
 
 	/**
@@ -452,12 +537,21 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 	 */
 	lineOf(modelId: string): string {
 		const id = modelId.replace(/^local\//, "");
-		return this.catalog.find((model) => model.id === id)?.media ?? "image";
+		return this.spec(id)?.media ?? "image";
+	}
+
+	/** A catalog model, or a checkpoint added by hand. */
+	private spec(id: string): LocalModelSpec | undefined {
+		return checkpointOf(id) != null
+			? this.checkpoints.find((model) => model.id === id)
+			: this.catalog.find((model) => model.id === id);
 	}
 
 	listModels(): ModelSpec[] {
-		return this.catalog
-			.filter((model) => this.installed.includes(model.id))
+		return [
+			...this.catalog.filter((model) => this.installed.includes(model.id)),
+			...this.checkpoints,
+		]
 			.flatMap((model) =>
 				// A text model helps the others; it makes no pictures itself.
 				model.media === "text" ? [] : [{ ...model, media: model.media }],
@@ -499,7 +593,7 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 			modelId: request.model.providerModelId,
 			params: request.params,
 		};
-		const spec = this.catalog.find((m) => m.id === handle.modelId);
+		const spec = this.spec(handle.modelId);
 		const loras = request.params.loras ?? [];
 		if (spec && loras.length > 0)
 			handle.loras = await this.checkLoras(spec, loras);
@@ -605,7 +699,21 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 		handle: LocalHandle,
 		ctx: ProviderContext,
 	): AsyncIterable<ProviderEvent> {
-		const runtime = await this.store.runtime(handle.modelId);
+		const checkpoint = checkpointOf(handle.modelId);
+		const spec = checkpoint != null ? this.spec(handle.modelId) : undefined;
+		if (checkpoint != null && !spec) {
+			throw new NotFoundError(
+				"That model is no longer here",
+				"checkpointMissing",
+				{
+					id: checkpoint,
+				},
+			);
+		}
+		const runtime =
+			checkpoint != null && spec
+				? await this.store.checkpointRuntime(checkpoint, spec)
+				: await this.store.runtime(handle.modelId);
 		const video = runtime.model.media === "video";
 		await mkdir(runtime.scratch, { recursive: true });
 		const output = join(
@@ -626,6 +734,8 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 			// Not checked with LoRAs yet: the engine run once is.
 			// (The server takes them only as a list, not in the prompt.)
 			!handle.loras?.length &&
+			// Nor whether the server applies a clip skip given at its start.
+			!runtime.model.defaults.engineArgs?.includes("--clip-skip") &&
 			runtime.model.defaults.upscale == null &&
 			!runtime.throughWindows &&
 			server !== runtime.executable &&
@@ -654,7 +764,8 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 			argv.push(...modelOptions(runtime));
 			try {
 				yield* this.warm.run(
-					`${runtime.model.id}:${runtime.variant.id}`,
+					// With its options: a model whose settings changed starts anew.
+					`${runtime.model.id}:${runtime.variant.id}:${modelOptions(runtime).join(" ")}`,
 					argv,
 					{
 						video: false,

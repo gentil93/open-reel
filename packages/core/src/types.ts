@@ -54,6 +54,27 @@ export interface LoraInfo {
 	addedAt: number;
 }
 
+/** The families of single-file models that can be added by hand. */
+export const CHECKPOINT_BASES = ["sd1", "sdxl"] as const;
+export type CheckpointBase = (typeof CHECKPOINT_BASES)[number];
+
+/**
+ * A whole model in one file, added by hand: a community fine-tune of a
+ * family open-reel runs. It is offered as `local/ckpt-<id>`.
+ */
+export interface CheckpointInfo {
+	id: string;
+	name: string;
+	base: CheckpointBase;
+	/** How it is run; fine-tunes often want other values than their family. */
+	steps: number;
+	cfgScale: number;
+	/** Text encoder layers to skip at the end; 2 for Pony and anime models. */
+	clipSkip: number | null;
+	size: number;
+	addedAt: number;
+}
+
 export const generationParamsSchema = z.object({
 	prompt: z.string().trim().min(1),
 	aspectRatio: z
