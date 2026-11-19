@@ -117,11 +117,14 @@ export function flux2Models(): LocalModelSpec[] {
 			...APACHE_2,
 			homepage: "https://huggingface.co/black-forest-labs/FLUX.2-klein-4B",
 			variants: [
+				// Memory: the files, all on the GPU, and about 1.75 GB to work
+				// in. Measured on a 12 GB card: 8-bit edits at 1024 px every time
+				// (8.3 GB loaded); 16-bit runs out when it follows a picture.
 				{
 					id: "bf16",
 					label: "16-bit",
 					engine: "sd-cpp",
-					memoryBytes: 11 * GB,
+					memoryBytes: 17 * GB,
 					files: [
 						file(
 							REPO.klein,
@@ -138,7 +141,7 @@ export function flux2Models(): LocalModelSpec[] {
 					id: "q8",
 					label: "8-bit",
 					engine: "sd-cpp",
-					memoryBytes: 7 * GB,
+					memoryBytes: 11 * GB,
 					files: [
 						file(
 							REPO.kleinGguf,
@@ -155,7 +158,7 @@ export function flux2Models(): LocalModelSpec[] {
 					id: "q4",
 					label: "4-bit",
 					engine: "sd-cpp",
-					memoryBytes: 5 * GB,
+					memoryBytes: 7 * GB,
 					files: [
 						file(
 							REPO.kleinGguf,
@@ -218,7 +221,7 @@ export function flux2Models(): LocalModelSpec[] {
 					id: "bf16",
 					label: "16-bit",
 					engine: "sd-cpp",
-					memoryBytes: 11 * GB,
+					memoryBytes: 17 * GB,
 					files: [
 						file(
 							REPO.kleinBase,
@@ -235,7 +238,7 @@ export function flux2Models(): LocalModelSpec[] {
 					id: "q8",
 					label: "8-bit",
 					engine: "sd-cpp",
-					memoryBytes: 7 * GB,
+					memoryBytes: 11 * GB,
 					files: [
 						file(
 							REPO.kleinBaseGguf,
@@ -252,7 +255,7 @@ export function flux2Models(): LocalModelSpec[] {
 					id: "q4",
 					label: "4-bit",
 					engine: "sd-cpp",
-					memoryBytes: 5 * GB,
+					memoryBytes: 7 * GB,
 					files: [
 						file(
 							REPO.kleinBaseGguf,

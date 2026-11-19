@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { roleOption } from "@open-reel/core";
+import { chooseVariant, roleOption } from "@open-reel/core";
 import en from "../../../../apps/web/src/locales/en.json";
 import ptBR from "../../../../apps/web/src/locales/pt-BR.json";
 import { builtinLocalModels } from "./index";
@@ -102,6 +102,41 @@ describe("the local models catalog", () => {
 			const key = `models.summary.${model.id}`;
 			expect((en as Record<string, unknown>)[key], key).toBe(model.summary);
 			for (const catalog of catalogs) expect(catalog[key], key).toBeString();
+		}
+	});
+});
+
+describe("variants chosen for a card", () => {
+	test("FLUX.2 klein is 8-bit on a 12 GB card: 16-bit runs out when editing", () => {
+		const gpu = {
+			vendor: "nvidia" as const,
+			name: "RTX 4070 SUPER",
+			memoryBytes: 12_282 * 2 ** 20,
+		};
+		const hardware = {
+			os: "win32" as const,
+			arch: "x64" as const,
+			wsl: false,
+			memoryBytes: 32 * 2 ** 30,
+			gpus: [gpu],
+		};
+		for (const id of ["flux-2-klein-4b", "flux-2-klein-base-4b"]) {
+			const model = models.find((m) => m.id === id);
+			const choice = chooseVariant(model?.variants ?? [], hardware, () => ({
+				build: {} as never,
+				gpu,
+				throughWindows: false,
+			}));
+			expect(choice?.variant.id).toBe("q8");
+			expect(choice?.fit).toBe("gpu");
+			// A 24 GB card keeps the 16-bit one.
+			const big = { ...gpu, memoryBytes: 24 * 2 ** 30 };
+			const roomy = chooseVariant(
+				model?.variants ?? [],
+				{ ...hardware, gpus: [big] },
+				() => ({ build: {} as never, gpu: big, throughWindows: false }),
+			);
+			expect(roomy?.variant.id).toBe("bf16");
 		}
 	});
 });
