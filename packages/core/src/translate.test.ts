@@ -27,6 +27,19 @@ describe("a translation as a language model replies it", () => {
 		).toBe("a fox");
 	});
 
+	test("drops every closed reasoning block and keeps an unclosed one", () => {
+		expect(
+			cleanTranslation("<think>a</think>a <think>b</think>fox<think>"),
+		).toBe("a fox<think>");
+	});
+
+	test("a reply full of unclosed reasoning is read in linear time", () => {
+		const reply = "<think>".repeat(50_000);
+		const started = performance.now();
+		expect(cleanTranslation(reply)).toBe(reply);
+		expect(performance.now() - started).toBeLessThan(500);
+	});
+
 	test("keeps quotes that belong to the prompt", () => {
 		expect(cleanTranslation('a sign that says "OPEN"')).toBe(
 			'a sign that says "OPEN"',
