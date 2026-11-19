@@ -10,7 +10,7 @@ import {
 	type LocalEngineSpec,
 	type LocalModelSpec,
 } from "@open-reel/core";
-import { zip } from "@open-reel/core/testing";
+import { safetensors, zip } from "@open-reel/core/testing";
 import type { AssistantView } from "@open-reel/core/types";
 import {
 	createApp,
@@ -437,6 +437,44 @@ test("a local model is listed, installed, and deleted", async () => {
 	] as const) {
 		expect((await call(path, { method })).status).toBe(404);
 	}
+});
+
+test("a LoRA is added from a file, listed, and deleted", async () => {
+	const { call } = await setup();
+	const add = (name: string, body: Uint8Array) =>
+		call(`/api/loras?${new URLSearchParams({ name })}`, {
+			method: "POST",
+			body,
+		});
+	const file = safetensors(["lora_unet_input_blocks_4_1_proj_in.alpha"], {
+		"modelspec.title": "Porcelain",
+	});
+
+	const added = await add("porcelain.safetensors", file);
+	expect(added.status).toBe(201);
+	expect(await added.json()).toMatchObject({
+		id: "porcelain",
+		name: "Porcelain",
+		base: "sdxl",
+		size: file.byteLength,
+	});
+	expect(await (await call("/api/loras")).json()).toMatchObject([
+		{ id: "porcelain" },
+	]);
+
+	const wrongName = await add("porcelain.ckpt", file);
+	expect(wrongName.status).toBe(400);
+	expect(await wrongName.json()).toMatchObject({ code: "loraUnreadable" });
+	const notLora = await add("x.safetensors", new Uint8Array(40));
+	expect(await notLora.json()).toMatchObject({ code: "loraUnreadable" });
+
+	expect(
+		(await call("/api/loras/porcelain", { method: "DELETE" })).status,
+	).toBe(204);
+	expect(await (await call("/api/loras")).json()).toEqual([]);
+	const gone = await call("/api/loras/porcelain", { method: "DELETE" });
+	expect(gone.status).toBe(404);
+	expect(await gone.json()).toMatchObject({ code: "loraMissing" });
 });
 
 test("a model's demo is served from this origin, and never as a page", async () => {

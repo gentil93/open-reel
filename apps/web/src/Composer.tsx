@@ -1,4 +1,9 @@
-import type { Media, ModelSpec, ProviderStatus } from "@open-reel/core/types";
+import {
+	MAX_LORAS,
+	type Media,
+	type ModelSpec,
+	type ProviderStatus,
+} from "@open-reel/core/types";
 import { useMutation } from "@tanstack/react-query";
 import {
 	type Dispatch,
@@ -12,6 +17,7 @@ import { Adjust } from "./Adjust";
 import { api, assetUrl } from "./api";
 import { Extend } from "./Extend";
 import { useI18n } from "./i18n";
+import { type ChosenLora, LoraPicker, useLoras } from "./Loras";
 import { MaskPainter } from "./MaskPainter";
 import { PickerDialog } from "./Picker";
 
@@ -25,6 +31,8 @@ export interface Draft {
 	strength?: number;
 	/** The area of the reference to redraw; the rest is kept. */
 	maskAssetId?: string;
+	/** LoRAs for the models that take them. */
+	loras?: ChosenLora[];
 }
 
 interface Props {
@@ -72,6 +80,8 @@ export function Composer(props: Props) {
 	const [seconds, setSeconds] = useState<number | null>(null);
 	// Unset, the slider shows the chosen models' own strength.
 	const [moved, setStrength] = useState<number | null>(null);
+	const [loras, setLoras] = useState<ChosenLora[]>([]);
+	const known = useLoras();
 	const fileInput = useRef<HTMLInputElement>(null);
 	// The area of the reference to redraw, for the reference it was marked on.
 	const [mask, setMask] = useState<{
@@ -140,6 +150,18 @@ export function Composer(props: Props) {
 		(maskId
 			? (redrawer?.capabilities.mask ?? redrawer?.capabilities.strength)
 			: redrawer?.capabilities.strength);
+	// LoRAs are offered for the families the chosen models take.
+	const loraBases = [
+		...new Set(selected.flatMap((m) => m.capabilities.loraBase ?? [])),
+	];
+	// At most MAX_LORAS for each family: each model gets its own family's.
+	const sentLoras = loraBases.flatMap((base) =>
+		loras
+			.filter((chosen) =>
+				known.data?.some((lora) => lora.id === chosen.id && lora.base === base),
+			)
+			.slice(0, MAX_LORAS),
+	);
 	// A redrawn picture keeps the reference's shape: no ratio to choose.
 	const ratios =
 		redrawing && selected.every((m) => m.capabilities.strength != null)
@@ -226,6 +248,7 @@ export function Composer(props: Props) {
 			// Unmoved, each model redraws by its own.
 			strength: redrawing && moved != null ? moved : undefined,
 			maskAssetId: maskId ?? undefined,
+			loras: sentLoras.length > 0 ? sentLoras : undefined,
 		});
 		setPrompt("");
 		// Whatever was offered was for the prompt just sent.
@@ -334,6 +357,7 @@ export function Composer(props: Props) {
 							))}
 						</select>
 					</label>
+					<LoraPicker bases={loraBases} value={loras} onChange={setLoras} />
 					{redrawing && strength != null && (
 						<label className="flex items-center justify-between gap-2 text-sm text-dim">
 							{t("composer.strength")}

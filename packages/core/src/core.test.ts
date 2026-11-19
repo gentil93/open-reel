@@ -239,6 +239,23 @@ describe("turns", () => {
 		).toEqual(["a"]);
 	});
 
+	test("LoRAs go only to models that take them, so a comparison still runs", () => {
+		const params = {
+			prompt: "x",
+			count: 1,
+			referenceAssetIds: [],
+			extras: {},
+			loras: [{ id: "porcelain", weight: 0.8 }],
+		};
+		expect(adaptParams(CLIP, params).loras).toBeUndefined();
+		expect(
+			adaptParams(
+				{ ...CLIP, capabilities: { ...CLIP.capabilities, loraBase: "sdxl" } },
+				params,
+			).loras,
+		).toEqual([{ id: "porcelain", weight: 0.8 }]);
+	});
+
 	test("a model that cannot take a mask is refused one", () => {
 		const params = {
 			prompt: "x",

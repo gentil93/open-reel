@@ -14,6 +14,7 @@ import {
 	type GenerationParams,
 	type LocalModelDefaults,
 	type LocalModelSpec,
+	MAX_LORAS,
 	type ModelSpec,
 } from "../types";
 import type { LocalModelStore, LocalRuntime } from "./store";
@@ -31,6 +32,56 @@ export interface LocalHandle {
 	size?: { width: number; height: number };
 	/** What of the picture to redraw, made ready for the engine. */
 	mask?: Uint8Array;
+	/**
+	 * LoRAs checked against the model. Found by id when the job runs: the
+	 * models folder may have moved since.
+	 */
+	loras?: HandleLora[];
+}
+
+export interface HandleLora {
+	id: string;
+	weight: number;
+	/** Put before the prompt when the prompt lacks it. */
+	trigger: string | null;
+}
+
+/** A LoRA as the engine is given it. */
+export interface EngineLora extends HandleLora {
+	/** Its file, on this side: the engine is told its folder. */
+	path: string;
+}
+
+/**
+ * The prompt with the LoRAs named the way the engine reads them,
+ * `<lora:name:weight>`, and their trigger words when missing.
+ */
+export function loraPrompt(prompt: string, loras: HandleLora[]): string {
+	// LoRAs come only from the shelf, checked against the model: a tag
+	// pasted with a prompt found online would skip that.
+	const written = prompt
+		.replace(/<(lora|lyco|hypernet):[^>]*>/gi, " ")
+		.replace(/\s{2,}/g, " ")
+		.trim();
+	const used = loras.filter((lora) => lora.weight !== 0);
+	if (used.length === 0) return written;
+	const has = (word: string) =>
+		new RegExp(
+			`(^|[^\\p{L}\\p{N}])${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^\\p{L}\\p{N}])`,
+			"iu",
+		).test(written);
+	const triggers = [
+		...new Set(
+			used
+				.map((lora) => lora.trigger)
+				.filter((t): t is string => !!t && !has(t)),
+		),
+	];
+	const text = triggers.length ? `${triggers.join(", ")}, ${written}` : written;
+	const tags = used.map(
+		(lora) => `<lora:${lora.id}:${Math.round(lora.weight * 100) / 100}>`,
+	);
+	return `${text} ${tags.join(" ")}`;
 }
 
 /** Turns a path into one the engine can open, e.g. a Windows path under WSL. */
@@ -182,6 +233,8 @@ export async function engineArguments(
 	size?: { width: number; height: number },
 	/** What of the redrawn picture to change: white is redrawn. */
 	mask?: string,
+	/** LoRAs to add; all in one folder. */
+	loras: EngineLora[] = [],
 ): Promise<string[]> {
 	if (defaults.upscale != null) {
 		const [picture] = references;
@@ -214,7 +267,7 @@ export async function engineArguments(
 	}
 	args.push(
 		"-p",
-		params.prompt,
+		loraPrompt(params.prompt, loras),
 		"--steps",
 		String(steps),
 		"--cfg-scale",
@@ -241,6 +294,8 @@ export async function engineArguments(
 	}
 	if (redrawing) args.push("--strength", String(strength));
 	if (masked) args.push("--mask", await path(mask));
+	const [lora] = loras;
+	if (lora) args.push("--lora-model-dir", await path(dirname(lora.path)));
 	args.push(...modelOptions(runtime));
 	if (video) {
 		const fps = defaults.fps ?? 16;
@@ -403,6 +458,7 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 						durations: model.defaults.durations,
 					}),
 					...(model.englishPrompts && { englishPrompts: true }),
+					...(model.loraBase && { loraBase: model.loraBase }),
 				},
 				pricing: { usdPerOutput: 0 },
 				...(model.profile && { profile: model.profile }),
@@ -415,6 +471,9 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 			params: request.params,
 		};
 		const spec = this.catalog.find((m) => m.id === handle.modelId);
+		const loras = request.params.loras ?? [];
+		if (spec && loras.length > 0)
+			handle.loras = await this.checkLoras(spec, loras);
 		const max = spec?.defaults.references?.max ?? 0;
 		if (!spec || request.references.length === 0 || max === 0) return handle;
 		const [first] = request.references;
@@ -477,6 +536,42 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 		return handle;
 	}
 
+	/** The LoRAs asked for, each one there and made for this model. */
+	private async checkLoras(
+		spec: LocalModelSpec,
+		asked: { id: string; weight: number }[],
+	): Promise<HandleLora[]> {
+		const checked: HandleLora[] = [];
+		let other: string | null = null;
+		for (const { id, weight } of asked) {
+			const lora = await this.store.loras.get(id);
+			// One prompt can go to models of different families, each with
+			// LoRAs of its own: the others' are left out.
+			if (!spec.loraBase || lora.base !== spec.loraBase) {
+				other = lora.name;
+				continue;
+			}
+			if (!checked.some((c) => c.id === id)) {
+				checked.push({ id, weight, trigger: lora.trigger });
+			}
+		}
+		if (checked.length > MAX_LORAS) {
+			throw new ValidationError(
+				`At most ${MAX_LORAS} LoRAs can be used at once`,
+				"tooManyLoras",
+				{ max: MAX_LORAS },
+			);
+		}
+		if (checked.length === 0 && other) {
+			throw new ValidationError(
+				`${other} is not made for ${spec.name}`,
+				"loraWrongBase",
+				{ lora: other, model: spec.name },
+			);
+		}
+		return checked;
+	}
+
 	async *events(
 		handle: LocalHandle,
 		ctx: ProviderContext,
@@ -500,6 +595,8 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 			this.warm &&
 			!video &&
 			!handle.pictures?.length &&
+			// Not checked with LoRAs yet: the engine run once is.
+			!handle.loras?.length &&
 			runtime.model.defaults.upscale == null &&
 			!runtime.throughWindows &&
 			server !== runtime.executable &&
@@ -521,7 +618,7 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 					argv,
 					{
 						video: false,
-						prompt: handle.params.prompt,
+						prompt: loraPrompt(handle.params.prompt, []),
 						negativePrompt: defaults.negativePrompt,
 						width,
 						height,
@@ -592,6 +689,7 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 				references,
 				handle.size,
 				mask,
+				await this.engineLoras(handle),
 			)),
 		];
 		// The engine writes the picture as it forms, numbered from 000.
@@ -709,6 +807,17 @@ export class LocalProvider implements ProviderAdapter<LocalHandle> {
 				await rm(previewFile(i), { force: true });
 			}
 		}
+	}
+
+	/** The handle's LoRAs, found where the models folder is now. */
+	private async engineLoras(handle: LocalHandle): Promise<EngineLora[]> {
+		const loras: EngineLora[] = [];
+		for (const lora of handle.loras ?? []) {
+			// Deleted since the job was asked for: say so, not a vague failure.
+			await this.store.loras.get(lora.id);
+			loras.push({ ...lora, path: this.store.loras.path(lora.id) });
+		}
+		return loras;
 	}
 
 	async cancel(): Promise<void> {

@@ -11,6 +11,8 @@ import {
 	type LocalModelSpec,
 	LocalProvider,
 	type LocalRuntime,
+	LoraShelf,
+	loraPrompt,
 	MAX_UPSCALE_INPUT,
 	type ProviderEvent,
 	previewInterval,
@@ -21,7 +23,7 @@ import {
 } from "../index";
 
 import { GpuLock } from "./gpu";
-import { picture } from "./testing";
+import { picture, safetensors } from "./testing";
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -301,6 +303,60 @@ describe("engine arguments", () => {
 		expect(short.at(-1)).toBe("--offload-to-cpu");
 	});
 
+	test("LoRAs are named in the prompt, with their trigger, and their folder given", async () => {
+		const args = await engineArguments(
+			runtime(FLUX),
+			FLUX.defaults,
+			params({ seed: 1 }),
+			"/scratch/out.png",
+			windows,
+			[],
+			undefined,
+			undefined,
+			[
+				{
+					id: "porcelain",
+					weight: 0.8,
+					trigger: "qzporcelain",
+					path: "/m/loras/porcelain.safetensors",
+				},
+				{
+					id: "ink",
+					weight: 1,
+					trigger: null,
+					path: "/m/loras/ink.safetensors",
+				},
+			],
+		);
+		expect(args[args.indexOf("-p") + 1]).toBe(
+			"qzporcelain, a red fox <lora:porcelain:0.8> <lora:ink:1>",
+		);
+		expect(args[args.indexOf("--lora-model-dir") + 1]).toBe("C:\\m\\loras");
+	});
+
+	test("a trigger already in the prompt is not added twice; a LoRA at 0 is left out", () => {
+		const lora = { id: "p", weight: 1, trigger: "QZ" };
+		expect(loraPrompt("a qz fox", [lora])).toBe("a qz fox <lora:p:1>");
+		expect(loraPrompt("a fox", [{ ...lora, weight: 0 }])).toBe("a fox");
+		expect(loraPrompt("a fox", [lora, { ...lora, id: "q" }])).toBe(
+			"QZ, a fox <lora:p:1> <lora:q:1>",
+		);
+		expect(loraPrompt("a fox", [{ ...lora, weight: 0.333333 }])).toBe(
+			"QZ, a fox <lora:p:0.33>",
+		);
+		// Inside another word it is not there.
+		expect(loraPrompt("qzfox art", [lora])).toBe("QZ, qzfox art <lora:p:1>");
+	});
+
+	test("LoRA tags written in a prompt are taken out: only checked LoRAs load", () => {
+		expect(loraPrompt("a fox <lora:add_detail:0.6>, snow", [])).toBe(
+			"a fox , snow",
+		);
+		expect(
+			loraPrompt("<LyCO:x:1> a fox", [{ id: "p", weight: 1, trigger: null }]),
+		).toBe("a fox <lora:p:1>");
+	});
+
 	test("a file with an unknown role is refused rather than guessed", async () => {
 		const odd = { ...runtime(FLUX), files: { lora: "/m/lora" } };
 		expect(
@@ -348,6 +404,7 @@ describe("running", () => {
 				return () => {};
 			},
 			gpu: new GpuLock({ root: gpuRoot, capacity: async () => 12 * 2 ** 30 }),
+			loras: new LoraShelf({ root: () => gpuRoot }),
 		};
 		const calls: string[][] = [];
 		let killed = 0;
@@ -386,6 +443,7 @@ describe("running", () => {
 		return {
 			dir,
 			gpuRoot,
+			store,
 			calls,
 			fake,
 			provider,
@@ -803,6 +861,97 @@ describe("running", () => {
 		expect(job).rejects.toThrow();
 		await Bun.sleep(10);
 		expect(killed()).toBeGreaterThan(0);
+	});
+
+	test("a LoRA made for the model reaches the engine; one for another family is refused", async () => {
+		const SDXL = { ...FLUX, loraBase: "sdxl" as const };
+		const { provider, fake, calls, store, gpuRoot } = await setup(SDXL);
+		const sdxl = await store.loras.add(
+			new Blob([
+				safetensors(["lora_unet_input_blocks_4_1_proj_in.alpha"], {
+					"modelspec.title": "Porcelain",
+				}),
+			]),
+			"p.safetensors",
+		);
+		const flux = await store.loras.add(
+			new Blob([safetensors(["lora_unet_double_blocks_0_img_attn.alpha"])]),
+			"f.safetensors",
+		);
+		const local = provider(fake([]));
+		await local.load();
+		const [model] = local.listModels();
+		expect(model?.capabilities.loraBase).toBe("sdxl");
+		const handle = await local.submit({
+			model: model as never,
+			params: params({ loras: [{ id: sdxl.id, weight: 0.7 }] }),
+			references: [],
+		});
+		const events: ProviderEvent[] = [];
+		for await (const event of local.events(handle, {
+			apiKey: undefined,
+			signal: new AbortController().signal,
+		})) {
+			events.push(event);
+		}
+		expect(events.at(-1)?.type).toBe("completed");
+		const argv = calls[0] ?? [];
+		expect(argv[argv.indexOf("-p") + 1]).toBe("a red fox <lora:porcelain:0.7>");
+		expect(argv[argv.indexOf("--lora-model-dir") + 1]).toBe(
+			join(gpuRoot, "loras"),
+		);
+		await expect(
+			local.submit({
+				model: model as never,
+				params: params({ loras: [{ id: flux.id, weight: 1 }] }),
+				references: [],
+			}),
+		).rejects.toMatchObject({ code: "loraWrongBase" });
+		// Sent to models of both families, each keeps its own.
+		const mixed = await local.submit({
+			model: model as never,
+			params: params({
+				loras: [
+					{ id: flux.id, weight: 1 },
+					{ id: sdxl.id, weight: 1 },
+				],
+			}),
+			references: [],
+		});
+		expect(mixed.loras?.map((l) => l.id)).toEqual([sdxl.id]);
+		await expect(
+			local.submit({
+				model: model as never,
+				params: params({ loras: [{ id: "gone", weight: 1 }] }),
+				references: [],
+			}),
+		).rejects.toMatchObject({ code: "loraMissing" });
+	});
+
+	test("a LoRA deleted after the job was asked for fails the job, saying so", async () => {
+		const SDXL = { ...FLUX, loraBase: "sdxl" as const };
+		const { provider, fake, store } = await setup(SDXL);
+		const lora = await store.loras.add(
+			new Blob([safetensors(["lora_te2_x.alpha"])]),
+			"p.safetensors",
+		);
+		const local = provider(fake([]));
+		await local.load();
+		const [model] = local.listModels();
+		const handle = await local.submit({
+			model: model as never,
+			params: params({ loras: [{ id: lora.id, weight: 1 }] }),
+			references: [],
+		});
+		await store.loras.remove(lora.id);
+		const run = async () => {
+			for await (const _ of local.events(handle, {
+				apiKey: undefined,
+				signal: new AbortController().signal,
+			})) {
+			}
+		};
+		await expect(run()).rejects.toMatchObject({ code: "loraMissing" });
 	});
 
 	test("pictures and videos wait in separate lines", async () => {

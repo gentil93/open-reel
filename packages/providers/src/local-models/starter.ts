@@ -49,6 +49,8 @@ export function starterModels(): LocalModelSpec[] {
 		{
 			id: "sdxl-turbo",
 			englishPrompts: true,
+			// Not `loraBase`: LoRAs trained on SDXL load, but at one step they
+			// barely show, and stronger they spoil the picture.
 			profile: PROFILES.sdxlTurbo,
 			name: "SDXL Turbo",
 			author: "Stability AI",
@@ -96,6 +98,7 @@ export function starterModels(): LocalModelSpec[] {
 		{
 			id: "sdxl-base",
 			englishPrompts: true,
+			loraBase: "sdxl",
 			profile: PROFILES.sdxl,
 			name: "Stable Diffusion XL",
 			author: "Stability AI",

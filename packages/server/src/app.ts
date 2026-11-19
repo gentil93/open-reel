@@ -8,6 +8,7 @@ import {
 	type JobEngine,
 	LOCAL_USER,
 	type LocalModelStore,
+	MAX_LORA_BYTES,
 	NotFoundError,
 	type ReelService,
 	type SettingsStore,
@@ -70,6 +71,8 @@ const UPSTREAM_CODES = new Set<ErrorCode>([
 
 const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+/** More than any JSON request the interface sends. */
+const MAX_JSON_BYTES = 1024 * 1024;
 
 function hostname(host: string): string {
 	return host.replace(/:\d+$/, "");
@@ -153,6 +156,17 @@ export function createApp(options: AppOptions): Hono {
 			return c.json({ error: "Forbidden origin" }, 403);
 		}
 		await next();
+	});
+
+	// Bodies are small JSON, except for the routes that take files, which
+	// set their own limits.
+	app.use("/api/*", async (c, next) => {
+		const path = new URL(c.req.url).pathname;
+		if (path === "/api/loras" || path === "/api/assets") return next();
+		return bodyLimit({
+			maxSize: MAX_JSON_BYTES,
+			onError: (c) => c.json({ error: "The request is too large" }, 413),
+		})(c, next);
 	});
 
 	app.onError((error, c) => {
@@ -406,6 +420,40 @@ export function createApp(options: AppOptions): Hono {
 	});
 	app.delete("/api/local-models/:id", async (c) => {
 		await models.remove(c.req.param("id"));
+		return c.body(null, 204);
+	});
+	// LoRAs, like models, are shared by everyone using this installation.
+	app.get("/api/loras", async (c) => c.json(await models.loras.list()));
+	app.post(
+		"/api/loras",
+		bodyLimit({
+			maxSize: MAX_LORA_BYTES,
+			onError: (c) =>
+				c.json(
+					{
+						error: "This file is too large to be a LoRA",
+						code: "loraTooLarge",
+						params: {},
+					},
+					413,
+				),
+		}),
+		async (c) => {
+			// The file comes as the body, its name in the address.
+			const name = c.req.query("name") ?? "";
+			if (!/\.safetensors$/i.test(name)) {
+				throw new ValidationError(
+					"Choose a .safetensors file",
+					"loraUnreadable",
+				);
+			}
+			const body = c.req.raw.body;
+			if (!body) throw new ValidationError("Empty upload");
+			return c.json(await models.loras.add(body, name), 201);
+		},
+	);
+	app.delete("/api/loras/:id", async (c) => {
+		await models.loras.remove(c.req.param("id"));
 		return c.body(null, 204);
 	});
 	app.get("/api/local-models/:id/demos/:index", async (c) => {

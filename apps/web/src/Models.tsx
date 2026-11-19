@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, demoUrl } from "./api";
 import { remaining } from "./format";
 import { type I18n, isMessageKey, useI18n } from "./i18n";
+import { LoraShelf } from "./Loras";
 import { useFolderMove, useModelProgress } from "./live";
 import {
 	categoryOf,
@@ -950,6 +951,7 @@ export function Models() {
 						<Folder disk={disk} />
 					</dl>
 				)}
+				<LoraShelf />
 				{view.data && <Catalog view={view.data} />}
 			</div>
 		</div>

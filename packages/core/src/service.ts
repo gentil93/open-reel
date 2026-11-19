@@ -102,6 +102,9 @@ export function adaptParams(
 					(params.maskAssetId != null ? caps.mask : undefined) ??
 					caps.strength)
 				: undefined,
+		// Only for models that take LoRAs, so one prompt can still go to
+		// models that do not; the provider checks each is of their family.
+		loras: caps.loraBase && params.loras?.length ? params.loras : undefined,
 	};
 }
 

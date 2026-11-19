@@ -98,6 +98,7 @@ export function useLiveJobs(): void {
 				void client.invalidateQueries({ queryKey: ["session"] });
 				void client.invalidateQueries({ queryKey: ["assistant"] });
 				void client.invalidateQueries({ queryKey: ["local-models"] });
+				void client.invalidateQueries({ queryKey: ["loras"] });
 			}
 			connectedBefore = true;
 		});
@@ -117,6 +118,9 @@ export function useLiveJobs(): void {
 			void client.invalidateQueries({ queryKey: ["local-models"] });
 			// Installed models can be picked in the composer.
 			void client.invalidateQueries({ queryKey: ["models"] });
+		});
+		source.addEventListener("loras.changed", () => {
+			void client.invalidateQueries({ queryKey: ["loras"] });
 		});
 		source.addEventListener("model.progress", (message) => {
 			const event = JSON.parse(message.data) as LocalModelEvent;

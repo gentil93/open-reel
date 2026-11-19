@@ -29,6 +29,31 @@ export const DEFAULT_STRENGTH = 0.7;
  */
 export const DEFAULT_MASK_STRENGTH = 0.85;
 
+/** A LoRA's id: also its file's name, and safe inside `<lora:id:1>`. */
+export const LORA_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+/** LoRAs one picture can use at once: each costs memory and time. */
+export const MAX_LORAS = 4;
+
+/**
+ * The family of models a LoRA was trained on; it works only with those.
+ * `sd1` is Stable Diffusion 1.x, `sdxl` SDXL and its turbo and fine-tunes.
+ */
+export const LORA_BASES = ["sd1", "sdxl", "flux", "wan", "z-image"] as const;
+export type LoraBase = (typeof LORA_BASES)[number];
+
+/** A LoRA kept in the models folder. */
+export interface LoraInfo {
+	/** Also its file's name, and how prompts name it: `<lora:id:1>`. */
+	id: string;
+	name: string;
+	base: LoraBase;
+	/** The word its trainer put in every caption, which calls it up. */
+	trigger: string | null;
+	size: number;
+	addedAt: number;
+}
+
 export const generationParamsSchema = z.object({
 	prompt: z.string().trim().min(1),
 	aspectRatio: z
@@ -50,6 +75,20 @@ export const generationParamsSchema = z.object({
 	 * redrawn, black is kept. Only for models that take a mask.
 	 */
 	maskAssetId: z.string().optional(),
+	/**
+	 * LoRAs to add to the model, each with how strongly: 1 as trained, less
+	 * to soften it. Only for models that take LoRAs of their family.
+	 */
+	loras: z
+		.array(
+			z.object({
+				id: z.string().regex(LORA_ID),
+				weight: z.number().min(-2).max(2).default(1),
+			}),
+		)
+		// Each model takes at most MAX_LORAS of its own family.
+		.max(MAX_LORAS * LORA_BASES.length)
+		.optional(),
 	/** Model-specific parameters, passed through to the provider untouched. */
 	extras: z.record(z.string(), z.unknown()).default({}),
 });
@@ -97,6 +136,8 @@ export interface ModelCapabilities {
 	 * before it is sent.
 	 */
 	englishPrompts?: boolean;
+	/** Set for a model that takes LoRAs: the family they must be for. */
+	loraBase?: LoraBase;
 }
 
 /** What a model is good at, shown as tags; the interface translates each. */
@@ -448,6 +489,11 @@ export interface LocalModelSpec {
 	profile?: ModelProfile;
 	/** Reads prompts well only in English; see `ModelCapabilities`. */
 	englishPrompts?: boolean;
+	/**
+	 * Takes LoRAs of this family. Set only once a LoRA was seen working with
+	 * the model on a real GPU.
+	 */
+	loraBase?: LoraBase;
 }
 
 export type LocalModelState =
@@ -534,6 +580,8 @@ export interface LocalModelsView {
 export type LocalModelEvent =
 	/** A model was installed, deleted, or its install started or stopped. */
 	| { type: "models.changed" }
+	/** A LoRA was added or deleted. */
+	| { type: "loras.changed" }
 	/** The models are moving to another folder. */
 	| {
 			type: "models.moving";

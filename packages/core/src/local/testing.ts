@@ -101,3 +101,25 @@ export function picture(
 		...chunk("IEND", new Uint8Array()),
 	]);
 }
+
+/** A safetensors file with these tensor names (no real weights) and notes. */
+export function safetensors(
+	keys: string[],
+	metadata: Record<string, string> = {},
+): Uint8Array {
+	const header: Record<string, unknown> = { __metadata__: metadata };
+	let offset = 0;
+	for (const key of keys) {
+		header[key] = {
+			dtype: "F16",
+			shape: [1],
+			data_offsets: [offset, offset + 2],
+		};
+		offset += 2;
+	}
+	const json = new TextEncoder().encode(JSON.stringify(header));
+	const file = new Uint8Array(8 + json.length + offset);
+	new DataView(file.buffer).setBigUint64(0, BigInt(json.length), true);
+	file.set(json, 8);
+	return file;
+}

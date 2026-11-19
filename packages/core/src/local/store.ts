@@ -35,6 +35,7 @@ import { type BuildChoice, chooseBuild, chooseVariant, fitOf } from "./engines";
 import { isLocked, tryFileLock, withFileLock } from "./file-lock";
 import { GpuLock } from "./gpu";
 import { detectHardware } from "./hardware";
+import { LoraShelf } from "./loras";
 import { cleanUp, type Mirror, mirrorInto, treeSize, undo } from "./move";
 import { extractZip } from "./zip";
 
@@ -44,6 +45,7 @@ const MOVED_ENTRIES = [
 	"installed",
 	"engines",
 	"demos",
+	"loras",
 	"broken-engines.json",
 ];
 
@@ -350,6 +352,8 @@ export class LocalModelStore {
 	private queue: Promise<void> = Promise.resolve();
 	/** Shares the GPU's memory between jobs, with other open-reels too. */
 	readonly gpu: GpuLock;
+	/** LoRAs, kept in the models folder so they move with it. */
+	readonly loras: LoraShelf;
 	private locationFile: string | null;
 	private moving: LocalModelsView["disk"]["moving"] = null;
 	private moveTask: Promise<void> = Promise.resolve();
@@ -369,6 +373,11 @@ export class LocalModelStore {
 		this.fetch = options.fetch ?? globalThis.fetch;
 		this.detect = options.hardware ?? (() => detectHardware());
 		this.checkEngine = options.checkEngine ?? runsWithHelp;
+		this.loras = new LoraShelf({
+			root: () => this.root,
+			check: () => this.notMoving(),
+			changed: () => this.emit({ type: "loras.changed" }),
+		});
 		this.gpu = new GpuLock({
 			root: this.root,
 			capacity: async () => {
@@ -814,6 +823,7 @@ export class LocalModelStore {
 			const busy =
 				this.installs.size > 0 ||
 				this.gpu.inUse() ||
+				this.loras.busy ||
 				(await locked("blobs")) ||
 				(await locked("engines")) ||
 				(await locked("installed"));

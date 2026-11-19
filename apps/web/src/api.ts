@@ -4,6 +4,7 @@ import type {
 	CreateTurnInput,
 	GalleryItem,
 	LocalModelsView,
+	LoraInfo,
 	ModelSpec,
 	ProviderStatus,
 	Session,
@@ -156,6 +157,18 @@ export const api = {
 		request<void>(`/api/local-models/${id}/cancel`, { method: "POST" }),
 	deleteModel: (id: string) =>
 		request<void>(`/api/local-models/${id}`, { method: "DELETE" }),
+	loras: () => request<LoraInfo[]>("/api/loras"),
+	addLora: (file: File) =>
+		request<LoraInfo>(
+			`/api/loras?${new URLSearchParams({ name: file.name })}`,
+			{
+				method: "POST",
+				headers: { "content-type": "application/octet-stream" },
+				body: file,
+			},
+		),
+	deleteLora: (id: string) =>
+		request<void>(`/api/loras/${id}`, { method: "DELETE" }),
 	settings: () => request<Settings>("/api/settings"),
 	saveSettings: (change: Partial<Settings>) =>
 		request<Settings>("/api/settings", send("PUT", change)),

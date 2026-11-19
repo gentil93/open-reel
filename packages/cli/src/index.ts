@@ -7,6 +7,7 @@ import {
 	clearServerInfo,
 	defaultDataDir,
 	defaultModelsDir,
+	MAX_LORA_BYTES,
 	modelsLocationFile,
 	plainPath,
 	writeServerInfo,
@@ -129,6 +130,8 @@ function listen() {
 			hostname: "127.0.0.1",
 			port,
 			idleTimeout: 0, // the event stream stays open
+			// LoRAs are added through the server; the app limits other routes.
+			maxRequestBodySize: MAX_LORA_BYTES,
 			fetch: app.fetch,
 		});
 	} catch (error) {
