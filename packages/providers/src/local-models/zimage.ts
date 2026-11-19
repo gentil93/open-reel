@@ -144,7 +144,7 @@ export function zimageModels(): LocalModelSpec[] {
 			name: "Z-Image",
 			author: "Tongyi-MAI (Alibaba)",
 			media: "image",
-			tasks: ["text-to-image"],
+			tasks: ["text-to-image", "image-to-image"],
 			summary:
 				"The undistilled base model behind Z-Image Turbo: slower, but more varied, and it follows negative prompts. A good base for fine-tunes and LoRAs.",
 			...APACHE_2,
@@ -203,6 +203,7 @@ export function zimageModels(): LocalModelSpec[] {
 				},
 			],
 			defaults: {
+				references: { as: "init", max: 1 },
 				size: 1024,
 				aspectRatios: ALL_RATIOS,
 				steps: 28,

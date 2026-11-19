@@ -115,7 +115,7 @@ export function classicModels(): LocalModelSpec[] {
 			name: "PixArt-Σ",
 			author: "PixArt-alpha (Huawei Noah's Ark Lab)",
 			media: "image",
-			tasks: ["text-to-image"],
+			tasks: ["text-to-image", "image-to-image"],
 			summary:
 				"A small transformer that makes 1024px images in twenty steps, following long prompts through its T5 text encoder.",
 			...openRail(
@@ -153,6 +153,7 @@ export function classicModels(): LocalModelSpec[] {
 				},
 			],
 			defaults: {
+				references: { as: "init", max: 1 },
 				size: 1024,
 				aspectRatios: ALL_RATIOS,
 				steps: 20,
